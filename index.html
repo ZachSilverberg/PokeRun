@@ -349,7 +349,6 @@
                 
                 return Math.min(100, intensity);
             };
-
 const POKEMON_RARITY_MAP = {
     // GEN 1 (1-151)
     1: 'common',     // Bulbasaur (starter base)
@@ -1266,31 +1265,29 @@ const POKEMON_RARITY_MAP = {
     898: 'legendary'  // Calyrex
 };
 
-function getPokemonRarity(id) {
-    return POKEMON_RARITY_MAP[id] || 'common';
-}
+            // Rarity tier configuration
+            const RARITY_TIERS = {
+                common: { name: 'Common', color: 'gray', chance: 0.50 },
+                uncommon: { name: 'Uncommon', color: 'green', chance: 0.30 },
+                rare: { name: 'Rare', color: 'blue', chance: 0.15 },
+                epic: { name: 'Epic', color: 'purple', chance: 0.04 },
+                legendary: { name: 'Legendary', color: 'orange', chance: 0.01 }
+            };
 
-// Statistics
-const stats = {
-    common: Object.values(POKEMON_RARITY_MAP).filter(r => r === 'common').length,
-    uncommon: Object.values(POKEMON_RARITY_MAP).filter(r => r === 'uncommon').length,
-    rare: Object.values(POKEMON_RARITY_MAP).filter(r => r === 'rare').length,
-    epic: Object.values(POKEMON_RARITY_MAP).filter(r => r === 'epic').length,
-    legendary: Object.values(POKEMON_RARITY_MAP).filter(r => r === 'legendary').length
-};
+            // Generate legendary IDs from the rarity map
+            const LEGENDARY_IDS = Object.entries(POKEMON_RARITY_MAP)
+                .filter(([id, rarity]) => rarity === 'legendary')
+                .map(([id]) => parseInt(id));
 
-console.log('Pokemon Rarity Distribution:');
-console.log(`Common: ${stats.common} (${(stats.common/898*100).toFixed(1)}%)`);
-console.log(`Uncommon: ${stats.uncommon} (${(stats.uncommon/898*100).toFixed(1)}%)`);
-console.log(`Rare: ${stats.rare} (${(stats.rare/898*100).toFixed(1)}%)`);
-console.log(`Epic: ${stats.epic} (${(stats.epic/898*100).toFixed(1)}%)`);
-console.log(`Legendary: ${stats.legendary} (${(stats.legendary/898*100).toFixed(1)}%)`);
-console.log(`Total: ${Object.keys(POKEMON_RARITY_MAP).length}/898`);
+            };
 
-// For use in app
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { POKEMON_RARITY_MAP, getPokemonRarity, stats };
-}
+            const RARITY_TIERS = {
+                common: { name: 'Common', minId: 1, maxId: 251, color: 'gray', chance: 0.50 },
+                uncommon: { name: 'Uncommon', minId: 252, maxId: 493, color: 'green', chance: 0.30 },
+                rare: { name: 'Rare', minId: 494, maxId: 721, color: 'blue', chance: 0.15 },
+                epic: { name: 'Epic', minId: 722, maxId: 898, color: 'purple', chance: 0.04 },
+                legendary: { name: 'Legendary', minId: 1, maxId: 898, legendary: true, color: 'orange', chance: 0.01 }
+            };
 
             const calculateRarityChances = (intensity, streak, newPRs) => {
                 let chances = { ...RARITY_TIERS };
@@ -1355,22 +1352,25 @@ if (typeof module !== 'undefined' && module.exports) {
                     const distanceNum = parseFloat(distance);
                     const [durMin, durSec] = duration.split(':').map(Number);
                     const durationSeconds = (durMin * 60) + (durSec || 0);
-                    
-                    const newPRs = checkForPRs(paceSeconds, distanceNum, durationSeconds);
-                    const updatedStreak = await updateStreak();
-                    const intensity = calculateIntensity(paceSeconds, distanceNum, durationSeconds);
-                    const { chances, multiplier } = calculateRarityChances(intensity, updatedStreak, newPRs);
-                    const rarity = rollRarity(chances);
-                    const { pokemonId, isShiny, shinyChance } = await getPokemonByRarity(rarity);
-                    
-                    // ✅ Check if the Pokemon is actually a legendary (override rarity tier if needed)
-                    const isActuallyLegendary = LEGENDARY_IDS.includes(pokemonId);
-                    const actualRarity = isActuallyLegendary ? 'legendary' : rarity.tier;
-                    const actualRarityColor = isActuallyLegendary ? 'orange' : rarity.color;
-                    
-                    // ✅ Fetch Pokemon data and capture the returned data
-                    const fetchedPokemonData = await fetchPokemonData(pokemonId);
-                    
+
+            const getPokemonByRarity = async (rarity) => {
+                // Get all Pokemon IDs that match this rarity tier
+                const matchingIds = Object.entries(POKEMON_RARITY_MAP)
+                    .filter(([id, rarityTier]) => rarityTier === rarity.tier)
+                    .map(([id]) => parseInt(id));
+                
+                // Pick random Pokemon from this rarity tier
+                const pokemonId = matchingIds[Math.floor(Math.random() * matchingIds.length)];
+                
+                const baseShinyChance = 1/4096;
+                const streakBonus = currentStreak.days * (1/500);
+                const shinyChance = Math.min(0.1, baseShinyChance + streakBonus);
+                const isShinyRoll = Math.random() < shinyChance;
+                setIsShiny(isShinyRoll);
+                
+                return { pokemonId, isShiny: isShinyRoll, shinyChance };
+            };
+
                     const newRun = {
                         date: new Date().toISOString(),
                         pace: paceSeconds,
