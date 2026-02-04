@@ -8,8 +8,6 @@
     <meta name="theme-color" content="#8B5CF6">
     <title>PokéRun - Legendary Journey Tracker</title>
     
-    <link rel="manifest" href="manifest.json">
-    
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -74,7 +72,9 @@
     <div id="root"></div>
 
     <script type="text/babel">
+        console.log('Script starting...');
         const { useState, useRef, useEffect } = React;
+        console.log('React loaded:', !!React);
 
         // Storage API
         if (!window.storage) {
@@ -91,13 +91,84 @@
         }
 
         const PokemonRunTracker = () => {
-            const [pace, setPace] = useState('8:53');
-            const [distance, setDistance] = useState('1.82');
-            const [duration, setDuration] = useState('16:27');
+            const [pace, setPace] = useState('');
+            const [distance, setDistance] = useState('');
+            const [duration, setDuration] = useState('');
             const [pokemonData, setPokemonData] = useState(null);
             const [spriteVariant, setSpriteVariant] = useState('default');
             const [availableVariants, setAvailableVariants] = useState([]);
             const [isShiny, setIsShiny] = useState(false);
+            
+            // Auto-calculate third value ONLY when two are entered and third is empty
+            const isFieldEmpty = (value) => {
+                return !value || value === '' || value === '0' || value === '0:00' || value === '0.0';
+            };
+            
+            const handlePaceChange = (value) => {
+                setPace(value);
+                
+                // Only calculate duration if it's currently empty
+                if (distance && value && isFieldEmpty(duration)) {
+                    const [min, sec] = value.split(':').map(Number);
+                    if (!isNaN(min) && !isNaN(sec)) {
+                        const paceSeconds = min * 60 + (sec || 0);
+                        const dist = parseFloat(distance);
+                        if (!isNaN(dist) && dist > 0) {
+                            const totalSeconds = paceSeconds * dist;
+                            const durMin = Math.floor(totalSeconds / 60);
+                            const durSec = Math.round(totalSeconds % 60);
+                            setDuration(`${durMin}:${durSec.toString().padStart(2, '0')}`);
+                        }
+                    }
+                }
+            };
+
+            const handleDistanceChange = (value) => {
+                setDistance(value);
+                const dist = parseFloat(value);
+                
+                // Priority 1: If pace is empty but we have duration, calculate pace
+                if (isFieldEmpty(pace) && !isFieldEmpty(duration) && !isNaN(dist) && dist > 0) {
+                    const [durMin, durSec] = duration.split(':').map(Number);
+                    if (!isNaN(durMin) && !isNaN(durSec)) {
+                        const totalSeconds = durMin * 60 + (durSec || 0);
+                        const paceSeconds = totalSeconds / dist;
+                        const paceMin = Math.floor(paceSeconds / 60);
+                        const paceSec = Math.round(paceSeconds % 60);
+                        setPace(`${paceMin}:${paceSec.toString().padStart(2, '0')}`);
+                    }
+                }
+                // Priority 2: If duration is empty but we have pace, calculate duration
+                else if (isFieldEmpty(duration) && !isFieldEmpty(pace) && !isNaN(dist) && dist > 0) {
+                    const [paceMin, paceSec] = pace.split(':').map(Number);
+                    if (!isNaN(paceMin) && !isNaN(paceSec)) {
+                        const paceSeconds = paceMin * 60 + (paceSec || 0);
+                        const totalSeconds = paceSeconds * dist;
+                        const durMin = Math.floor(totalSeconds / 60);
+                        const durSec = Math.round(totalSeconds % 60);
+                        setDuration(`${durMin}:${durSec.toString().padStart(2, '0')}`);
+                    }
+                }
+            };
+
+            const handleDurationChange = (value) => {
+                setDuration(value);
+                
+                // Only calculate pace if it's currently empty
+                if (distance && value && isFieldEmpty(pace)) {
+                    const [min, sec] = value.split(':').map(Number);
+                    if (!isNaN(min) && !isNaN(sec)) {
+                        const totalSeconds = min * 60 + (sec || 0);
+                        const dist = parseFloat(distance);
+                        if (!isNaN(dist) && dist > 0) {
+                            const paceSeconds = totalSeconds / dist;
+                            const paceMin = Math.floor(paceSeconds / 60);
+                            const paceSec = Math.round(paceSeconds % 60);
+                            setPace(`${paceMin}:${paceSec.toString().padStart(2, '0')}`);
+                        }
+                    }
+                }
+            };
             
             const [runHistory, setRunHistory] = useState([]);
             const [currentStreak, setCurrentStreak] = useState({ days: 0, weeks: 0 });
@@ -201,7 +272,7 @@
                 setPersonalRecords(newPRs);
             };
 
-            const updateJourney = async (runData, isLegendary = false) => {
+            const updateJourney = async (runData, isLegendary = false, fetchedPokemonData = null) => {
                 let journey = currentJourney;
                 
                 if (!journey) {
@@ -227,9 +298,10 @@
                 if (isLegendary) {
                     journey.legendaryEncounters++;
                     journey.endDate = new Date().toISOString();
+                    // ✅ Use the passed pokemonName from runData instead of relying on state
                     journey.legendary = {
                         id: runData.pokemonId,
-                        name: pokemonData.name,
+                        name: runData.pokemonName || fetchedPokemonData?.name || 'unknown',
                         isShiny: runData.isShiny
                     };
                     
@@ -359,6 +431,9 @@
                     const rarity = rollRarity(chances);
                     const { pokemonId, isShiny, shinyChance } = await getPokemonByRarity(rarity);
                     
+                    // ✅ Fetch Pokemon data and capture the returned data
+                    const fetchedPokemonData = await fetchPokemonData(pokemonId);
+                    
                     const newRun = {
                         date: new Date().toISOString(),
                         pace: paceSeconds,
@@ -367,6 +442,7 @@
                         intensity,
                         rarity: rarity.tier,
                         pokemonId,
+                        pokemonName: fetchedPokemonData?.name || 'unknown', // ✅ Store name in run data
                         isShiny,
                         newPRs: Object.keys(newPRs).filter(key => newPRs[key])
                     };
@@ -375,7 +451,6 @@
                     await updatePersonalRecords(paceSeconds, distanceNum, durationSeconds);
                     
                     const isLegendary = rarity.tier === 'legendary';
-                    await fetchPokemonData(pokemonId);
                     
                     setRarityRoll({
                         tier: rarity.tier,
@@ -386,10 +461,9 @@
                         shinyChance: (shinyChance * 100).toFixed(2)
                     });
                     
-                    setTimeout(async () => {
-                        await updateJourney(newRun, isLegendary);
-                        setIsLoading(false);
-                    }, 100);
+                    // ✅ Pass the fetched data directly to updateJourney
+                    await updateJourney(newRun, isLegendary, fetchedPokemonData);
+                    setIsLoading(false);
                 } catch (error) {
                     console.error('Error:', error);
                     setIsLoading(false);
@@ -409,8 +483,11 @@
                     
                     setAvailableVariants(variants);
                     setSpriteVariant(isShiny && data.sprites.front_shiny ? 'front_shiny' : variants[0]?.key || 'front_default');
+                    
+                    return data; // ✅ Return data to avoid race condition
                 } catch (error) {
                     console.error('Error fetching Pokemon:', error);
+                    return null;
                 }
             };
 
@@ -446,7 +523,16 @@
                         const spriteWidth = img.width * scale;
                         const spriteHeight = img.height * scale;
                         const spriteX = (width - spriteWidth) / 2;
-                        const spriteY = 180;
+                        const spriteY = 220;
+                        
+                        // Pokemon name above sprite (null-safe)
+                        if (pokemonData?.name) {
+                            ctx.fillStyle = '#000000';
+                            ctx.font = 'bold 48px Arial';
+                            ctx.textAlign = 'center';
+                            const pokemonName = pokemonData.name.toUpperCase();
+                            ctx.fillText(pokemonName, width / 2, spriteY - 40);
+                        }
                         
                         ctx.imageSmoothingEnabled = false;
                         
@@ -461,25 +547,120 @@
                         
                         ctx.drawImage(img, spriteX, spriteY, spriteWidth, spriteHeight);
                         
+                        // Draw rarity icon (TCG style)
                         if (rarityRoll) {
-                            const badgeY = spriteY - 60;
-                            ctx.fillStyle = getRarityColor(rarityRoll.color);
-                            ctx.font = 'bold 32px Arial';
-                            ctx.textAlign = 'center';
-                            const badgeText = isShiny ? `✨ SHINY ${rarityRoll.tier.toUpperCase()} ✨` : rarityRoll.tier.toUpperCase();
-                            ctx.fillText(badgeText, width / 2, badgeY);
+                            const iconSize = 60;
+                            const iconX = width / 2 - iconSize / 2;
+                            const iconY = spriteY - 120;
+                            
+                            drawRarityIcon(ctx, iconX, iconY, iconSize, rarityRoll.tier);
                         }
                         
                         ctx.fillStyle = '#666666';
                         ctx.font = '20px monospace';
                         ctx.textAlign = 'left';
                         const timestamp = new Date().toLocaleString();
-                        ctx.fillText(timestamp, spriteX - 60, spriteY + spriteHeight + 120);
+                        ctx.fillText(timestamp, spriteX - 60, spriteY + spriteHeight + 100);
                         
                         drawStatsBox(ctx, width, height);
                     };
+                    img.onerror = () => {
+                        console.error('Failed to load sprite image');
+                    };
                     img.src = spriteUrl;
                 }
+            };
+
+            const drawRarityIcon = (ctx, x, y, size, tier) => {
+                ctx.save();
+                
+                switch(tier) {
+                    case 'common':
+                        // Circle
+                        ctx.fillStyle = '#6B7280';
+                        ctx.beginPath();
+                        ctx.arc(x + size/2, y + size/2, size/2, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.strokeStyle = '#FFFFFF';
+                        ctx.lineWidth = 3;
+                        ctx.stroke();
+                        break;
+                        
+                    case 'uncommon':
+                        // Diamond
+                        ctx.fillStyle = '#10B981';
+                        ctx.beginPath();
+                        ctx.moveTo(x + size/2, y);
+                        ctx.lineTo(x + size, y + size/2);
+                        ctx.lineTo(x + size/2, y + size);
+                        ctx.lineTo(x, y + size/2);
+                        ctx.closePath();
+                        ctx.fill();
+                        ctx.strokeStyle = '#FFFFFF';
+                        ctx.lineWidth = 3;
+                        ctx.stroke();
+                        break;
+                        
+                    case 'rare':
+                        // Star
+                        ctx.fillStyle = '#3B82F6';
+                        drawStar(ctx, x + size/2, y + size/2, 5, size/2, size/4);
+                        ctx.strokeStyle = '#FFFFFF';
+                        ctx.lineWidth = 3;
+                        ctx.stroke();
+                        break;
+                        
+                    case 'epic':
+                        // Double Star
+                        ctx.fillStyle = '#8B5CF6';
+                        ctx.globalAlpha = 0.7;
+                        drawStar(ctx, x + size/2 - 8, y + size/2, 5, size/2.2, size/4.4);
+                        ctx.globalAlpha = 1;
+                        drawStar(ctx, x + size/2 + 8, y + size/2, 5, size/2.2, size/4.4);
+                        ctx.strokeStyle = '#FFFFFF';
+                        ctx.lineWidth = 2;
+                        ctx.stroke();
+                        break;
+                        
+                    case 'legendary':
+                        // Crown/Triple Star
+                        ctx.fillStyle = '#F59E0B';
+                        drawStar(ctx, x + size/2, y + size/3, 5, size/2.5, size/5);
+                        drawStar(ctx, x + size/4, y + size*2/3, 5, size/3, size/6);
+                        drawStar(ctx, x + size*3/4, y + size*2/3, 5, size/3, size/6);
+                        ctx.strokeStyle = '#FFFFFF';
+                        ctx.lineWidth = 2;
+                        ctx.stroke();
+                        break;
+                }
+                
+                ctx.restore();
+            };
+
+            const drawStar = (ctx, cx, cy, spikes, outerRadius, innerRadius) => {
+                let rot = Math.PI / 2 * 3;
+                let x = cx;
+                let y = cy;
+                const step = Math.PI / spikes;
+
+                ctx.beginPath();
+                ctx.moveTo(cx, cy - outerRadius);
+                
+                for (let i = 0; i < spikes; i++) {
+                    x = cx + Math.cos(rot) * outerRadius;
+                    y = cy + Math.sin(rot) * outerRadius;
+                    ctx.lineTo(x, y);
+                    rot += step;
+
+                    x = cx + Math.cos(rot) * innerRadius;
+                    y = cy + Math.sin(rot) * innerRadius;
+                    ctx.lineTo(x, y);
+                    rot += step;
+                }
+                
+                ctx.lineTo(cx, cy - outerRadius);
+                ctx.closePath();
+                ctx.fill();
             };
 
             const getRarityColor = (color) => {
@@ -489,9 +670,9 @@
 
             const drawStatsBox = (ctx, width, height) => {
                 const boxWidth = 800;
-                const boxHeight = 220;
+                const boxHeight = 240;
                 const boxX = (width - boxWidth) / 2;
-                const boxY = height - 300;
+                const boxY = height - 320;
 
                 ctx.fillStyle = '#000000';
                 ctx.fillRect(boxX - 8, boxY - 8, boxWidth + 16, boxHeight + 16);
@@ -501,25 +682,60 @@
                 ctx.fillRect(boxX, boxY, boxWidth, boxHeight);
 
                 ctx.fillStyle = '#000000';
-                ctx.font = 'bold 56px Arial';
+                ctx.font = 'bold 52px Arial';
                 ctx.textAlign = 'left';
                 
-                const padding = 40;
-                let textY = boxY + padding + 50;
+                const padding = 50;
+                let textY = boxY + padding + 45;
                 
                 ctx.fillText(`Avg Pace ${pace} min/mi`, boxX + padding, textY);
-                textY += 70;
+                textY += 75;
                 ctx.fillText(`Distance ${distance} mi`, boxX + padding, textY);
-                textY += 70;
+                textY += 75;
                 ctx.fillText(`Duration ${duration}`, boxX + padding, textY);
             };
 
-            const downloadImage = () => {
+            const downloadImage = async () => {
                 const canvas = canvasRef.current;
-                const link = document.createElement('a');
-                link.download = `run-${pokemonData?.name || 'pokemon'}.png`;
-                link.href = canvas.toDataURL();
-                link.click();
+                if (!canvas) return;
+                
+                try {
+                    // Convert canvas to blob
+                    canvas.toBlob(async (blob) => {
+                        if (!blob) return;
+                        
+                        // Use Web Share API if available (works on mobile)
+                        if (navigator.share && navigator.canShare) {
+                            const file = new File([blob], `pokerun-${pokemonData?.name || 'pokemon'}.png`, { type: 'image/png' });
+                            
+                            if (navigator.canShare({ files: [file] })) {
+                                try {
+                                    await navigator.share({
+                                        files: [file],
+                                        title: 'My PokéRun',
+                                        text: `Caught ${pokemonData?.name}!`
+                                    });
+                                    return;
+                                } catch (err) {
+                                    console.log('Share cancelled or failed:', err);
+                                }
+                            }
+                        }
+                        
+                        // Fallback to download
+                        const link = document.createElement('a');
+                        link.download = `pokerun-${pokemonData?.name || 'pokemon'}.png`;
+                        link.href = canvas.toDataURL();
+                        link.click();
+                    }, 'image/png');
+                } catch (error) {
+                    console.error('Error sharing:', error);
+                    // Final fallback
+                    const link = document.createElement('a');
+                    link.download = `pokerun-${pokemonData?.name || 'pokemon'}.png`;
+                    link.href = canvas.toDataURL();
+                    link.click();
+                }
             };
 
             return (
@@ -551,19 +767,19 @@
                             <div className="space-y-4">
                                 <div>
                                     <label className="block text-sm font-semibold text-gray-700 mb-2">Pace (min/mi)</label>
-                                    <input type="text" value={pace} onChange={(e) => setPace(e.target.value)} 
+                                    <input type="text" value={pace} onChange={(e) => handlePaceChange(e.target.value)} 
                                            className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg text-lg" placeholder="8:53" />
                                 </div>
 
                                 <div>
                                     <label className="block text-sm font-semibold text-gray-700 mb-2">Distance (miles)</label>
-                                    <input type="text" value={distance} onChange={(e) => setDistance(e.target.value)}
+                                    <input type="text" value={distance} onChange={(e) => handleDistanceChange(e.target.value)}
                                            className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg text-lg" placeholder="1.82" />
                                 </div>
 
                                 <div>
                                     <label className="block text-sm font-semibold text-gray-700 mb-2">Duration (mm:ss)</label>
-                                    <input type="text" value={duration} onChange={(e) => setDuration(e.target.value)}
+                                    <input type="text" value={duration} onChange={(e) => handleDurationChange(e.target.value)}
                                            className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg text-lg" placeholder="16:27" />
                                 </div>
 
@@ -587,8 +803,8 @@
                                 </div>
 
                                 <button onClick={downloadImage}
-                                    className="w-full py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition">
-                                    📥 Download Image
+                                    className="w-full py-3 bg-black hover:bg-gray-900 text-white rounded-lg font-medium transition">
+                                    Share your PokeRun
                                 </button>
                             </div>
                         )}
@@ -598,7 +814,9 @@
         };
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
+        console.log('Root created, attempting render...');
         root.render(<PokemonRunTracker />);
+        console.log('Render called successfully');
     </script>
 </body>
 </html>
