@@ -1045,6 +1045,32 @@
             const [availableVariants, setAvailableVariants] = useState([]);
             const [isShiny, setIsShiny] = useState(false);
             
+            // Profile customization
+            const [trainerName, setTrainerName] = useState('Trainer');
+            const [profileColor, setProfileColor] = useState('#FF6B6B');
+            const [showProfileMenu, setShowProfileMenu] = useState(false);
+            const [isEditingName, setIsEditingName] = useState(false);
+            
+            // PC Storage & Starters
+            const [pokemonPC, setPokemonPC] = useState([]); // All caught Pokemon
+            const [starterTeam, setStarterTeam] = useState([null, null, null, null, null, null]); // 6 starter slots
+            const [currentView, setCurrentView] = useState('main'); // 'main', 'pc', 'starters'
+            const [showDeletePrompt, setShowDeletePrompt] = useState(null); // Pokemon ID to delete
+            const [longPressTimer, setLongPressTimer] = useState(null);
+            const [selectingForSlot, setSelectingForSlot] = useState(null); // Which starter slot is being filled
+            
+            // 8 evenly-spaced vibrant Pantone-inspired colors (45° apart on color wheel)
+            const PROFILE_COLORS = [
+                { name: 'Fiery Red', hex: '#FF6B6B', angle: 0 },      // Red
+                { name: 'Sunset Orange', hex: '#FFA94D', angle: 45 },  // Orange
+                { name: 'Golden Yellow', hex: '#FFD93D', angle: 90 },  // Yellow
+                { name: 'Spring Green', hex: '#6BCF7F', angle: 135 },  // Yellow-Green
+                { name: 'Ocean Teal', hex: '#4ECDC4', angle: 180 },    // Cyan
+                { name: 'Royal Blue', hex: '#4D96FF', angle: 225 },    // Blue
+                { name: 'Mystic Purple', hex: '#9D4EDD', angle: 270 }, // Purple
+                { name: 'Rose Pink', hex: '#FF6BA9', angle: 315 }      // Magenta
+            ];
+            
             // Auto-calculate third value ONLY when two are entered and third is empty
             const isFieldEmpty = (value) => {
                 return !value || value === '' || value === '0' || value === '0:00' || value === '0.0' || value === ':';
@@ -1177,6 +1203,7 @@
             
             const canvasRef = useRef(null);
             const journeyCanvasRef = useRef(null);
+            const profileMenuRef = useRef(null);
 
             useEffect(() => {
                 loadRunHistory();
@@ -1186,6 +1213,40 @@
                 }, 500);
             }, []);
 
+            // Close profile menu when clicking outside
+            useEffect(() => {
+                const handleClickOutside = (event) => {
+                    if (profileMenuRef.current && !profileMenuRef.current.contains(event.target)) {
+                        setShowProfileMenu(false);
+                        if (isEditingName) {
+                            setIsEditingName(false);
+                            // Don't call handleNameChange here to avoid dependency issues
+                            saveProfile(trainerName, profileColor);
+                        }
+                    }
+                };
+
+                if (showProfileMenu) {
+                    document.addEventListener('mousedown', handleClickOutside);
+                } else {
+                    document.removeEventListener('mousedown', handleClickOutside);
+                }
+
+                return () => {
+                    document.removeEventListener('mousedown', handleClickOutside);
+                };
+            }, [showProfileMenu, isEditingName, trainerName, profileColor]);
+
+            // Safe JSON parse with fallback
+            const safeParse = (raw, fallback) => {
+                try {
+                    const v = JSON.parse(raw);
+                    return v ?? fallback;
+                } catch {
+                    return fallback;
+                }
+            };
+
             const loadRunHistory = async () => {
                 try {
                     const historyResult = await window.storage.get('run-history');
@@ -1193,14 +1254,135 @@
                     const prResult = await window.storage.get('personal-records');
                     const journeyResult = await window.storage.get('current-journey');
                     const journeyHistoryResult = await window.storage.get('journey-history');
-                    
-                    if (historyResult?.value) setRunHistory(JSON.parse(historyResult.value));
-                    if (streakResult?.value) setCurrentStreak(JSON.parse(streakResult.value));
-                    if (prResult?.value) setPersonalRecords(JSON.parse(prResult.value));
-                    if (journeyResult?.value) setCurrentJourney(JSON.parse(journeyResult.value));
-                    if (journeyHistoryResult?.value) setJourneyHistory(JSON.parse(journeyHistoryResult.value));
+                    const profileResult = await window.storage.get('trainer-profile');
+                    const pcResult = await window.storage.get('pokemon-pc');
+                    const startersResult = await window.storage.get('starter-team');
+
+                    if (historyResult?.value) setRunHistory(safeParse(historyResult.value, []));
+                    if (streakResult?.value) setCurrentStreak(safeParse(streakResult.value, { days: 0, weeks: 0 }));
+                    if (prResult?.value) setPersonalRecords(safeParse(prResult.value, {
+                        fastestPace: null, 
+                        longestDistance: null, 
+                        longestDuration: null
+                    }));
+                    if (journeyResult?.value) setCurrentJourney(safeParse(journeyResult.value, null));
+                    if (journeyHistoryResult?.value) setJourneyHistory(safeParse(journeyHistoryResult.value, []));
+
+                    // ✅ PC must be an array
+                    if (pcResult?.value) {
+                        const pc = safeParse(pcResult.value, []);
+                        setPokemonPC(Array.isArray(pc) ? pc : []);
+                    }
+
+                    // ✅ Starters must be an array of length 6
+                    if (startersResult?.value) {
+                        const starters = safeParse(startersResult.value, [null, null, null, null, null, null]);
+                        setStarterTeam(Array.isArray(starters) && starters.length === 6
+                            ? starters
+                            : [null, null, null, null, null, null]
+                        );
+                    }
+
+                    // Load or initialize profile
+                    if (profileResult?.value) {
+                        const profile = safeParse(profileResult.value, null);
+                        if (profile) {
+                            setTrainerName(profile.name || 'Trainer');
+                            setProfileColor(profile.color || PROFILE_COLORS[0].hex);
+                        }
+                    } else {
+                        // First time - pick random color
+                        const randomColor = PROFILE_COLORS[Math.floor(Math.random() * PROFILE_COLORS.length)];
+                        setProfileColor(randomColor.hex);
+                        await window.storage.set('trainer-profile', JSON.stringify({
+                            name: 'Trainer',
+                            color: randomColor.hex
+                        }));
+                    }
                 } catch (error) {
-                    console.log('Starting fresh');
+                    console.log('Starting fresh', error);
+                    // Initialize with random color for new users
+                    const randomColor = PROFILE_COLORS[Math.floor(Math.random() * PROFILE_COLORS.length)];
+                    setProfileColor(randomColor.hex);
+                }
+            };
+
+            const saveProfile = async (name, color) => {
+                await window.storage.set('trainer-profile', JSON.stringify({
+                    name: name || 'Trainer',
+                    color: color || profileColor
+                }));
+            };
+
+            const handleColorChange = async (newColor) => {
+                setProfileColor(newColor);
+                await saveProfile(trainerName, newColor);
+            };
+
+            const handleNameChange = async (newName) => {
+                setTrainerName(newName);
+                await saveProfile(newName, profileColor);
+            };
+
+            // PC Storage functions
+            const addPokemonToPC = async (pokemonData) => {
+                const pcEntry = {
+                    id: Date.now(), // Unique ID for deletion
+                    pokemonId: pokemonData.pokemonId,
+                    pokemonName: pokemonData.name,
+                    isShiny: pokemonData.isShiny,
+                    rarity: pokemonData.rarity,
+                    timestamp: new Date().toISOString(),
+                    spriteUrl: pokemonData.spriteUrl
+                };
+                
+                const updatedPC = [pcEntry, ...pokemonPC]; // Add to beginning (newest first)
+                setPokemonPC(updatedPC);
+                await window.storage.set('pokemon-pc', JSON.stringify(updatedPC));
+            };
+
+            const deletePokemonFromPC = async (entryId) => {
+                const updatedPC = (Array.isArray(pokemonPC) ? pokemonPC : []).filter(p => p.id !== entryId);
+                setPokemonPC(updatedPC);
+                await window.storage.set('pokemon-pc', JSON.stringify(updatedPC));
+                
+                // Also remove from starters if it's there
+                const updatedStarters = (Array.isArray(starterTeam) ? starterTeam : [null, null, null, null, null, null]).map(starter => 
+                    starter?.id === entryId ? null : starter
+                );
+                setStarterTeam(updatedStarters);
+                await window.storage.set('starter-team', JSON.stringify(updatedStarters));
+                
+                setShowDeletePrompt(null);
+            };
+
+            const addToStarters = async (slotIndex, pcEntry) => {
+                const updatedStarters = [...(Array.isArray(starterTeam) ? starterTeam : [null, null, null, null, null, null])];
+                updatedStarters[slotIndex] = pcEntry;
+                setStarterTeam(updatedStarters);
+                await window.storage.set('starter-team', JSON.stringify(updatedStarters));
+                setSelectingForSlot(null);
+                setCurrentView('starters');
+            };
+
+            const removeFromStarters = async (slotIndex) => {
+                const updatedStarters = [...(Array.isArray(starterTeam) ? starterTeam : [null, null, null, null, null, null])];
+                updatedStarters[slotIndex] = null;
+                setStarterTeam(updatedStarters);
+                await window.storage.set('starter-team', JSON.stringify(updatedStarters));
+            };
+
+            const handleLongPressStart = (entryId) => {
+                const timer = setTimeout(() => {
+                    setShowDeletePrompt(entryId);
+                }, 500); // 500ms long press
+                setLongPressTimer(timer);
+            };
+
+            const handleLongPressEnd = () => {
+                if (longPressTimer) {
+                    clearTimeout(longPressTimer);
+                    setLongPressTimer(null);
                 }
             };
 
@@ -1437,6 +1619,15 @@
                     
                     await saveRunHistory(newRun);
                     await updatePersonalRecords(paceSeconds, distanceNum, durationSeconds);
+                    
+                    // Add to PC
+                    await addPokemonToPC({
+                        pokemonId,
+                        name: fetchedPokemonData?.name || 'unknown',
+                        isShiny,
+                        rarity: actualRarity,
+                        spriteUrl: isShiny ? fetchedPokemonData?.sprites.front_shiny : fetchedPokemonData?.sprites.front_default
+                    });
                     
                     const isLegendary = actualRarity === 'legendary';
                     
@@ -1716,7 +1907,8 @@
                             <p className="text-sm text-gray-600">Track runs • Catch Pokémon • Complete journeys</p>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-3 mb-6">
+                        {/* Streak & Runs Stats */}
+                        <div className="grid grid-cols-2 gap-3 mb-3">
                             <div className="bg-gradient-to-br from-orange-500 to-red-500 rounded-xl p-3 text-white shadow-lg">
                                 <div className="text-xs font-semibold mb-1">🔥 Streak</div>
                                 <div className="text-2xl font-bold">{currentStreak.days}d</div>
@@ -1727,8 +1919,106 @@
                             </div>
                         </div>
 
+                        {/* Bill's PC & Starters Buttons */}
+                        <div className="grid grid-cols-2 gap-3 mb-6">
+                            <button
+                                onClick={() => setCurrentView('pc')}
+                                className="bg-gradient-to-br from-slate-400 to-slate-500 hover:from-slate-500 hover:to-slate-600 rounded-xl p-3 text-white shadow-md hover:shadow-lg transition-all"
+                            >
+                                <div className="text-xs font-semibold mb-1">💾 Bill's PC</div>
+                                <div className="text-lg font-bold">{(Array.isArray(pokemonPC) ? pokemonPC : []).length}</div>
+                            </button>
+                            <button
+                                onClick={() => setCurrentView('starters')}
+                                className="bg-gradient-to-br from-slate-400 to-slate-500 hover:from-slate-500 hover:to-slate-600 rounded-xl p-3 text-white shadow-md hover:shadow-lg transition-all"
+                            >
+                                <div className="text-xs font-semibold mb-1">⭐ Starters</div>
+                                <div className="text-lg font-bold">{(Array.isArray(starterTeam) ? starterTeam : []).filter(s => s !== null).length}/6</div>
+                            </button>
+                        </div>
+
+                        {currentView === 'main' && (
+                        <>
                         <div className="bg-white rounded-2xl shadow-lg p-6 mb-6">
-                            <h2 className="text-xl font-bold text-gray-800 mb-4">Your Run</h2>
+                            <div className="flex justify-between items-center mb-4">
+                                <h2 className="text-xl font-bold text-gray-800">Your Run</h2>
+                                
+                                {/* Profile Badge */}
+                                <div className="relative" ref={profileMenuRef}>
+                                    <button 
+                                        onClick={() => setShowProfileMenu(!showProfileMenu)}
+                                        className="flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm text-white shadow-md hover:shadow-lg transition-all"
+                                        style={{ backgroundColor: profileColor }}
+                                    >
+                                        <span>⚡</span>
+                                        <span>{trainerName}</span>
+                                    </button>
+                                    
+                                    {/* Profile Dropdown Menu */}
+                                    {showProfileMenu && (
+                                        <div className="absolute right-0 top-full mt-2 bg-white rounded-xl shadow-2xl p-4 z-50 w-64 border-2 border-gray-200">
+                                            <div className="mb-4">
+                                                <label className="block text-xs font-semibold text-gray-600 mb-2">TRAINER NAME</label>
+                                                {isEditingName ? (
+                                                    <input 
+                                                        type="text" 
+                                                        value={trainerName}
+                                                        onChange={(e) => setTrainerName(e.target.value)}
+                                                        onBlur={() => {
+                                                            setIsEditingName(false);
+                                                            handleNameChange(trainerName);
+                                                        }}
+                                                        onKeyPress={(e) => {
+                                                            if (e.key === 'Enter') {
+                                                                setIsEditingName(false);
+                                                                handleNameChange(trainerName);
+                                                            }
+                                                        }}
+                                                        autoFocus
+                                                        className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg text-sm"
+                                                        maxLength={15}
+                                                    />
+                                                ) : (
+                                                    <button
+                                                        onClick={() => setIsEditingName(true)}
+                                                        className="w-full px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium text-left transition"
+                                                    >
+                                                        {trainerName}
+                                                    </button>
+                                                )}
+                                            </div>
+                                            
+                                            <div>
+                                                <label className="block text-xs font-semibold text-gray-600 mb-2">BADGE COLOR</label>
+                                                <div className="grid grid-cols-4 gap-2">
+                                                    {PROFILE_COLORS.map((color) => (
+                                                        <button
+                                                            key={color.hex}
+                                                            onClick={() => {
+                                                                handleColorChange(color.hex);
+                                                            }}
+                                                            className={`w-full aspect-square rounded-lg transition-all ${
+                                                                profileColor === color.hex 
+                                                                    ? 'ring-4 ring-offset-2 ring-gray-800 scale-110' 
+                                                                    : 'hover:scale-105'
+                                                            }`}
+                                                            style={{ backgroundColor: color.hex }}
+                                                            title={color.name}
+                                                        />
+                                                    ))}
+                                                </div>
+                                            </div>
+                                            
+                                            <button
+                                                onClick={() => setShowProfileMenu(false)}
+                                                className="w-full mt-4 px-3 py-2 bg-gray-800 hover:bg-gray-900 text-white rounded-lg text-sm font-medium transition"
+                                            >
+                                                Close
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
                             
                             <div className="space-y-4">
                                 <div>
@@ -1790,6 +2080,170 @@
                                     className="w-full py-3 bg-black hover:bg-gray-900 text-white rounded-lg font-medium transition">
                                     Share your PokeRun
                                 </button>
+                            </div>
+                        )}
+                        </>
+                        )}
+
+                        {/* Bill's PC View */}
+                        {currentView === 'pc' && (
+                            <div className="bg-white rounded-2xl shadow-lg p-6 mb-6">
+                                <div className="flex justify-between items-center mb-4">
+                                    <h2 className="text-xl font-bold text-gray-800">💾 Bill's PC</h2>
+                                    <button
+                                        onClick={() => {
+                                            setCurrentView('main');
+                                            setSelectingForSlot(null);
+                                        }}
+                                        className="px-4 py-2 bg-gray-800 hover:bg-gray-900 text-white rounded-lg text-sm font-medium transition"
+                                    >
+                                        Back
+                                    </button>
+                                </div>
+
+                                {pokemonPC.length === 0 ? (
+                                    <div className="text-center py-12 text-gray-500">
+                                        <div className="text-4xl mb-2">📭</div>
+                                        <div>No Pokémon yet!</div>
+                                        <div className="text-sm">Complete runs to catch Pokémon</div>
+                                    </div>
+                                ) : (
+                                    <>
+                                        {selectingForSlot !== null && (
+                                            <div className="bg-blue-50 border-2 border-blue-300 rounded-lg p-3 mb-4">
+                                                <div className="text-sm font-semibold text-blue-800">
+                                                    Select a Pokémon for Starter Slot {selectingForSlot + 1}
+                                                </div>
+                                            </div>
+                                        )}
+                                        <div className="grid grid-cols-2 gap-3 max-h-96 overflow-y-auto">
+                                            {(Array.isArray(pokemonPC) ? pokemonPC : []).map((pokemon) => (
+                                                <div
+                                                    key={pokemon.id}
+                                                    className="relative bg-gray-50 rounded-lg p-3 border-2 border-gray-200"
+                                                    onTouchStart={() => handleLongPressStart(pokemon.id)}
+                                                    onTouchEnd={handleLongPressEnd}
+                                                    onMouseDown={() => handleLongPressStart(pokemon.id)}
+                                                    onMouseUp={handleLongPressEnd}
+                                                    onMouseLeave={handleLongPressEnd}
+                                                    onClick={() => {
+                                                        if (selectingForSlot !== null) {
+                                                            addToStarters(selectingForSlot, pokemon);
+                                                        }
+                                                    }}
+                                                >
+                                                    <img 
+                                                        src={pokemon.spriteUrl} 
+                                                        alt={pokemon.pokemonName}
+                                                        className="w-20 h-20 mx-auto"
+                                                    />
+                                                    <div className="text-center text-xs font-semibold capitalize mt-1">
+                                                        {pokemon.pokemonName}
+                                                    </div>
+                                                    <div className="flex gap-1 justify-center mt-1">
+                                                        <span className={`px-2 py-0.5 rounded text-xs font-bold ${
+                                                            pokemon.rarity === 'legendary' ? 'bg-yellow-400' :
+                                                            pokemon.rarity === 'epic' ? 'bg-purple-500 text-white' :
+                                                            pokemon.rarity === 'rare' ? 'bg-blue-500 text-white' :
+                                                            pokemon.rarity === 'uncommon' ? 'bg-green-500 text-white' :
+                                                            'bg-gray-400 text-white'
+                                                        }`}>
+                                                            {pokemon.rarity.toUpperCase()}
+                                                        </span>
+                                                        {pokemon.isShiny && (
+                                                            <span className="px-2 py-0.5 bg-yellow-300 rounded text-xs font-bold">
+                                                                ✨
+                                                            </span>
+                                                        )}
+                                                    </div>
+
+                                                    {showDeletePrompt === pokemon.id && (
+                                                        <div className="absolute inset-0 bg-black bg-opacity-90 rounded-lg flex flex-col items-center justify-center gap-2">
+                                                            <div className="text-white text-sm font-bold">Delete?</div>
+                                                            <div className="flex gap-2">
+                                                                <button
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        deletePokemonFromPC(pokemon.id);
+                                                                    }}
+                                                                    className="px-3 py-1 bg-red-500 hover:bg-red-600 text-white rounded font-bold text-xs"
+                                                                >
+                                                                    Yes
+                                                                </button>
+                                                                <button
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        setShowDeletePrompt(null);
+                                                                    }}
+                                                                    className="px-3 py-1 bg-gray-500 hover:bg-gray-600 text-white rounded font-bold text-xs"
+                                                                >
+                                                                    No
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Starters View */}
+                        {currentView === 'starters' && (
+                            <div className="bg-white rounded-2xl shadow-lg p-6 mb-6">
+                                <div className="flex justify-between items-center mb-4">
+                                    <h2 className="text-xl font-bold text-gray-800">⭐ Starter Team</h2>
+                                    <button
+                                        onClick={() => setCurrentView('main')}
+                                        className="px-4 py-2 bg-gray-800 hover:bg-gray-900 text-white rounded-lg text-sm font-medium transition"
+                                    >
+                                        Back
+                                    </button>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3">
+                                    {(Array.isArray(starterTeam) ? starterTeam : [null, null, null, null, null, null]).map((starter, index) => (
+                                        <div
+                                            key={index}
+                                            className="relative aspect-square bg-gray-50 rounded-lg border-2 border-gray-300 flex items-center justify-center overflow-hidden"
+                                        >
+                                            {starter ? (
+                                                <div className="relative w-full h-full">
+                                                    <img 
+                                                        src={starter.spriteUrl} 
+                                                        alt={starter.pokemonName}
+                                                        className="w-full h-full object-contain p-2"
+                                                    />
+                                                    <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black to-transparent p-2">
+                                                        <div className="text-white text-xs font-semibold capitalize text-center">
+                                                            {starter.pokemonName}
+                                                        </div>
+                                                    </div>
+                                                    <button
+                                                        onClick={() => removeFromStarters(index)}
+                                                        className="absolute top-1 right-1 w-6 h-6 bg-red-500 hover:bg-red-600 text-white rounded-full text-xs font-bold"
+                                                    >
+                                                        ×
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                <button
+                                                    onClick={() => {
+                                                        setSelectingForSlot(index);
+                                                        setCurrentView('pc');
+                                                    }}
+                                                    className="w-full h-full flex flex-col items-center justify-center hover:bg-gray-100 transition"
+                                                >
+                                                    <div className="text-4xl opacity-30 mb-2">⚪</div>
+                                                    <div className="text-2xl font-bold text-gray-400">+</div>
+                                                    <div className="text-xs text-gray-400 mt-1">Add Pokémon</div>
+                                                </button>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
                         )}
                     </div>
