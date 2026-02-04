@@ -351,11 +351,11 @@
             };
 
             const RARITY_TIERS = {
-                common: { name: 'Common', minGen: 1, maxGen: 2, color: 'gray', chance: 0.50 },
-                uncommon: { name: 'Uncommon', minGen: 3, maxGen: 4, color: 'green', chance: 0.30 },
-                rare: { name: 'Rare', minGen: 5, maxGen: 6, color: 'blue', chance: 0.15 },
-                epic: { name: 'Epic', minGen: 7, maxGen: 8, color: 'purple', chance: 0.04 },
-                legendary: { name: 'Legendary', minGen: 1, maxGen: 9, legendary: true, color: 'orange', chance: 0.01 }
+                common: { name: 'Common', minId: 1, maxId: 251, color: 'gray', chance: 0.50 },
+                uncommon: { name: 'Uncommon', minId: 252, maxId: 493, color: 'green', chance: 0.30 },
+                rare: { name: 'Rare', minId: 494, maxId: 721, color: 'blue', chance: 0.15 },
+                epic: { name: 'Epic', minId: 722, maxId: 898, color: 'purple', chance: 0.04 },
+                legendary: { name: 'Legendary', minId: 1, maxId: 898, legendary: true, color: 'orange', chance: 0.01 }
             };
 
             const calculateRarityChances = (intensity, streak, newPRs) => {
@@ -400,10 +400,8 @@
                 if (rarity.tier === 'legendary') {
                     pokemonId = LEGENDARY_IDS[Math.floor(Math.random() * LEGENDARY_IDS.length)];
                 } else {
-                    // Pick from generation range based on rarity
-                    const genStart = (rarity.minGen - 1) * 151 + 1;
-                    const genEnd = Math.min(rarity.maxGen * 151, 898); // Cap at gen 8 max
-                    pokemonId = Math.floor(Math.random() * (genEnd - genStart + 1)) + genStart;
+                    // Pick from ID range based on rarity (using actual Pokemon ID boundaries)
+                    pokemonId = Math.floor(Math.random() * (rarity.maxId - rarity.minId + 1)) + rarity.minId;
                 }
                 
                 const baseShinyChance = 1/4096;
@@ -431,6 +429,11 @@
                     const rarity = rollRarity(chances);
                     const { pokemonId, isShiny, shinyChance } = await getPokemonByRarity(rarity);
                     
+                    // ✅ Check if the Pokemon is actually a legendary (override rarity tier if needed)
+                    const isActuallyLegendary = LEGENDARY_IDS.includes(pokemonId);
+                    const actualRarity = isActuallyLegendary ? 'legendary' : rarity.tier;
+                    const actualRarityColor = isActuallyLegendary ? 'orange' : rarity.color;
+                    
                     // ✅ Fetch Pokemon data and capture the returned data
                     const fetchedPokemonData = await fetchPokemonData(pokemonId);
                     
@@ -440,9 +443,9 @@
                         distance: distanceNum,
                         duration: durationSeconds,
                         intensity,
-                        rarity: rarity.tier,
+                        rarity: actualRarity, // ✅ Use corrected rarity
                         pokemonId,
-                        pokemonName: fetchedPokemonData?.name || 'unknown', // ✅ Store name in run data
+                        pokemonName: fetchedPokemonData?.name || 'unknown',
                         isShiny,
                         newPRs: Object.keys(newPRs).filter(key => newPRs[key])
                     };
@@ -450,11 +453,11 @@
                     await saveRunHistory(newRun);
                     await updatePersonalRecords(paceSeconds, distanceNum, durationSeconds);
                     
-                    const isLegendary = rarity.tier === 'legendary';
+                    const isLegendary = actualRarity === 'legendary'; // ✅ Use corrected rarity
                     
                     setRarityRoll({
-                        tier: rarity.tier,
-                        color: rarity.color,
+                        tier: actualRarity, // ✅ Use corrected rarity
+                        color: actualRarityColor, // ✅ Use corrected color
                         intensity,
                         multiplier,
                         chances,
@@ -531,7 +534,7 @@
                             ctx.font = 'bold 48px Arial';
                             ctx.textAlign = 'center';
                             const pokemonName = pokemonData.name.toUpperCase();
-                            ctx.fillText(pokemonName, width / 2, spriteY - 40);
+                            ctx.fillText(pokemonName, width / 2, spriteY - 60);
                         }
                         
                         ctx.imageSmoothingEnabled = false;
@@ -547,11 +550,11 @@
                         
                         ctx.drawImage(img, spriteX, spriteY, spriteWidth, spriteHeight);
                         
-                        // Draw rarity icon (TCG style)
+                        // Draw rarity icon (TCG style) - moved up for better spacing
                         if (rarityRoll) {
                             const iconSize = 60;
                             const iconX = width / 2 - iconSize / 2;
-                            const iconY = spriteY - 120;
+                            const iconY = spriteY - 180; // Increased gap from -150 to -180
                             
                             drawRarityIcon(ctx, iconX, iconY, iconSize, rarityRoll.tier);
                         }
@@ -670,9 +673,9 @@
 
             const drawStatsBox = (ctx, width, height) => {
                 const boxWidth = 800;
-                const boxHeight = 240;
+                const boxHeight = 250;
                 const boxX = (width - boxWidth) / 2;
-                const boxY = height - 320;
+                const boxY = height - 330;
 
                 ctx.fillStyle = '#000000';
                 ctx.fillRect(boxX - 8, boxY - 8, boxWidth + 16, boxHeight + 16);
@@ -682,16 +685,16 @@
                 ctx.fillRect(boxX, boxY, boxWidth, boxHeight);
 
                 ctx.fillStyle = '#000000';
-                ctx.font = 'bold 52px Arial';
+                ctx.font = 'bold 50px Arial';
                 ctx.textAlign = 'left';
                 
-                const padding = 50;
-                let textY = boxY + padding + 45;
+                const padding = 60;
+                let textY = boxY + 70;
                 
                 ctx.fillText(`Avg Pace ${pace} min/mi`, boxX + padding, textY);
-                textY += 75;
+                textY += 80;
                 ctx.fillText(`Distance ${distance} mi`, boxX + padding, textY);
-                textY += 75;
+                textY += 80;
                 ctx.fillText(`Duration ${duration}`, boxX + padding, textY);
             };
 
@@ -795,7 +798,20 @@
                             <div className="bg-white rounded-2xl shadow-lg p-6">
                                 <div className="flex justify-between items-center mb-4">
                                     <h2 className="text-xl font-bold capitalize">{pokemonData.name}</h2>
-                                    {isShiny && <span className="px-3 py-1 bg-yellow-400 text-white rounded-lg font-bold text-sm">✨ SHINY</span>}
+                                    <div className="flex gap-2">
+                                        {rarityRoll && (
+                                            <span className={`px-3 py-1 rounded-lg font-bold text-sm ${
+                                                rarityRoll.tier === 'legendary' ? 'bg-gradient-to-r from-yellow-400 to-orange-400 text-white' :
+                                                rarityRoll.tier === 'epic' ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white' :
+                                                rarityRoll.tier === 'rare' ? 'bg-blue-500 text-white' :
+                                                rarityRoll.tier === 'uncommon' ? 'bg-green-500 text-white' :
+                                                'bg-gray-500 text-white'
+                                            }`}>
+                                                {rarityRoll.tier.toUpperCase()}
+                                            </span>
+                                        )}
+                                        {isShiny && <span className="px-3 py-1 bg-yellow-400 text-white rounded-lg font-bold text-sm">✨ SHINY</span>}
+                                    </div>
                                 </div>
                                 
                                 <div className="bg-gray-100 rounded-lg p-4 mb-4">
