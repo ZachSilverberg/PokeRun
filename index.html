@@ -1333,7 +1333,10 @@
                     isShiny: pokemonData.isShiny,
                     rarity: pokemonData.rarity,
                     timestamp: new Date().toISOString(),
-                    spriteUrl: pokemonData.spriteUrl
+                    spriteUrl: pokemonData.spriteUrl,
+                    pace: pokemonData.pace,
+                    distance: pokemonData.distance,
+                    duration: pokemonData.duration
                 };
                 
                 const updatedPC = [pcEntry, ...pokemonPC]; // Add to beginning (newest first)
@@ -1620,13 +1623,16 @@
                     await saveRunHistory(newRun);
                     await updatePersonalRecords(paceSeconds, distanceNum, durationSeconds);
                     
-                    // Add to PC
+                    // Add to PC with run stats
                     await addPokemonToPC({
                         pokemonId,
                         name: fetchedPokemonData?.name || 'unknown',
                         isShiny,
                         rarity: actualRarity,
-                        spriteUrl: isShiny ? fetchedPokemonData?.sprites.front_shiny : fetchedPokemonData?.sprites.front_default
+                        spriteUrl: isShiny ? fetchedPokemonData?.sprites.front_shiny : fetchedPokemonData?.sprites.front_default,
+                        pace: pace,
+                        distance: distance,
+                        duration: duration
                     });
                     
                     const isLegendary = actualRarity === 'legendary';
@@ -1909,13 +1915,15 @@
 
                         {/* Streak & Runs Stats */}
                         <div className="grid grid-cols-2 gap-3 mb-3">
-                            <div className="bg-gradient-to-br from-orange-500 to-red-500 rounded-xl p-3 text-white shadow-lg">
-                                <div className="text-xs font-semibold mb-1">🔥 Streak</div>
-                                <div className="text-2xl font-bold">{currentStreak.days}d</div>
+                            <div className="flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm text-white shadow-md bg-gradient-to-br from-gray-800 to-gray-900">
+                                <span>🔥</span>
+                                <span>Streak</span>
+                                <span className="ml-auto text-lg">{currentStreak.days}d</span>
                             </div>
-                            <div className="bg-gradient-to-br from-purple-500 to-pink-500 rounded-xl p-3 text-white shadow-lg">
-                                <div className="text-xs font-semibold mb-1">🏃 Runs</div>
-                                <div className="text-2xl font-bold">{runHistory.length}</div>
+                            <div className="flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm text-white shadow-md bg-gradient-to-br from-gray-800 to-gray-900">
+                                <span>🏃</span>
+                                <span>Runs</span>
+                                <span className="ml-auto text-lg">{runHistory.length}</span>
                             </div>
                         </div>
 
@@ -2132,14 +2140,19 @@
                                                         }
                                                     }}
                                                 >
+                                                    <div className="text-center text-xs font-semibold capitalize">
+                                                        {pokemon.pokemonName}
+                                                    </div>
+                                                    <div className="flex justify-around text-xs text-gray-600 font-medium my-1">
+                                                        <span>{pokemon.pace || '--'}</span>
+                                                        <span>{pokemon.distance || '--'}mi</span>
+                                                        <span>{pokemon.duration || '--'}</span>
+                                                    </div>
                                                     <img 
                                                         src={pokemon.spriteUrl} 
                                                         alt={pokemon.pokemonName}
                                                         className="w-20 h-20 mx-auto"
                                                     />
-                                                    <div className="text-center text-xs font-semibold capitalize mt-1">
-                                                        {pokemon.pokemonName}
-                                                    </div>
                                                     <div className="flex gap-1 justify-center mt-1">
                                                         <span className={`px-2 py-0.5 rounded text-xs font-bold ${
                                                             pokemon.rarity === 'legendary' ? 'bg-yellow-400' :
@@ -2211,14 +2224,19 @@
                                         >
                                             {starter ? (
                                                 <>
+                                                    <div className="text-center text-xs font-semibold capitalize">
+                                                        {starter.pokemonName}
+                                                    </div>
+                                                    <div className="flex justify-around text-xs text-gray-600 font-medium my-1">
+                                                        <span>{starter.pace || '--'}</span>
+                                                        <span>{starter.distance || '--'}mi</span>
+                                                        <span>{starter.duration || '--'}</span>
+                                                    </div>
                                                     <img 
                                                         src={starter.spriteUrl} 
                                                         alt={starter.pokemonName}
                                                         className="w-20 h-20 mx-auto"
                                                     />
-                                                    <div className="text-center text-xs font-semibold capitalize mt-1">
-                                                        {starter.pokemonName}
-                                                    </div>
                                                     <div className="flex gap-1 justify-center mt-1">
                                                         <span className={`px-2 py-0.5 rounded text-xs font-bold ${
                                                             starter.rarity === 'legendary' ? 'bg-yellow-400' :
