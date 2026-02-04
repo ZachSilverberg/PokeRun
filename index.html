@@ -350,14 +350,6 @@
                 return Math.min(100, intensity);
             };
 
-// Complete Pokemon Rarity Database - All 898 Pokemon
-// Generated manually based on:
-// - Evolution stages (Stage 3 = Rare, Stage 2 = Uncommon, Stage 1 = Common)
-// - Legendary/Mythical status
-// - Pseudo-legendary status
-// - Game rarity and catch rates
-// - Starter Pokemon classification
-
 const POKEMON_RARITY_MAP = {
     // GEN 1 (1-151)
     1: 'common',     // Bulbasaur (starter base)
@@ -1274,7 +1266,6 @@ const POKEMON_RARITY_MAP = {
     898: 'legendary'  // Calyrex
 };
 
-// Helper function to get rarity
 function getPokemonRarity(id) {
     return POKEMON_RARITY_MAP[id] || 'common';
 }
