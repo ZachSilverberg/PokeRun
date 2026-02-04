@@ -1,1772 +1,778 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="theme-color" content="#8B5CF6">
-    <title>PokéRun - Legendary Journey Tracker</title>
-    
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
-    
-    <style>
-        /* Mobile optimizations */
-        * {
-            -webkit-tap-highlight-color: transparent;
-            touch-action: manipulation;
-        }
-        
-        body {
-            overscroll-behavior: none;
-            -webkit-font-smoothing: antialiased;
-        }
-        
-        input {
-            font-size: 16px !important; /* Prevents iOS zoom */
-        }
-        
-        button {
-            cursor: pointer;
-            -webkit-touch-callout: none;
-        }
-        
-        /* PWA loading screen */
-        #loading {
-            position: fixed;
-            inset: 0;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 9999;
-            transition: opacity 0.3s;
-        }
-        
-        #loading.hidden {
-            opacity: 0;
-            pointer-events: none;
-        }
-        
-        .loader {
-            width: 50px;
-            height: 50px;
-            border: 4px solid rgba(255,255,255,0.3);
-            border-top-color: white;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-        }
-        
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="theme-color" content="#8B5CF6" />
+  <title>PokéRun - Legendary Journey Tracker</title>
+
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <style>
+    * { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+    body { overscroll-behavior: none; -webkit-font-smoothing: antialiased; }
+    input { font-size: 16px !important; } /* Prevents iOS zoom */
+    button { cursor: pointer; -webkit-touch-callout: none; }
+
+    #loading {
+      position: fixed;
+      inset: 0;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+      transition: opacity 0.3s;
+    }
+    #loading.hidden { opacity: 0; pointer-events: none; }
+    .loader {
+      width: 50px;
+      height: 50px;
+      border: 4px solid rgba(255,255,255,0.3);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
 </head>
+
 <body>
-    <div id="loading">
-        <div class="loader"></div>
-    </div>
-    <div id="root"></div>
+  <div id="loading"><div class="loader"></div></div>
+  <div id="root"></div>
 
-    <script type="text/babel">
-        console.log('Script starting...');
-        const { useState, useRef, useEffect } = React;
-        console.log('React loaded:', !!React);
+  <script type="text/babel">
+    console.log('Script starting...');
+    const { useState, useRef, useEffect } = React;
 
-        // Storage API
-        if (!window.storage) {
-            window.storage = {
-                async get(key) {
-                    const value = localStorage.getItem(key);
-                    return value ? { key, value, shared: false } : null;
-                },
-                async set(key, value) {
-                    localStorage.setItem(key, value);
-                    return { key, value, shared: false };
-                }
-            };
+    // Storage API shim
+    if (!window.storage) {
+      window.storage = {
+        async get(key) {
+          const value = localStorage.getItem(key);
+          return value ? { key, value, shared: false } : null;
+        },
+        async set(key, value) {
+          localStorage.setItem(key, value);
+          return { key, value, shared: false };
         }
+      };
+    }
 
-        const PokemonRunTracker = () => {
-            const [pace, setPace] = useState('');
-            const [distance, setDistance] = useState('');
-            const [duration, setDuration] = useState('');
-            const [pokemonData, setPokemonData] = useState(null);
-            const [spriteVariant, setSpriteVariant] = useState('default');
-            const [availableVariants, setAvailableVariants] = useState([]);
-            const [isShiny, setIsShiny] = useState(false);
-            
-            // Auto-calculate third value ONLY when two are entered and third is empty
-            const isFieldEmpty = (value) => {
-                return !value || value === '' || value === '0' || value === '0:00' || value === '0.0';
-            };
-            
-            const handlePaceChange = (value) => {
-                setPace(value);
-                
-                // Only calculate duration if it's currently empty
-                if (distance && value && isFieldEmpty(duration)) {
-                    const [min, sec] = value.split(':').map(Number);
-                    if (!isNaN(min) && !isNaN(sec)) {
-                        const paceSeconds = min * 60 + (sec || 0);
-                        const dist = parseFloat(distance);
-                        if (!isNaN(dist) && dist > 0) {
-                            const totalSeconds = paceSeconds * dist;
-                            const durMin = Math.floor(totalSeconds / 60);
-                            const durSec = Math.round(totalSeconds % 60);
-                            setDuration(`${durMin}:${durSec.toString().padStart(2, '0')}`);
-                        }
-                    }
-                }
-            };
+    // Legendary pool (kept from your version)
+    const LEGENDARY_IDS = [
+      144,145,146,150,151,243,244,245,249,250,377,378,379,380,381,382,383,384,
+      480,481,482,483,484,485,486,487,488,638,639,640,641,642,643,644,645,646,
+      716,717,718,785,786,787,788,789,790,791,792,800,801,802,807,808,809,
+      888,889,890,891,892,893,894,895,896,897,898
+    ];
 
-            const handleDistanceChange = (value) => {
-                setDistance(value);
-                const dist = parseFloat(value);
-                
-                // Priority 1: If pace is empty but we have duration, calculate pace
-                if (isFieldEmpty(pace) && !isFieldEmpty(duration) && !isNaN(dist) && dist > 0) {
-                    const [durMin, durSec] = duration.split(':').map(Number);
-                    if (!isNaN(durMin) && !isNaN(durSec)) {
-                        const totalSeconds = durMin * 60 + (durSec || 0);
-                        const paceSeconds = totalSeconds / dist;
-                        const paceMin = Math.floor(paceSeconds / 60);
-                        const paceSec = Math.round(paceSeconds % 60);
-                        setPace(`${paceMin}:${paceSec.toString().padStart(2, '0')}`);
-                    }
-                }
-                // Priority 2: If duration is empty but we have pace, calculate duration
-                else if (isFieldEmpty(duration) && !isFieldEmpty(pace) && !isNaN(dist) && dist > 0) {
-                    const [paceMin, paceSec] = pace.split(':').map(Number);
-                    if (!isNaN(paceMin) && !isNaN(paceSec)) {
-                        const paceSeconds = paceMin * 60 + (paceSec || 0);
-                        const totalSeconds = paceSeconds * dist;
-                        const durMin = Math.floor(totalSeconds / 60);
-                        const durSec = Math.round(totalSeconds % 60);
-                        setDuration(`${durMin}:${durSec.toString().padStart(2, '0')}`);
-                    }
-                }
-            };
+    // Single rarity tier config (no redeclare)
+    const RARITY_TIERS = {
+      common:    { name: 'Common',    color: 'gray',   chance: 0.50, minId: 1,   maxId: 251 },
+      uncommon:  { name: 'Uncommon',  color: 'green',  chance: 0.30, minId: 252, maxId: 493 },
+      rare:      { name: 'Rare',      color: 'blue',   chance: 0.15, minId: 494, maxId: 721 },
+      epic:      { name: 'Epic',      color: 'purple', chance: 0.04, minId: 722, maxId: 898 },
+      legendary: { name: 'Legendary', color: 'orange', chance: 0.01, legendary: true }
+    };
 
-            const handleDurationChange = (value) => {
-                setDuration(value);
-                
-                // Only calculate pace if it's currently empty
-                if (distance && value && isFieldEmpty(pace)) {
-                    const [min, sec] = value.split(':').map(Number);
-                    if (!isNaN(min) && !isNaN(sec)) {
-                        const totalSeconds = min * 60 + (sec || 0);
-                        const dist = parseFloat(distance);
-                        if (!isNaN(dist) && dist > 0) {
-                            const paceSeconds = totalSeconds / dist;
-                            const paceMin = Math.floor(paceSeconds / 60);
-                            const paceSec = Math.round(paceSeconds % 60);
-                            setPace(`${paceMin}:${paceSec.toString().padStart(2, '0')}`);
-                        }
-                    }
-                }
-            };
-            
-            const [runHistory, setRunHistory] = useState([]);
-            const [currentStreak, setCurrentStreak] = useState({ days: 0, weeks: 0 });
-            const [personalRecords, setPersonalRecords] = useState({
-                fastestPace: null,
-                longestDistance: null,
-                longestDuration: null
-            });
-            const [rarityRoll, setRarityRoll] = useState(null);
-            const [isNewPR, setIsNewPR] = useState({});
-            
-            const [currentJourney, setCurrentJourney] = useState(null);
-            const [journeyHistory, setJourneyHistory] = useState([]);
-            const [showJourneyModal, setShowJourneyModal] = useState(false);
-            const [completedJourney, setCompletedJourney] = useState(null);
-            const [isLoading, setIsLoading] = useState(false);
-            
-            const canvasRef = useRef(null);
-            const journeyCanvasRef = useRef(null);
+    const PokemonRunTracker = () => {
+      const [pace, setPace] = useState('');
+      const [distance, setDistance] = useState('');
+      const [duration, setDuration] = useState('');
 
-            useEffect(() => {
-                loadRunHistory();
-                // Hide loading screen
-                setTimeout(() => {
-                    document.getElementById('loading').classList.add('hidden');
-                }, 500);
-            }, []);
+      const [pokemonData, setPokemonData] = useState(null);
+      const [spriteVariant, setSpriteVariant] = useState('front_default');
+      const [availableVariants, setAvailableVariants] = useState([]);
+      const [isShiny, setIsShiny] = useState(false);
 
-            const loadRunHistory = async () => {
-                try {
-                    const historyResult = await window.storage.get('run-history');
-                    const streakResult = await window.storage.get('current-streak');
-                    const prResult = await window.storage.get('personal-records');
-                    const journeyResult = await window.storage.get('current-journey');
-                    const journeyHistoryResult = await window.storage.get('journey-history');
-                    
-                    if (historyResult?.value) setRunHistory(JSON.parse(historyResult.value));
-                    if (streakResult?.value) setCurrentStreak(JSON.parse(streakResult.value));
-                    if (prResult?.value) setPersonalRecords(JSON.parse(prResult.value));
-                    if (journeyResult?.value) setCurrentJourney(JSON.parse(journeyResult.value));
-                    if (journeyHistoryResult?.value) setJourneyHistory(JSON.parse(journeyHistoryResult.value));
-                } catch (error) {
-                    console.log('Starting fresh');
-                }
-            };
+      const [runHistory, setRunHistory] = useState([]);
+      const [currentStreak, setCurrentStreak] = useState({ days: 0, weeks: 0 });
+      const [personalRecords, setPersonalRecords] = useState({
+        fastestPace: null,
+        longestDistance: null,
+        longestDuration: null
+      });
+      const [rarityRoll, setRarityRoll] = useState(null);
+      const [isNewPR, setIsNewPR] = useState({});
+      const [isLoading, setIsLoading] = useState(false);
 
-            const saveRunHistory = async (newRun) => {
-                const updatedHistory = [...runHistory, newRun];
-                await window.storage.set('run-history', JSON.stringify(updatedHistory));
-                setRunHistory(updatedHistory);
-            };
+      const canvasRef = useRef(null);
 
-            const updateStreak = async () => {
-                const today = new Date().toDateString();
-                const lastRun = runHistory.length > 0 ? new Date(runHistory[runHistory.length - 1].date).toDateString() : null;
-                
-                let newStreak = { ...currentStreak };
-                
-                if (lastRun === today) return currentStreak;
-                
-                const yesterday = new Date();
-                yesterday.setDate(yesterday.getDate() - 1);
-                const yesterdayStr = yesterday.toDateString();
-                
-                if (lastRun === yesterdayStr || runHistory.length === 0) {
-                    newStreak.days = currentStreak.days + 1;
-                    if (newStreak.days % 7 === 0) {
-                        newStreak.weeks = Math.floor(newStreak.days / 7);
-                    }
-                } else {
-                    newStreak = { days: 1, weeks: 0 };
-                }
-                
-                await window.storage.set('current-streak', JSON.stringify(newStreak));
-                setCurrentStreak(newStreak);
-                return newStreak;
-            };
+      // --- helpers (pace/duration auto-calc) ---
+      const isFieldEmpty = (value) => {
+        return !value || value === '' || value === '0' || value === '0:00' || value === '0.0';
+      };
 
-            const checkForPRs = (paceSeconds, distanceNum, durationSeconds) => {
-                const newPRs = {};
-                if (!personalRecords.fastestPace || paceSeconds < personalRecords.fastestPace) {
-                    newPRs.fastestPace = true;
-                }
-                if (!personalRecords.longestDistance || distanceNum > personalRecords.longestDistance) {
-                    newPRs.longestDistance = true;
-                }
-                if (!personalRecords.longestDuration || durationSeconds > personalRecords.longestDuration) {
-                    newPRs.longestDuration = true;
-                }
-                setIsNewPR(newPRs);
-                return newPRs;
-            };
+      const parseTimeToSeconds = (mmss) => {
+        const parts = String(mmss || '').split(':');
+        if (parts.length < 1) return null;
+        const m = Number(parts[0]);
+        const s = Number(parts[1] ?? 0);
+        if (!Number.isFinite(m) || !Number.isFinite(s) || m < 0 || s < 0 || s >= 60) return null;
+        return (m * 60) + s;
+      };
 
-            const updatePersonalRecords = async (paceSeconds, distanceNum, durationSeconds) => {
-                const newPRs = {
-                    fastestPace: !personalRecords.fastestPace ? paceSeconds : Math.min(personalRecords.fastestPace, paceSeconds),
-                    longestDistance: !personalRecords.longestDistance ? distanceNum : Math.max(personalRecords.longestDistance, distanceNum),
-                    longestDuration: !personalRecords.longestDuration ? durationSeconds : Math.max(personalRecords.longestDuration, durationSeconds)
-                };
-                await window.storage.set('personal-records', JSON.stringify(newPRs));
-                setPersonalRecords(newPRs);
-            };
+      const formatSecondsToMMSS = (totalSeconds) => {
+        const t = Math.max(0, Math.round(totalSeconds));
+        const m = Math.floor(t / 60);
+        const s = t % 60;
+        return `${m}:${String(s).padStart(2, '0')}`;
+      };
 
-            const updateJourney = async (runData, isLegendary = false, fetchedPokemonData = null) => {
-                let journey = currentJourney;
-                
-                if (!journey) {
-                    journey = {
-                        startDate: new Date().toISOString(),
-                        runs: [],
-                        totalDistance: 0,
-                        totalDuration: 0,
-                        bestPace: null,
-                        prCount: 0,
-                        maxStreak: 0,
-                        legendaryEncounters: 0
-                    };
-                }
-                
-                journey.runs.push(runData);
-                journey.totalDistance += runData.distance;
-                journey.totalDuration += runData.duration;
-                journey.bestPace = !journey.bestPace ? runData.pace : Math.min(journey.bestPace, runData.pace);
-                journey.prCount += runData.newPRs.length;
-                journey.maxStreak = Math.max(journey.maxStreak, currentStreak.days);
-                
-                if (isLegendary) {
-                    journey.legendaryEncounters++;
-                    journey.endDate = new Date().toISOString();
-                    // ✅ Use the passed pokemonName from runData instead of relying on state
-                    journey.legendary = {
-                        id: runData.pokemonId,
-                        name: runData.pokemonName || fetchedPokemonData?.name || 'unknown',
-                        isShiny: runData.isShiny
-                    };
-                    
-                    const completedJourneyData = { ...journey };
-                    setCompletedJourney(completedJourneyData);
-                    
-                    const updatedJourneyHistory = [...journeyHistory, completedJourneyData];
-                    await window.storage.set('journey-history', JSON.stringify(updatedJourneyHistory));
-                    setJourneyHistory(updatedJourneyHistory);
-                    
-                    await window.storage.set('current-journey', 'null');
-                    setCurrentJourney(null);
-                    setShowJourneyModal(true);
-                    
-                    return completedJourneyData;
-                } else {
-                    await window.storage.set('current-journey', JSON.stringify(journey));
-                    setCurrentJourney(journey);
-                    return journey;
-                }
-            };
+      const handlePaceChange = (value) => {
+        setPace(value);
 
-            const calculateIntensity = (paceSeconds, distanceNum, durationSeconds) => {
-                let intensity = 0;
-                if (paceSeconds < 360) intensity += 40;
-                else if (paceSeconds < 420) intensity += 35;
-                else if (paceSeconds < 480) intensity += 30;
-                else if (paceSeconds < 540) intensity += 25;
-                else if (paceSeconds < 600) intensity += 20;
-                else intensity += 15;
-                
-                if (distanceNum >= 26.2) intensity += 40;
-                else if (distanceNum >= 13.1) intensity += 35;
-                else if (distanceNum >= 10) intensity += 30;
-                else if (distanceNum >= 6.2) intensity += 25;
-                else if (distanceNum >= 3.1) intensity += 20;
-                else if (distanceNum >= 1) intensity += 15;
-                else intensity += 10;
-                
-                const minutes = durationSeconds / 60;
-                if (minutes >= 120) intensity += 20;
-                else if (minutes >= 60) intensity += 17;
-                else if (minutes >= 30) intensity += 14;
-                else intensity += 10;
-                
-                return Math.min(100, intensity);
-            };
-const POKEMON_RARITY_MAP = {
-    // GEN 1 (1-151)
-    1: 'common',     // Bulbasaur (starter base)
-    2: 'uncommon',   // Ivysaur (starter mid)
-    3: 'rare',       // Venusaur (starter final)
-    4: 'common',     // Charmander (starter base)
-    5: 'uncommon',   // Charmeleon (starter mid)
-    6: 'rare',       // Charizard (starter final)
-    7: 'common',     // Squirtle (starter base)
-    8: 'uncommon',   // Wartortle (starter mid)
-    9: 'rare',       // Blastoise (starter final)
-    10: 'common',    // Caterpie (very common, stage 1)
-    11: 'uncommon',  // Metapod (stage 2)
-    12: 'rare',      // Butterfree (stage 3)
-    13: 'common',    // Weedle (very common, stage 1)
-    14: 'uncommon',  // Kakuna (stage 2)
-    15: 'rare',      // Beedrill (stage 3)
-    16: 'common',    // Pidgey (very common, stage 1)
-    17: 'uncommon',  // Pidgeotto (stage 2)
-    18: 'rare',      // Pidgeot (stage 3)
-    19: 'common',    // Rattata (very common, stage 1)
-    20: 'uncommon',  // Raticate (stage 2)
-    21: 'common',    // Spearow (common, stage 1)
-    22: 'uncommon',  // Fearow (stage 2)
-    23: 'common',    // Ekans (common, stage 1)
-    24: 'uncommon',  // Arbok (stage 2)
-    25: 'common',    // Pikachu (common, stage 1)
-    26: 'uncommon',  // Raichu (stage 2)
-    27: 'common',    // Sandshrew (common, stage 1)
-    28: 'uncommon',  // Sandslash (stage 2)
-    29: 'common',    // Nidoran♀ (common, stage 1)
-    30: 'uncommon',  // Nidorina (stage 2)
-    31: 'rare',      // Nidoqueen (stage 3)
-    32: 'common',    // Nidoran♂ (common, stage 1)
-    33: 'uncommon',  // Nidorino (stage 2)
-    34: 'rare',      // Nidoking (stage 3)
-    35: 'common',    // Clefairy (common, stage 1)
-    36: 'uncommon',  // Clefable (stage 2)
-    37: 'common',    // Vulpix (uncommon in games, stage 1)
-    38: 'uncommon',  // Ninetales (stage 2)
-    39: 'common',    // Jigglypuff (common, stage 1)
-    40: 'uncommon',  // Wigglytuff (stage 2)
-    41: 'common',    // Zubat (very common, stage 1)
-    42: 'uncommon',  // Golbat (stage 2)
-    43: 'common',    // Oddish (common, stage 1)
-    44: 'uncommon',  // Gloom (stage 2)
-    45: 'rare',      // Vileplume (stage 3)
-    46: 'common',    // Paras (common, stage 1)
-    47: 'uncommon',  // Parasect (stage 2)
-    48: 'common',    // Venonat (common, stage 1)
-    49: 'uncommon',  // Venomoth (stage 2)
-    50: 'common',    // Diglett (common, stage 1)
-    51: 'uncommon',  // Dugtrio (stage 2)
-    52: 'common',    // Meowth (common, stage 1)
-    53: 'uncommon',  // Persian (stage 2)
-    54: 'common',    // Psyduck (common, stage 1)
-    55: 'uncommon',  // Golduck (stage 2)
-    56: 'common',    // Mankey (common, stage 1)
-    57: 'uncommon',  // Primeape (stage 2)
-    58: 'common',    // Growlithe (uncommon in games, stage 1)
-    59: 'uncommon',  // Arcanine (stage 2, low catch rate)
-    60: 'common',    // Poliwag (common, stage 1)
-    61: 'uncommon',  // Poliwhirl (stage 2)
-    62: 'rare',      // Poliwrath (stage 3)
-    63: 'common',    // Abra (stage 1, but teleports)
-    64: 'uncommon',  // Kadabra (stage 2)
-    65: 'rare',      // Alakazam (stage 3, trade evolution)
-    66: 'common',    // Machop (common, stage 1)
-    67: 'uncommon',  // Machoke (stage 2)
-    68: 'rare',      // Machamp (stage 3, trade evolution)
-    69: 'common',    // Bellsprout (common, stage 1)
-    70: 'uncommon',  // Weepinbell (stage 2)
-    71: 'rare',      // Victreebel (stage 3)
-    72: 'common',    // Tentacool (very common, stage 1)
-    73: 'uncommon',  // Tentacruel (stage 2)
-    74: 'common',    // Geodude (very common, stage 1)
-    75: 'uncommon',  // Graveler (stage 2)
-    76: 'rare',      // Golem (stage 3, trade evolution)
-    77: 'common',    // Ponyta (uncommon, stage 1)
-    78: 'uncommon',  // Rapidash (stage 2)
-    79: 'common',    // Slowpoke (common, stage 1)
-    80: 'uncommon',  // Slowbro (stage 2)
-    81: 'common',    // Magnemite (uncommon, stage 1)
-    82: 'uncommon',  // Magneton (stage 2)
-    83: 'uncommon',  // Farfetch'd (rare encounter, no evolution)
-    84: 'common',    // Doduo (uncommon, stage 1)
-    85: 'uncommon',  // Dodrio (stage 2)
-    86: 'common',    // Seel (uncommon, stage 1)
-    87: 'uncommon',  // Dewgong (stage 2)
-    88: 'common',    // Grimer (uncommon, stage 1)
-    89: 'uncommon',  // Muk (stage 2)
-    90: 'common',    // Shellder (uncommon, stage 1)
-    91: 'uncommon',  // Cloyster (stage 2)
-    92: 'common',    // Gastly (common, stage 1)
-    93: 'uncommon',  // Haunter (stage 2)
-    94: 'rare',      // Gengar (stage 3, trade evolution)
-    95: 'uncommon',  // Onix (uncommon encounter, stage 1 but evolves later)
-    96: 'common',    // Drowzee (common, stage 1)
-    97: 'uncommon',  // Hypno (stage 2)
-    98: 'common',    // Krabby (common, stage 1)
-    99: 'uncommon',  // Kingler (stage 2)
-    100: 'common',   // Voltorb (common, stage 1)
-    101: 'uncommon', // Electrode (stage 2)
-    102: 'common',   // Exeggcute (uncommon, stage 1)
-    103: 'uncommon', // Exeggutor (stage 2)
-    104: 'common',   // Cubone (uncommon, stage 1)
-    105: 'uncommon', // Marowak (stage 2)
-    106: 'uncommon', // Hitmonlee (rare, no evolution)
-    107: 'uncommon', // Hitmonchan (rare, no evolution)
-    108: 'uncommon', // Lickitung (rare, stage 1 but evolves later)
-    109: 'common',   // Koffing (common, stage 1)
-    110: 'uncommon', // Weezing (stage 2)
-    111: 'common',   // Rhyhorn (uncommon, stage 1)
-    112: 'uncommon', // Rhydon (stage 2)
-    113: 'uncommon', // Chansey (very rare encounter, stage 1)
-    114: 'uncommon', // Tangela (rare encounter, stage 1)
-    115: 'uncommon', // Kangaskhan (rare encounter, no evolution)
-    116: 'common',   // Horsea (common, stage 1)
-    117: 'uncommon', // Seadra (stage 2)
-    118: 'common',   // Goldeen (common, stage 1)
-    119: 'uncommon', // Seaking (stage 2)
-    120: 'common',   // Staryu (uncommon, stage 1)
-    121: 'uncommon', // Starmie (stage 2)
-    122: 'uncommon', // Mr. Mime (rare encounter, no evolution)
-    123: 'uncommon', // Scyther (rare encounter, stage 1)
-    124: 'uncommon', // Jynx (rare encounter, stage 1)
-    125: 'uncommon', // Electabuzz (rare encounter, stage 1)
-    126: 'uncommon', // Magmar (rare encounter, stage 1)
-    127: 'uncommon', // Pinsir (rare encounter, no evolution)
-    128: 'uncommon', // Tauros (rare encounter, no evolution)
-    129: 'common',   // Magikarp (very common, stage 1)
-    130: 'rare',     // Gyarados (stage 2, pseudo-legendary stats)
-    131: 'rare',     // Lapras (very rare encounter, no evolution)
-    132: 'uncommon', // Ditto (rare encounter, no evolution)
-    133: 'common',   // Eevee (uncommon, stage 1)
-    134: 'uncommon', // Vaporeon (stage 2)
-    135: 'uncommon', // Jolteon (stage 2)
-    136: 'uncommon', // Flareon (stage 2)
-    137: 'uncommon', // Porygon (rare, stage 1)
-    138: 'common',   // Omanyte (fossil, stage 1)
-    139: 'uncommon', // Omastar (stage 2)
-    140: 'common',   // Kabuto (fossil, stage 1)
-    141: 'uncommon', // Kabutops (stage 2)
-    142: 'rare',     // Aerodactyl (fossil, no evolution, rare)
-    143: 'rare',     // Snorlax (very rare encounter, stage 1)
-    144: 'legendary', // Articuno
-    145: 'legendary', // Zapdos
-    146: 'legendary', // Moltres
-    147: 'common',   // Dratini (rare but stage 1)
-    148: 'uncommon', // Dragonair (stage 2)
-    149: 'rare',     // Dragonite (pseudo-legendary)
-    150: 'legendary', // Mewtwo
-    151: 'legendary', // Mew
-    
-    // GEN 2 (152-251)
-    152: 'common',   // Chikorita (starter base)
-    153: 'uncommon', // Bayleef (starter mid)
-    154: 'rare',     // Meganium (starter final)
-    155: 'common',   // Cyndaquil (starter base)
-    156: 'uncommon', // Quilava (starter mid)
-    157: 'rare',     // Typhlosion (starter final)
-    158: 'common',   // Totodile (starter base)
-    159: 'uncommon', // Croconaw (starter mid)
-    160: 'rare',     // Feraligatr (starter final)
-    161: 'common',   // Sentret (very common, stage 1)
-    162: 'uncommon', // Furret (stage 2)
-    163: 'common',   // Hoothoot (very common, stage 1)
-    164: 'uncommon', // Noctowl (stage 2)
-    165: 'common',   // Ledyba (common, stage 1)
-    166: 'uncommon', // Ledian (stage 2)
-    167: 'common',   // Spinarak (common, stage 1)
-    168: 'uncommon', // Ariados (stage 2)
-    169: 'rare',     // Crobat (stage 3 from Golbat)
-    170: 'common',   // Chinchou (uncommon, stage 1)
-    171: 'uncommon', // Lanturn (stage 2)
-    172: 'common',   // Pichu (baby, stage 1)
-    173: 'common',   // Cleffa (baby, stage 1)
-    174: 'common',   // Igglybuff (baby, stage 1)
-    175: 'common',   // Togepi (rare but stage 1)
-    176: 'uncommon', // Togetic (stage 2)
-    177: 'common',   // Natu (uncommon, stage 1)
-    178: 'uncommon', // Xatu (stage 2)
-    179: 'common',   // Mareep (uncommon, stage 1)
-    180: 'uncommon', // Flaaffy (stage 2)
-    181: 'rare',     // Ampharos (stage 3)
-    182: 'rare',     // Bellossom (alternate stage 3 from Gloom)
-    183: 'common',   // Marill (common, stage 1)
-    184: 'uncommon', // Azumarill (stage 2)
-    185: 'uncommon', // Sudowoodo (rare encounter, no evolution)
-    186: 'rare',     // Politoed (alternate stage 3 from Poliwhirl)
-    187: 'common',   // Hoppip (common, stage 1)
-    188: 'uncommon', // Skiploom (stage 2)
-    189: 'rare',     // Jumpluff (stage 3)
-    190: 'common',   // Aipom (uncommon, stage 1)
-    191: 'common',   // Sunkern (common, stage 1)
-    192: 'uncommon', // Sunflora (stage 2)
-    193: 'common',   // Yanma (uncommon, stage 1)
-    194: 'common',   // Wooper (common, stage 1)
-    195: 'uncommon', // Quagsire (stage 2)
-    196: 'uncommon', // Espeon (Eevee evolution)
-    197: 'uncommon', // Umbreon (Eevee evolution)
-    198: 'common',   // Murkrow (uncommon, stage 1)
-    199: 'rare',     // Slowking (alternate stage 3)
-    200: 'uncommon', // Misdreavus (rare encounter, stage 1)
-    201: 'uncommon', // Unown (rare encounter, no evolution)
-    202: 'uncommon', // Wobbuffet (rare encounter, stage 2)
-    203: 'uncommon', // Girafarig (rare encounter, no evolution)
-    204: 'common',   // Pineco (uncommon, stage 1)
-    205: 'uncommon', // Forretress (stage 2)
-    206: 'uncommon', // Dunsparce (rare encounter, no evolution)
-    207: 'common',   // Gligar (uncommon, stage 1)
-    208: 'rare',     // Steelix (stage 3 from Onix, trade)
-    209: 'common',   // Snubbull (uncommon, stage 1)
-    210: 'uncommon', // Granbull (stage 2)
-    211: 'uncommon', // Qwilfish (rare encounter, no evolution)
-    212: 'rare',     // Scizor (stage 2 from Scyther, trade)
-    213: 'uncommon', // Shuckle (rare encounter, no evolution)
-    214: 'uncommon', // Heracross (rare encounter, no evolution)
-    215: 'common',   // Sneasel (uncommon, stage 1)
-    216: 'common',   // Teddiursa (uncommon, stage 1)
-    217: 'uncommon', // Ursaring (stage 2)
-    218: 'common',   // Slugma (uncommon, stage 1)
-    219: 'uncommon', // Magcargo (stage 2)
-    220: 'common',   // Swinub (common, stage 1)
-    221: 'uncommon', // Piloswine (stage 2)
-    222: 'uncommon', // Corsola (rare encounter, no evolution)
-    223: 'common',   // Remoraid (common, stage 1)
-    224: 'uncommon', // Octillery (stage 2)
-    225: 'uncommon', // Delibird (rare encounter, no evolution)
-    226: 'uncommon', // Mantine (rare encounter, stage 2)
-    227: 'uncommon', // Skarmory (rare encounter, no evolution)
-    228: 'common',   // Houndour (uncommon, stage 1)
-    229: 'uncommon', // Houndoom (stage 2)
-    230: 'rare',     // Kingdra (stage 3 from Seadra, trade)
-    231: 'common',   // Phanpy (uncommon, stage 1)
-    232: 'uncommon', // Donphan (stage 2)
-    233: 'uncommon', // Porygon2 (stage 2 from Porygon, trade)
-    234: 'uncommon', // Stantler (rare encounter, no evolution)
-    235: 'uncommon', // Smeargle (rare encounter, no evolution)
-    236: 'common',   // Tyrogue (rare but stage 1)
-    237: 'uncommon', // Hitmontop (stage 2)
-    238: 'common',   // Smoochum (baby, stage 1)
-    239: 'common',   // Elekid (baby, stage 1)
-    240: 'common',   // Magby (baby, stage 1)
-    241: 'uncommon', // Miltank (rare encounter, no evolution)
-    242: 'rare',     // Blissey (stage 3 from Chansey)
-    243: 'legendary', // Raikou
-    244: 'legendary', // Entei
-    245: 'legendary', // Suicune
-    246: 'common',   // Larvitar (rare but stage 1)
-    247: 'uncommon', // Pupitar (stage 2)
-    248: 'rare',     // Tyranitar (pseudo-legendary)
-    249: 'legendary', // Lugia
-    250: 'legendary', // Ho-Oh
-    251: 'legendary', // Celebi
-    
-    // GEN 3 (252-386)
-    252: 'common',   // Treecko (starter base)
-    253: 'uncommon', // Grovyle (starter mid)
-    254: 'rare',     // Sceptile (starter final)
-    255: 'common',   // Torchic (starter base)
-    256: 'uncommon', // Combusken (starter mid)
-    257: 'rare',     // Blaziken (starter final)
-    258: 'common',   // Mudkip (starter base)
-    259: 'uncommon', // Marshtomp (starter mid)
-    260: 'rare',     // Swampert (starter final)
-    261: 'common',   // Poochyena (very common, stage 1)
-    262: 'uncommon', // Mightyena (stage 2)
-    263: 'common',   // Zigzagoon (very common, stage 1)
-    264: 'uncommon', // Linoone (stage 2)
-    265: 'common',   // Wurmple (very common, stage 1)
-    266: 'uncommon', // Silcoon (stage 2)
-    267: 'rare',     // Beautifly (stage 3)
-    268: 'uncommon', // Cascoon (stage 2)
-    269: 'rare',     // Dustox (stage 3)
-    270: 'common',   // Lotad (common, stage 1)
-    271: 'uncommon', // Lombre (stage 2)
-    272: 'rare',     // Ludicolo (stage 3)
-    273: 'common',   // Seedot (common, stage 1)
-    274: 'uncommon', // Nuzleaf (stage 2)
-    275: 'rare',     // Shiftry (stage 3)
-    276: 'common',   // Taillow (common, stage 1)
-    277: 'uncommon', // Swellow (stage 2)
-    278: 'common',   // Wingull (very common, stage 1)
-    279: 'uncommon', // Pelipper (stage 2)
-    280: 'common',   // Ralts (uncommon, stage 1)
-    281: 'uncommon', // Kirlia (stage 2)
-    282: 'rare',     // Gardevoir (stage 3)
-    283: 'common',   // Surskit (common, stage 1)
-    284: 'uncommon', // Masquerain (stage 2)
-    285: 'common',   // Shroomish (common, stage 1)
-    286: 'uncommon', // Breloom (stage 2)
-    287: 'common',   // Slakoth (uncommon, stage 1)
-    288: 'uncommon', // Vigoroth (stage 2)
-    289: 'rare',     // Slaking (stage 3, high BST)
-    290: 'common',   // Nincada (uncommon, stage 1)
-    291: 'uncommon', // Ninjask (stage 2)
-    292: 'rare',     // Shedinja (special evolution, rare)
-    293: 'common',   // Whismur (common, stage 1)
-    294: 'uncommon', // Loudred (stage 2)
-    295: 'rare',     // Exploud (stage 3)
-    296: 'common',   // Makuhita (common, stage 1)
-    297: 'uncommon', // Hariyama (stage 2)
-    298: 'common',   // Azurill (baby, stage 1)
-    299: 'uncommon', // Nosepass (uncommon, stage 1)
-    300: 'common',   // Skitty (common, stage 1)
-    301: 'uncommon', // Delcatty (stage 2)
-    302: 'uncommon', // Sableye (rare encounter, no evolution)
-    303: 'uncommon', // Mawile (rare encounter, no evolution)
-    304: 'common',   // Aron (uncommon, stage 1)
-    305: 'uncommon', // Lairon (stage 2)
-    306: 'rare',     // Aggron (stage 3)
-    307: 'common',   // Meditite (uncommon, stage 1)
-    308: 'uncommon', // Medicham (stage 2)
-    309: 'common',   // Electrike (common, stage 1)
-    310: 'uncommon', // Manectric (stage 2)
-    311: 'uncommon', // Plusle (uncommon, no evolution)
-    312: 'uncommon', // Minun (uncommon, no evolution)
-    313: 'uncommon', // Volbeat (uncommon, no evolution)
-    314: 'uncommon', // Illumise (uncommon, no evolution)
-    315: 'uncommon', // Roselia (uncommon, stage 2)
-    316: 'common',   // Gulpin (common, stage 1)
-    317: 'uncommon', // Swalot (stage 2)
-    318: 'common',   // Carvanha (common, stage 1)
-    319: 'uncommon', // Sharpedo (stage 2)
-    320: 'common',   // Wailmer (common, stage 1)
-    321: 'uncommon', // Wailord (stage 2)
-    322: 'common',   // Numel (common, stage 1)
-    323: 'uncommon', // Camerupt (stage 2)
-    324: 'uncommon', // Torkoal (uncommon, no evolution)
-    325: 'common',   // Spoink (uncommon, stage 1)
-    326: 'uncommon', // Grumpig (stage 2)
-    327: 'uncommon', // Spinda (rare encounter, no evolution)
-    328: 'common',   // Trapinch (uncommon, stage 1)
-    329: 'uncommon', // Vibrava (stage 2)
-    330: 'rare',     // Flygon (stage 3)
-    331: 'common',   // Cacnea (uncommon, stage 1)
-    332: 'uncommon', // Cacturne (stage 2)
-    333: 'common',   // Swablu (common, stage 1)
-    334: 'uncommon', // Altaria (stage 2)
-    335: 'uncommon', // Zangoose (rare encounter, no evolution)
-    336: 'uncommon', // Seviper (rare encounter, no evolution)
-    337: 'uncommon', // Lunatone (rare encounter, no evolution)
-    338: 'uncommon', // Solrock (rare encounter, no evolution)
-    339: 'common',   // Barboach (common, stage 1)
-    340: 'uncommon', // Whiscash (stage 2)
-    341: 'common',   // Corphish (common, stage 1)
-    342: 'uncommon', // Crawdaunt (stage 2)
-    343: 'common',   // Baltoy (uncommon, stage 1)
-    344: 'uncommon', // Claydol (stage 2)
-    345: 'common',   // Lileep (fossil, stage 1)
-    346: 'uncommon', // Cradily (stage 2)
-    347: 'common',   // Anorith (fossil, stage 1)
-    348: 'uncommon', // Armaldo (stage 2)
-    349: 'rare',     // Feebas (very rare encounter, stage 1)
-    350: 'rare',     // Milotic (stage 2, special evolution)
-    351: 'uncommon', // Castform (rare encounter, no evolution)
-    352: 'uncommon', // Kecleon (rare encounter, no evolution)
-    353: 'common',   // Shuppet (uncommon, stage 1)
-    354: 'uncommon', // Banette (stage 2)
-    355: 'common',   // Duskull (uncommon, stage 1)
-    356: 'uncommon', // Dusclops (stage 2)
-    357: 'uncommon', // Tropius (rare encounter, no evolution)
-    358: 'uncommon', // Chimecho (rare encounter, stage 2)
-    359: 'uncommon', // Absol (rare encounter, no evolution)
-    360: 'common',   // Wynaut (baby, stage 1)
-    361: 'common',   // Snorunt (uncommon, stage 1)
-    362: 'uncommon', // Glalie (stage 2)
-    363: 'common',   // Spheal (common, stage 1)
-    364: 'uncommon', // Sealeo (stage 2)
-    365: 'rare',     // Walrein (stage 3)
-    366: 'common',   // Clamperl (uncommon, stage 1)
-    367: 'uncommon', // Huntail (stage 2)
-    368: 'uncommon', // Gorebyss (stage 2)
-    369: 'rare',     // Relicanth (very rare encounter, no evolution)
-    370: 'uncommon', // Luvdisc (uncommon, no evolution)
-    371: 'common',   // Bagon (rare but stage 1)
-    372: 'uncommon', // Shelgon (stage 2)
-    373: 'rare',     // Salamence (pseudo-legendary)
-    374: 'common',   // Beldum (very rare but stage 1)
-    375: 'uncommon', // Metang (stage 2)
-    376: 'rare',     // Metagross (pseudo-legendary)
-    377: 'legendary', // Regirock
-    378: 'legendary', // Regice
-    379: 'legendary', // Registeel
-    380: 'legendary', // Latias
-    381: 'legendary', // Latios
-    382: 'legendary', // Kyogre
-    383: 'legendary', // Groudon
-    384: 'legendary', // Rayquaza
-    385: 'legendary', // Jirachi
-    386: 'legendary', // Deoxys
-    
-    // GEN 4 (387-493)
-    387: 'common',   // Turtwig (starter base)
-    388: 'uncommon', // Grotle (starter mid)
-    389: 'rare',     // Torterra (starter final)
-    390: 'common',   // Chimchar (starter base)
-    391: 'uncommon', // Monferno (starter mid)
-    392: 'rare',     // Infernape (starter final)
-    393: 'common',   // Piplup (starter base)
-    394: 'uncommon', // Prinplup (starter mid)
-    395: 'rare',     // Empoleon (starter final)
-    396: 'common',   // Starly (very common, stage 1)
-    397: 'uncommon', // Staravia (stage 2)
-    398: 'rare',     // Staraptor (stage 3)
-    399: 'common',   // Bidoof (very common, stage 1)
-    400: 'uncommon', // Bibarel (stage 2)
-    401: 'common',   // Kricketot (common, stage 1)
-    402: 'uncommon', // Kricketune (stage 2)
-    403: 'common',   // Shinx (common, stage 1)
-    404: 'uncommon', // Luxio (stage 2)
-    405: 'rare',     // Luxray (stage 3)
-    406: 'common',   // Budew (baby, stage 1)
-    407: 'rare',     // Roserade (stage 3 from Roselia)
-    408: 'common',   // Cranidos (fossil, stage 1)
-    409: 'uncommon', // Rampardos (stage 2)
-    410: 'common',   // Shieldon (fossil, stage 1)
-    411: 'uncommon', // Bastiodon (stage 2)
-    412: 'common',   // Burmy (common, stage 1)
-    413: 'uncommon', // Wormadam (stage 2)
-    414: 'uncommon', // Mothim (stage 2)
-    415: 'common',   // Combee (common, stage 1)
-    416: 'uncommon', // Vespiquen (stage 2)
-    417: 'uncommon', // Pachirisu (uncommon, no evolution)
-    418: 'common',   // Buizel (common, stage 1)
-    419: 'uncommon', // Floatzel (stage 2)
-    420: 'common',   // Cherubi (uncommon, stage 1)
-    421: 'uncommon', // Cherrim (stage 2)
-    422: 'common',   // Shellos (common, stage 1)
-    423: 'uncommon', // Gastrodon (stage 2)
-    424: 'rare',     // Ambipom (stage 3 from Aipom)
-    425: 'common',   // Drifloon (uncommon, stage 1)
-    426: 'uncommon', // Drifblim (stage 2)
-    427: 'common',   // Buneary (common, stage 1)
-    428: 'uncommon', // Lopunny (stage 2)
-    429: 'uncommon', // Mismagius (stage 2 from Misdreavus)
-    430: 'rare',     // Honchkrow (stage 3 from Murkrow)
-    431: 'common',   // Glameow (common, stage 1)
-    432: 'uncommon', // Purugly (stage 2)
-    433: 'common',   // Chingling (baby, stage 1)
-    434: 'common',   // Stunky (common, stage 1)
-    435: 'uncommon', // Skuntank (stage 2)
-    436: 'common',   // Bronzor (uncommon, stage 1)
-    437: 'uncommon', // Bronzong (stage 2)
-    438: 'common',   // Bonsly (baby, stage 1)
-    439: 'common',   // Mime Jr. (baby, stage 1)
-    440: 'uncommon', // Happiny (baby, stage 1)
-    441: 'uncommon', // Chatot (uncommon, no evolution)
-    442: 'rare',     // Spiritomb (very rare encounter, no evolution)
-    443: 'common',   // Gible (rare but stage 1)
-    444: 'uncommon', // Gabite (stage 2)
-    445: 'rare',     // Garchomp (pseudo-legendary)
-    446: 'rare',     // Munchlax (very rare, stage 1)
-    447: 'common',   // Riolu (rare but stage 1)
-    448: 'uncommon', // Lucario (stage 2)
-    449: 'common',   // Hippopotas (uncommon, stage 1)
-    450: 'uncommon', // Hippowdon (stage 2)
-    451: 'common',   // Skorupi (uncommon, stage 1)
-    452: 'uncommon', // Drapion (stage 2)
-    453: 'common',   // Croagunk (uncommon, stage 1)
-    454: 'uncommon', // Toxicroak (stage 2)
-    455: 'uncommon', // Carnivine (rare encounter, no evolution)
-    456: 'common',   // Finneon (uncommon, stage 1)
-    457: 'uncommon', // Lumineon (stage 2)
-    458: 'rare',     // Mantyke (baby but rare, stage 1)
-    459: 'common',   // Snover (uncommon, stage 1)
-    460: 'uncommon', // Abomasnow (stage 2)
-    461: 'rare',     // Weavile (stage 3 from Sneasel)
-    462: 'rare',     // Magnezone (stage 3 from Magneton)
-    463: 'rare',     // Lickilicky (stage 3 from Lickitung)
-    464: 'rare',     // Rhyperior (stage 3 from Rhydon)
-    465: 'rare',     // Tangrowth (stage 3 from Tangela)
-    466: 'rare',     // Electivire (stage 3 from Electabuzz)
-    467: 'rare',     // Magmortar (stage 3 from Magmar)
-    468: 'rare',     // Togekiss (stage 3 from Togetic)
-    469: 'rare',     // Yanmega (stage 3 from Yanma)
-    470: 'uncommon', // Leafeon (Eevee evolution)
-    471: 'uncommon', // Glaceon (Eevee evolution)
-    472: 'rare',     // Gliscor (stage 3 from Gligar)
-    473: 'rare',     // Mamoswine (stage 3 from Piloswine)
-    474: 'uncommon', // Porygon-Z (stage 3 from Porygon2)
-    475: 'rare',     // Gallade (alternate stage 3 from Kirlia)
-    476: 'uncommon', // Probopass (stage 2 from Nosepass)
-    477: 'rare',     // Dusknoir (stage 3 from Dusclops)
-    478: 'rare',     // Froslass (alternate stage 3 from Snorunt)
-    479: 'uncommon', // Rotom (rare encounter, no evolution)
-    480: 'legendary', // Uxie
-    481: 'legendary', // Mesprit
-    482: 'legendary', // Azelf
-    483: 'legendary', // Dialga
-    484: 'legendary', // Palkia
-    485: 'legendary', // Heatran
-    486: 'legendary', // Regigigas
-    487: 'legendary', // Giratina
-    488: 'legendary', // Cresselia
-    489: 'legendary', // Phione
-    490: 'legendary', // Manaphy
-    491: 'legendary', // Darkrai
-    492: 'legendary', // Shaymin
-    493: 'legendary', // Arceus
-    
-    // GEN 5 (494-649)
-    494: 'legendary', // Victini
-    495: 'common',   // Snivy (starter base)
-    496: 'uncommon', // Servine (starter mid)
-    497: 'rare',     // Serperior (starter final)
-    498: 'common',   // Tepig (starter base)
-    499: 'uncommon', // Pignite (starter mid)
-    500: 'rare',     // Emboar (starter final)
-    501: 'common',   // Oshawott (starter base)
-    502: 'uncommon', // Dewott (starter mid)
-    503: 'rare',     // Samurott (starter final)
-    504: 'common',   // Patrat (very common, stage 1)
-    505: 'uncommon', // Watchog (stage 2)
-    506: 'common',   // Lillipup (common, stage 1)
-    507: 'uncommon', // Herdier (stage 2)
-    508: 'rare',     // Stoutland (stage 3)
-    509: 'common',   // Purrloin (common, stage 1)
-    510: 'uncommon', // Liepard (stage 2)
-    511: 'common',   // Pansage (uncommon, stage 1)
-    512: 'uncommon', // Simisage (stage 2)
-    513: 'common',   // Pansear (uncommon, stage 1)
-    514: 'uncommon', // Simisear (stage 2)
-    515: 'common',   // Panpour (uncommon, stage 1)
-    516: 'uncommon', // Simipour (stage 2)
-    517: 'common',   // Munna (uncommon, stage 1)
-    518: 'uncommon', // Musharna (stage 2)
-    519: 'common',   // Pidove (very common, stage 1)
-    520: 'uncommon', // Tranquill (stage 2)
-    521: 'rare',     // Unfezant (stage 3)
-    522: 'common',   // Blitzle (common, stage 1)
-    523: 'uncommon', // Zebstrika (stage 2)
-    524: 'common',   // Roggenrola (common, stage 1)
-    525: 'uncommon', // Boldore (stage 2)
-    526: 'rare',     // Gigalith (stage 3, trade)
-    527: 'common',   // Woobat (common, stage 1)
-    528: 'uncommon', // Swoobat (stage 2)
-    529: 'common',   // Drilbur (common, stage 1)
-    530: 'uncommon', // Excadrill (stage 2)
-    531: 'uncommon', // Audino (common, no evolution)
-    532: 'common',   // Timburr (uncommon, stage 1)
-    533: 'uncommon', // Gurdurr (stage 2)
-    534: 'rare',     // Conkeldurr (stage 3, trade)
-    535: 'common',   // Tympole (common, stage 1)
-    536: 'uncommon', // Palpitoad (stage 2)
-    537: 'rare',     // Seismitoad (stage 3)
-    538: 'uncommon', // Throh (uncommon, no evolution)
-    539: 'uncommon', // Sawk (uncommon, no evolution)
-    540: 'common',   // Sewaddle (common, stage 1)
-    541: 'uncommon', // Swadloon (stage 2)
-    542: 'rare',     // Leavanny (stage 3)
-    543: 'common',   // Venipede (common, stage 1)
-    544: 'uncommon', // Whirlipede (stage 2)
-    545: 'rare',     // Scolipede (stage 3)
-    546: 'common',   // Cottonee (common, stage 1)
-    547: 'uncommon', // Whimsicott (stage 2)
-    548: 'common',   // Petilil (common, stage 1)
-    549: 'uncommon', // Lilligant (stage 2)
-    550: 'uncommon', // Basculin (uncommon, no evolution)
-    551: 'common',   // Sandile (uncommon, stage 1)
-    552: 'uncommon', // Krokorok (stage 2)
-    553: 'rare',     // Krookodile (stage 3)
-    554: 'common',   // Darumaka (uncommon, stage 1)
-    555: 'uncommon', // Darmanitan (stage 2)
-    556: 'uncommon', // Maractus (uncommon, no evolution)
-    557: 'common',   // Dwebble (common, stage 1)
-    558: 'uncommon', // Crustle (stage 2)
-    559: 'common',   // Scraggy (uncommon, stage 1)
-    560: 'uncommon', // Scrafty (stage 2)
-    561: 'uncommon', // Sigilyph (rare encounter, no evolution)
-    562: 'common',   // Yamask (uncommon, stage 1)
-    563: 'uncommon', // Cofagrigus (stage 2)
-    564: 'common',   // Tirtouga (fossil, stage 1)
-    565: 'uncommon', // Carracosta (stage 2)
-    566: 'common',   // Archen (fossil, stage 1)
-    567: 'uncommon', // Archeops (stage 2)
-    568: 'common',   // Trubbish (common, stage 1)
-    569: 'uncommon', // Garbodor (stage 2)
-    570: 'common',   // Zorua (rare but stage 1)
-    571: 'uncommon', // Zoroark (stage 2)
-    572: 'common',   // Minccino (common, stage 1)
-    573: 'uncommon', // Cinccino (stage 2)
-    574: 'common',   // Gothita (uncommon, stage 1)
-    575: 'uncommon', // Gothorita (stage 2)
-    576: 'rare',     // Gothitelle (stage 3)
-    577: 'common',   // Solosis (uncommon, stage 1)
-    578: 'uncommon', // Duosion (stage 2)
-    579: 'rare',     // Reuniclus (stage 3)
-    580: 'common',   // Ducklett (common, stage 1)
-    581: 'uncommon', // Swanna (stage 2)
-    582: 'common',   // Vanillite (common, stage 1)
-    583: 'uncommon', // Vanillish (stage 2)
-    584: 'rare',     // Vanilluxe (stage 3)
-    585: 'common',   // Deerling (common, stage 1)
-    586: 'uncommon', // Sawsbuck (stage 2)
-    587: 'uncommon', // Emolga (uncommon, no evolution)
-    588: 'common',   // Karrablast (uncommon, stage 1)
-    589: 'uncommon', // Escavalier (stage 2, trade)
-    590: 'common',   // Foongus (common, stage 1)
-    591: 'uncommon', // Amoonguss (stage 2)
-    592: 'common',   // Frillish (uncommon, stage 1)
-    593: 'uncommon', // Jellicent (stage 2)
-    594: 'uncommon', // Alomomola (uncommon, no evolution)
-    595: 'common',   // Joltik (common, stage 1)
-    596: 'uncommon', // Galvantula (stage 2)
-    597: 'common',   // Ferroseed (uncommon, stage 1)
-    598: 'uncommon', // Ferrothorn (stage 2)
-    599: 'common',   // Klink (uncommon, stage 1)
-    600: 'uncommon', // Klang (stage 2)
-    601: 'rare',     // Klinklang (stage 3)
-    602: 'common',   // Tynamo (uncommon, stage 1)
-    603: 'uncommon', // Eelektrik (stage 2)
-    604: 'rare',     // Eelektross (stage 3)
-    605: 'common',   // Elgyem (uncommon, stage 1)
-    606: 'uncommon', // Beheeyem (stage 2)
-    607: 'common',   // Litwick (uncommon, stage 1)
-    608: 'uncommon', // Lampent (stage 2)
-    609: 'rare',     // Chandelure (stage 3)
-    610: 'common',   // Axew (rare but stage 1)
-    611: 'uncommon', // Fraxure (stage 2)
-    612: 'rare',     // Haxorus (stage 3)
-    613: 'common',   // Cubchoo (uncommon, stage 1)
-    614: 'uncommon', // Beartic (stage 2)
-    615: 'uncommon', // Cryogonal (rare encounter, no evolution)
-    616: 'common',   // Shelmet (uncommon, stage 1)
-    617: 'uncommon', // Accelgor (stage 2, trade)
-    618: 'uncommon', // Stunfisk (uncommon, no evolution)
-    619: 'common',   // Mienfoo (uncommon, stage 1)
-    620: 'uncommon', // Mienshao (stage 2)
-    621: 'uncommon', // Druddigon (rare encounter, no evolution)
-    622: 'common',   // Golett (uncommon, stage 1)
-    623: 'uncommon', // Golurk (stage 2)
-    624: 'common',   // Pawniard (uncommon, stage 1)
-    625: 'uncommon', // Bisharp (stage 2)
-    626: 'uncommon', // Bouffalant (uncommon, no evolution)
-    627: 'common',   // Rufflet (uncommon, stage 1)
-    628: 'uncommon', // Braviary (stage 2)
-    629: 'common',   // Vullaby (uncommon, stage 1)
-    630: 'uncommon', // Mandibuzz (stage 2)
-    631: 'uncommon', // Heatmor (uncommon, no evolution)
-    632: 'uncommon', // Durant (uncommon, no evolution)
-    633: 'common',   // Deino (rare but stage 1)
-    634: 'uncommon', // Zweilous (stage 2)
-    635: 'rare',     // Hydreigon (pseudo-legendary)
-    636: 'common',   // Larvesta (very rare but stage 1)
-    637: 'uncommon', // Volcarona (stage 2, pseudo-legendary stats)
-    638: 'legendary', // Cobalion
-    639: 'legendary', // Terrakion
-    640: 'legendary', // Virizion
-    641: 'legendary', // Tornadus
-    642: 'legendary', // Thundurus
-    643: 'legendary', // Reshiram
-    644: 'legendary', // Zekrom
-    645: 'legendary', // Landorus
-    646: 'legendary', // Kyurem
-    647: 'legendary', // Keldeo
-    648: 'legendary', // Meloetta
-    649: 'legendary', // Genesect
-    
-    // GEN 6 (650-721)
-    650: 'common',   // Chespin (starter base)
-    651: 'uncommon', // Quilladin (starter mid)
-    652: 'rare',     // Chesnaught (starter final)
-    653: 'common',   // Fennekin (starter base)
-    654: 'uncommon', // Braixen (starter mid)
-    655: 'rare',     // Delphox (starter final)
-    656: 'common',   // Froakie (starter base)
-    657: 'uncommon', // Frogadier (starter mid)
-    658: 'rare',     // Greninja (starter final)
-    659: 'common',   // Bunnelby (common, stage 1)
-    660: 'uncommon', // Diggersby (stage 2)
-    661: 'common',   // Fletchling (common, stage 1)
-    662: 'uncommon', // Fletchinder (stage 2)
-    663: 'rare',     // Talonflame (stage 3)
-    664: 'common',   // Scatterbug (common, stage 1)
-    665: 'uncommon', // Spewpa (stage 2)
-    666: 'rare',     // Vivillon (stage 3)
-    667: 'common',   // Litleo (uncommon, stage 1)
-    668: 'uncommon', // Pyroar (stage 2)
-    669: 'common',   // Flabébé (uncommon, stage 1)
-    670: 'uncommon', // Floette (stage 2)
-    671: 'rare',     // Florges (stage 3)
-    672: 'common',   // Skiddo (uncommon, stage 1)
-    673: 'uncommon', // Gogoat (stage 2)
-    674: 'common',   // Pancham (uncommon, stage 1)
-    675: 'uncommon', // Pangoro (stage 2)
-    676: 'uncommon', // Furfrou (uncommon, no evolution)
-    677: 'common',   // Espurr (uncommon, stage 1)
-    678: 'uncommon', // Meowstic (stage 2)
-    679: 'common',   // Honedge (uncommon, stage 1)
-    680: 'uncommon', // Doublade (stage 2)
-    681: 'rare',     // Aegislash (stage 3)
-    682: 'common',   // Spritzee (uncommon, stage 1)
-    683: 'uncommon', // Aromatisse (stage 2)
-    684: 'common',   // Swirlix (uncommon, stage 1)
-    685: 'uncommon', // Slurpuff (stage 2)
-    686: 'common',   // Inkay (uncommon, stage 1)
-    687: 'uncommon', // Malamar (stage 2)
-    688: 'common',   // Binacle (uncommon, stage 1)
-    689: 'uncommon', // Barbaracle (stage 2)
-    690: 'common',   // Skrelp (uncommon, stage 1)
-    691: 'uncommon', // Dragalge (stage 2)
-    692: 'common',   // Clauncher (uncommon, stage 1)
-    693: 'uncommon', // Clawitzer (stage 2)
-    694: 'common',   // Helioptile (uncommon, stage 1)
-    695: 'uncommon', // Heliolisk (stage 2)
-    696: 'common',   // Tyrunt (fossil, stage 1)
-    697: 'uncommon', // Tyrantrum (stage 2)
-    698: 'common',   // Amaura (fossil, stage 1)
-    699: 'uncommon', // Aurorus (stage 2)
-    700: 'uncommon', // Sylveon (Eevee evolution)
-    701: 'uncommon', // Hawlucha (uncommon, no evolution)
-    702: 'uncommon', // Dedenne (uncommon, no evolution)
-    703: 'uncommon', // Carbink (rare encounter, no evolution)
-    704: 'common',   // Goomy (uncommon, stage 1)
-    705: 'uncommon', // Sliggoo (stage 2)
-    706: 'rare',     // Goodra (pseudo-legendary)
-    707: 'uncommon', // Klefki (uncommon, no evolution)
-    708: 'common',   // Phantump (uncommon, stage 1)
-    709: 'uncommon', // Trevenant (stage 2)
-    710: 'common',   // Pumpkaboo (uncommon, stage 1)
-    711: 'uncommon', // Gourgeist (stage 2)
-    712: 'common',   // Bergmite (uncommon, stage 1)
-    713: 'uncommon', // Avalugg (stage 2)
-    714: 'common',   // Noibat (rare but stage 1)
-    715: 'uncommon', // Noivern (stage 2)
-    716: 'legendary', // Xerneas
-    717: 'legendary', // Yveltal
-    718: 'legendary', // Zygarde
-    719: 'legendary', // Diancie
-    720: 'legendary', // Hoopa
-    721: 'legendary', // Volcanion
-    
-    // GEN 7 (722-809)
-    722: 'common',   // Rowlet (starter base)
-    723: 'uncommon', // Dartrix (starter mid)
-    724: 'rare',     // Decidueye (starter final)
-    725: 'common',   // Litten (starter base)
-    726: 'uncommon', // Torracat (starter mid)
-    727: 'rare',     // Incineroar (starter final)
-    728: 'common',   // Popplio (starter base)
-    729: 'uncommon', // Brionne (starter mid)
-    730: 'rare',     // Primarina (starter final)
-    731: 'common',   // Pikipek (common, stage 1)
-    732: 'uncommon', // Trumbeak (stage 2)
-    733: 'rare',     // Toucannon (stage 3)
-    734: 'common',   // Yungoos (very common, stage 1)
-    735: 'uncommon', // Gumshoos (stage 2)
-    736: 'common',   // Grubbin (common, stage 1)
-    737: 'uncommon', // Charjabug (stage 2)
-    738: 'rare',     // Vikavolt (stage 3)
-    739: 'common',   // Crabrawler (uncommon, stage 1)
-    740: 'uncommon', // Crabominable (stage 2)
-    741: 'uncommon', // Oricorio (uncommon, no evolution)
-    742: 'common',   // Cutiefly (common, stage 1)
-    743: 'uncommon', // Ribombee (stage 2)
-    744: 'common',   // Rockruff (uncommon, stage 1)
-    745: 'uncommon', // Lycanroc (stage 2)
-    746: 'common',   // Wishiwashi (uncommon, no evolution)
-    747: 'common',   // Mareanie (uncommon, stage 1)
-    748: 'uncommon', // Toxapex (stage 2)
-    749: 'common',   // Mudbray (common, stage 1)
-    750: 'uncommon', // Mudsdale (stage 2)
-    751: 'common',   // Dewpider (common, stage 1)
-    752: 'uncommon', // Araquanid (stage 2)
-    753: 'common',   // Fomantis (uncommon, stage 1)
-    754: 'uncommon', // Lurantis (stage 2)
-    755: 'common',   // Morelull (uncommon, stage 1)
-    756: 'uncommon', // Shiinotic (stage 2)
-    757: 'common',   // Salandit (uncommon, stage 1)
-    758: 'uncommon', // Salazzle (stage 2)
-    759: 'common',   // Stufful (common, stage 1)
-    760: 'uncommon', // Bewear (stage 2)
-    761: 'common',   // Bounsweet (common, stage 1)
-    762: 'uncommon', // Steenee (stage 2)
-    763: 'rare',     // Tsareena (stage 3)
-    764: 'uncommon', // Comfey (uncommon, no evolution)
-    765: 'uncommon', // Oranguru (rare encounter, no evolution)
-    766: 'uncommon', // Passimian (rare encounter, no evolution)
-    767: 'common',   // Wimpod (uncommon, stage 1)
-    768: 'uncommon', // Golisopod (stage 2)
-    769: 'common',   // Sandygast (uncommon, stage 1)
-    770: 'uncommon', // Palossand (stage 2)
-    771: 'uncommon', // Pyukumuku (uncommon, no evolution)
-    772: 'legendary', // Type: Null
-    773: 'legendary', // Silvally
-    774: 'uncommon', // Minior (rare encounter, no evolution)
-    775: 'uncommon', // Komala (uncommon, no evolution)
-    776: 'uncommon', // Turtonator (rare encounter, no evolution)
-    777: 'uncommon', // Togedemaru (uncommon, no evolution)
-    778: 'uncommon', // Mimikyu (rare encounter, no evolution)
-    779: 'uncommon', // Bruxish (uncommon, no evolution)
-    780: 'uncommon', // Drampa (rare encounter, no evolution)
-    781: 'uncommon', // Dhelmise (rare encounter, no evolution)
-    782: 'common',   // Jangmo-o (rare but stage 1)
-    783: 'uncommon', // Hakamo-o (stage 2)
-    784: 'rare',     // Kommo-o (pseudo-legendary)
-    785: 'legendary', // Tapu Koko
-    786: 'legendary', // Tapu Lele
-    787: 'legendary', // Tapu Bulu
-    788: 'legendary', // Tapu Fini
-    789: 'legendary', // Cosmog
-    790: 'legendary', // Cosmoem
-    791: 'legendary', // Solgaleo
-    792: 'legendary', // Lunala
-    793: 'epic',     // Nihilego (Ultra Beast)
-    794: 'epic',     // Buzzwole (Ultra Beast)
-    795: 'epic',     // Pheromosa (Ultra Beast)
-    796: 'epic',     // Xurkitree (Ultra Beast)
-    797: 'epic',     // Celesteela (Ultra Beast)
-    798: 'epic',     // Kartana (Ultra Beast)
-    799: 'epic',     // Guzzlord (Ultra Beast)
-    800: 'legendary', // Necrozma
-    801: 'legendary', // Magearna
-    802: 'legendary', // Marshadow
-    803: 'epic',     // Poipole (Ultra Beast)
-    804: 'epic',     // Naganadel (Ultra Beast)
-    805: 'epic',     // Stakataka (Ultra Beast)
-    806: 'epic',     // Blacephalon (Ultra Beast)
-    807: 'legendary', // Zeraora
-    808: 'legendary', // Meltan
-    809: 'legendary', // Melmetal
-    
-    // GEN 8 (810-898)
-    810: 'common',   // Grookey (starter base)
-    811: 'uncommon', // Thwackey (starter mid)
-    812: 'rare',     // Rillaboom (starter final)
-    813: 'common',   // Scorbunny (starter base)
-    814: 'uncommon', // Raboot (starter mid)
-    815: 'rare',     // Cinderace (starter final)
-    816: 'common',   // Sobble (starter base)
-    817: 'uncommon', // Drizzile (starter mid)
-    818: 'rare',     // Inteleon (starter final)
-    819: 'common',   // Skwovet (common, stage 1)
-    820: 'uncommon', // Greedent (stage 2)
-    821: 'common',   // Rookidee (common, stage 1)
-    822: 'uncommon', // Corvisquire (stage 2)
-    823: 'rare',     // Corviknight (stage 3)
-    824: 'common',   // Blipbug (common, stage 1)
-    825: 'uncommon', // Dottler (stage 2)
-    826: 'rare',     // Orbeetle (stage 3)
-    827: 'common',   // Nickit (common, stage 1)
-    828: 'uncommon', // Thievul (stage 2)
-    829: 'common',   // Gossifleur (common, stage 1)
-    830: 'uncommon', // Eldegoss (stage 2)
-    831: 'common',   // Wooloo (common, stage 1)
-    832: 'uncommon', // Dubwool (stage 2)
-    833: 'common',   // Chewtle (common, stage 1)
-    834: 'uncommon', // Drednaw (stage 2)
-    835: 'common',   // Yamper (common, stage 1)
-    836: 'uncommon', // Boltund (stage 2)
-    837: 'common',   // Rolycoly (common, stage 1)
-    838: 'uncommon', // Carkol (stage 2)
-    839: 'rare',     // Coalossal (stage 3)
-    840: 'common',   // Applin (uncommon, stage 1)
-    841: 'uncommon', // Flapple (stage 2)
-    842: 'uncommon', // Appletun (stage 2)
-    843: 'common',   // Silicobra (uncommon, stage 1)
-    844: 'uncommon', // Sandaconda (stage 2)
-    845: 'uncommon', // Cramorant (uncommon, no evolution)
-    846: 'common',   // Arrokuda (common, stage 1)
-    847: 'uncommon', // Barraskewda (stage 2)
-    848: 'uncommon', // Toxel (uncommon, stage 1)
-    849: 'uncommon', // Toxtricity (stage 2)
-    850: 'common',   // Sizzlipede (common, stage 1)
-    851: 'uncommon', // Centiskorch (stage 2)
-    852: 'common',   // Clobbopus (uncommon, stage 1)
-    853: 'uncommon', // Grapploct (stage 2)
-    854: 'uncommon', // Sinistea (uncommon, stage 1)
-    855: 'uncommon', // Polteageist (stage 2)
-    856: 'common',   // Hatenna (uncommon, stage 1)
-    857: 'uncommon', // Hattrem (stage 2)
-    858: 'rare',     // Hatterene (stage 3)
-    859: 'common',   // Impidimp (uncommon, stage 1)
-    860: 'uncommon', // Morgrem (stage 2)
-    861: 'rare',     // Grimmsnarl (stage 3)
-    862: 'rare',     // Obstagoon (stage 3 from Linoone)
-    863: 'uncommon', // Perrserker (alternate stage 2 from Meowth)
-    864: 'uncommon', // Cursola (alternate stage 2 from Corsola)
-    865: 'uncommon', // Sirfetch'd (alternate stage 2 from Farfetch'd)
-    866: 'uncommon', // Mr. Rime (stage 3 from Mr. Mime)
-    867: 'uncommon', // Runerigus (alternate stage 2 from Yamask)
-    868: 'uncommon', // Milcery (uncommon, stage 1)
-    869: 'uncommon', // Alcremie (stage 2)
-    870: 'uncommon', // Falinks (uncommon, no evolution)
-    871: 'uncommon', // Pincurchin (uncommon, no evolution)
-    872: 'common',   // Snom (uncommon, stage 1)
-    873: 'uncommon', // Frosmoth (stage 2)
-    874: 'uncommon', // Stonjourner (uncommon, no evolution)
-    875: 'uncommon', // Eiscue (uncommon, no evolution)
-    876: 'uncommon', // Indeedee (uncommon, no evolution)
-    877: 'uncommon', // Morpeko (uncommon, no evolution)
-    878: 'common',   // Cufant (uncommon, stage 1)
-    879: 'uncommon', // Copperajah (stage 2)
-    880: 'epic',     // Dracozolt (fossil fusion, rare)
-    881: 'epic',     // Arctozolt (fossil fusion, rare)
-    882: 'epic',     // Dracovish (fossil fusion, rare)
-    883: 'epic',     // Arctovish (fossil fusion, rare)
-    884: 'rare',     // Duraludon (rare encounter, stage 1)
-    885: 'common',   // Dreepy (rare but stage 1)
-    886: 'uncommon', // Drakloak (stage 2)
-    887: 'rare',     // Dragapult (pseudo-legendary)
-    888: 'legendary', // Zacian
-    889: 'legendary', // Zamazenta
-    890: 'legendary', // Eternatus
-    891: 'legendary', // Kubfu
-    892: 'legendary', // Urshifu
-    893: 'legendary', // Zarude
-    894: 'legendary', // Regieleki
-    895: 'legendary', // Regidrago
-    896: 'legendary', // Glastrier
-    897: 'legendary', // Spectrier
-    898: 'legendary'  // Calyrex
-};
+        // Only calculate duration if it's currently empty
+        if (distance && value && isFieldEmpty(duration)) {
+          const paceSeconds = parseTimeToSeconds(value);
+          const dist = parseFloat(distance);
+          if (paceSeconds != null && Number.isFinite(dist) && dist > 0) {
+            setDuration(formatSecondsToMMSS(paceSeconds * dist));
+          }
+        }
+      };
 
-            // Rarity tier configuration
-            const RARITY_TIERS = {
-                common: { name: 'Common', color: 'gray', chance: 0.50 },
-                uncommon: { name: 'Uncommon', color: 'green', chance: 0.30 },
-                rare: { name: 'Rare', color: 'blue', chance: 0.15 },
-                epic: { name: 'Epic', color: 'purple', chance: 0.04 },
-                legendary: { name: 'Legendary', color: 'orange', chance: 0.01 }
-            };
+      const handleDistanceChange = (value) => {
+        setDistance(value);
+        const dist = parseFloat(value);
+        if (!Number.isFinite(dist) || dist <= 0) return;
 
-            // Generate legendary IDs from the rarity map
-            const LEGENDARY_IDS = Object.entries(POKEMON_RARITY_MAP)
-                .filter(([id, rarity]) => rarity === 'legendary')
-                .map(([id]) => parseInt(id));
+        // Priority 1: pace empty but duration exists -> calculate pace
+        if (isFieldEmpty(pace) && !isFieldEmpty(duration)) {
+          const durSeconds = parseTimeToSeconds(duration);
+          if (durSeconds != null) {
+            setPace(formatSecondsToMMSS(durSeconds / dist));
+          }
+        }
+        // Priority 2: duration empty but pace exists -> calculate duration
+        else if (isFieldEmpty(duration) && !isFieldEmpty(pace)) {
+          const paceSeconds = parseTimeToSeconds(pace);
+          if (paceSeconds != null) {
+            setDuration(formatSecondsToMMSS(paceSeconds * dist));
+          }
+        }
+      };
 
-            };
+      const handleDurationChange = (value) => {
+        setDuration(value);
 
-            const RARITY_TIERS = {
-                common: { name: 'Common', minId: 1, maxId: 251, color: 'gray', chance: 0.50 },
-                uncommon: { name: 'Uncommon', minId: 252, maxId: 493, color: 'green', chance: 0.30 },
-                rare: { name: 'Rare', minId: 494, maxId: 721, color: 'blue', chance: 0.15 },
-                epic: { name: 'Epic', minId: 722, maxId: 898, color: 'purple', chance: 0.04 },
-                legendary: { name: 'Legendary', minId: 1, maxId: 898, legendary: true, color: 'orange', chance: 0.01 }
-            };
+        // Only calculate pace if it's currently empty
+        if (distance && value && isFieldEmpty(pace)) {
+          const durSeconds = parseTimeToSeconds(value);
+          const dist = parseFloat(distance);
+          if (durSeconds != null && Number.isFinite(dist) && dist > 0) {
+            setPace(formatSecondsToMMSS(durSeconds / dist));
+          }
+        }
+      };
 
-            const calculateRarityChances = (intensity, streak, newPRs) => {
-                let chances = { ...RARITY_TIERS };
-                const intensityMultiplier = 1 + (intensity / 50);
-                const dayStreakMultiplier = 1 + (Math.min(streak.days, 30) * 0.05);
-                const weekStreakMultiplier = 1 + (Math.min(streak.weeks, 10) * 0.1);
-                const prCount = Object.values(newPRs).filter(Boolean).length;
-                const prMultiplier = 1 + (prCount * 0.5);
-                const totalMultiplier = intensityMultiplier * dayStreakMultiplier * weekStreakMultiplier * prMultiplier;
-                
-                const adjustedChances = {
-                    common: { ...chances.common, chance: Math.max(0.1, chances.common.chance / totalMultiplier) },
-                    uncommon: { ...chances.uncommon, chance: chances.uncommon.chance * 1.2 },
-                    rare: { ...chances.rare, chance: chances.rare.chance * totalMultiplier * 0.8 },
-                    epic: { ...chances.epic, chance: chances.epic.chance * totalMultiplier * 1.2 },
-                    legendary: { ...chances.legendary, chance: Math.min(0.25, chances.legendary.chance * totalMultiplier * 2) }
-                };
-                
-                const total = Object.values(adjustedChances).reduce((sum, tier) => sum + tier.chance, 0);
-                Object.keys(adjustedChances).forEach(key => {
-                    adjustedChances[key].chance = adjustedChances[key].chance / total;
-                });
-                
-                return { chances: adjustedChances, multiplier: totalMultiplier };
-            };
+      // --- persistence ---
+      useEffect(() => {
+        (async () => {
+          await loadRunHistory();
+          setTimeout(() => {
+            const el = document.getElementById('loading');
+            if (el) el.classList.add('hidden');
+          }, 300);
+        })();
+      }, []);
 
-            const rollRarity = (chances) => {
-                const roll = Math.random();
-                let cumulative = 0;
-                for (const [tier, data] of Object.entries(chances)) {
-                    cumulative += data.chance;
-                    if (roll <= cumulative) return { tier, ...data };
-                }
-                return { tier: 'common', ...chances.common };
-            };
+      const loadRunHistory = async () => {
+        try {
+          const historyResult = await window.storage.get('run-history');
+          const streakResult = await window.storage.get('current-streak');
+          const prResult = await window.storage.get('personal-records');
 
-            const LEGENDARY_IDS = [144, 145, 146, 150, 151, 243, 244, 245, 249, 250, 377, 378, 379, 380, 381, 382, 383, 384, 480, 481, 482, 483, 484, 485, 486, 487, 488, 638, 639, 640, 641, 642, 643, 644, 645, 646, 716, 717, 718, 785, 786, 787, 788, 789, 790, 791, 792, 888, 889, 890, 891, 892, 894, 895, 896, 897, 898];
+          if (historyResult?.value) setRunHistory(JSON.parse(historyResult.value));
+          if (streakResult?.value) setCurrentStreak(JSON.parse(streakResult.value));
+          if (prResult?.value) setPersonalRecords(JSON.parse(prResult.value));
+        } catch (e) {
+          console.log('Starting fresh');
+        }
+      };
 
-            const getPokemonByRarity = async (rarity) => {
-                let pokemonId;
-                if (rarity.tier === 'legendary') {
-                    pokemonId = LEGENDARY_IDS[Math.floor(Math.random() * LEGENDARY_IDS.length)];
-                } else {
-                    // Pick from ID range based on rarity (using actual Pokemon ID boundaries)
-                    pokemonId = Math.floor(Math.random() * (rarity.maxId - rarity.minId + 1)) + rarity.minId;
-                }
-                
-                const baseShinyChance = 1/4096;
-                const streakBonus = currentStreak.days * (1/500);
-                const shinyChance = Math.min(0.1, baseShinyChance + streakBonus);
-                const isShinyRoll = Math.random() < shinyChance;
-                setIsShiny(isShinyRoll);
-                
-                return { pokemonId, isShiny: isShinyRoll, shinyChance };
-            };
+      const saveRunHistory = async (newRun) => {
+        const updatedHistory = [...runHistory, newRun];
+        await window.storage.set('run-history', JSON.stringify(updatedHistory));
+        setRunHistory(updatedHistory);
+        return updatedHistory;
+      };
 
-            const generatePokemon = async () => {
-                setIsLoading(true);
-                try {
-                    const [paceMin, paceSec] = pace.split(':').map(Number);
-                    const paceSeconds = (paceMin * 60) + (paceSec || 0);
-                    const distanceNum = parseFloat(distance);
-                    const [durMin, durSec] = duration.split(':').map(Number);
-                    const durationSeconds = (durMin * 60) + (durSec || 0);
+      const saveStreak = async (streak) => {
+        await window.storage.set('current-streak', JSON.stringify(streak));
+        setCurrentStreak(streak);
+      };
 
-            const getPokemonByRarity = async (rarity) => {
-                // Get all Pokemon IDs that match this rarity tier
-                const matchingIds = Object.entries(POKEMON_RARITY_MAP)
-                    .filter(([id, rarityTier]) => rarityTier === rarity.tier)
-                    .map(([id]) => parseInt(id));
-                
-                // Pick random Pokemon from this rarity tier
-                const pokemonId = matchingIds[Math.floor(Math.random() * matchingIds.length)];
-                
-                const baseShinyChance = 1/4096;
-                const streakBonus = currentStreak.days * (1/500);
-                const shinyChance = Math.min(0.1, baseShinyChance + streakBonus);
-                const isShinyRoll = Math.random() < shinyChance;
-                setIsShiny(isShinyRoll);
-                
-                return { pokemonId, isShiny: isShinyRoll, shinyChance };
-            };
+      const savePersonalRecords = async (prs) => {
+        await window.storage.set('personal-records', JSON.stringify(prs));
+        setPersonalRecords(prs);
+      };
 
-                    const newRun = {
-                        date: new Date().toISOString(),
-                        pace: paceSeconds,
-                        distance: distanceNum,
-                        duration: durationSeconds,
-                        intensity,
-                        rarity: actualRarity, // ✅ Use corrected rarity
-                        pokemonId,
-                        pokemonName: fetchedPokemonData?.name || 'unknown',
-                        isShiny,
-                        newPRs: Object.keys(newPRs).filter(key => newPRs[key])
-                    };
-                    
-                    await saveRunHistory(newRun);
-                    await updatePersonalRecords(paceSeconds, distanceNum, durationSeconds);
-                    
-                    const isLegendary = actualRarity === 'legendary'; // ✅ Use corrected rarity
-                    
-                    setRarityRoll({
-                        tier: actualRarity, // ✅ Use corrected rarity
-                        color: actualRarityColor, // ✅ Use corrected color
-                        intensity,
-                        multiplier,
-                        chances,
-                        shinyChance: (shinyChance * 100).toFixed(2)
-                    });
-                    
-                    // ✅ Pass the fetched data directly to updateJourney
-                    await updateJourney(newRun, isLegendary, fetchedPokemonData);
-                    setIsLoading(false);
-                } catch (error) {
-                    console.error('Error:', error);
-                    setIsLoading(false);
-                }
-            };
+      // --- streak ---
+      const computeNextStreak = (history) => {
+        const todayStr = new Date().toDateString();
+        const lastRunDate = history.length > 0 ? new Date(history[history.length - 1].date).toDateString() : null;
 
-            const fetchPokemonData = async (pokemonId) => {
-                try {
-                    const response = await fetch(`https://pokeapi.co/api/v2/pokemon/${pokemonId}`);
-                    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-                    const data = await response.json();
-                    setPokemonData(data);
+        // If already ran today, don't increment
+        if (lastRunDate === todayStr) return { ...currentStreak };
 
-                    const variants = [];
-                    if (data.sprites.front_default) variants.push({ name: 'Default', key: 'front_default', url: data.sprites.front_default });
-                    if (data.sprites.front_shiny) variants.push({ name: 'Shiny ✨', key: 'front_shiny', url: data.sprites.front_shiny });
-                    
-                    setAvailableVariants(variants);
-                    setSpriteVariant(isShiny && data.sprites.front_shiny ? 'front_shiny' : variants[0]?.key || 'front_default');
-                    
-                    return data; // ✅ Return data to avoid race condition
-                } catch (error) {
-                    console.error('Error fetching Pokemon:', error);
-                    return null;
-                }
-            };
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const yesterdayStr = yesterday.toDateString();
 
-            useEffect(() => {
-                if (pokemonData) generateImage();
-            }, [pokemonData, spriteVariant]);
+        let next = { ...currentStreak };
+        if (lastRunDate === yesterdayStr || history.length === 0) {
+          next.days = (currentStreak.days || 0) + 1;
+        } else {
+          next.days = 1;
+        }
+        next.weeks = Math.floor(next.days / 7);
+        return next;
+      };
 
-            const getCurrentSpriteUrl = () => {
-                if (!pokemonData) return null;
-                const variant = availableVariants.find(v => v.key === spriteVariant);
-                return variant ? variant.url : pokemonData.sprites.front_default;
-            };
+      // --- PRs ---
+      const checkForPRs = (paceSeconds, distanceNum, durationSeconds) => {
+        const newPRs = {};
+        if (!personalRecords.fastestPace || paceSeconds < personalRecords.fastestPace) newPRs.fastestPace = true;
+        if (!personalRecords.longestDistance || distanceNum > personalRecords.longestDistance) newPRs.longestDistance = true;
+        if (!personalRecords.longestDuration || durationSeconds > personalRecords.longestDuration) newPRs.longestDuration = true;
+        setIsNewPR(newPRs);
+        return newPRs;
+      };
 
-            const generateImage = () => {
-                const canvas = canvasRef.current;
-                if (!canvas || !pokemonData) return;
+      const updatePersonalRecords = async (paceSeconds, distanceNum, durationSeconds) => {
+        const newPRs = {
+          fastestPace: personalRecords.fastestPace == null ? paceSeconds : Math.min(personalRecords.fastestPace, paceSeconds),
+          longestDistance: personalRecords.longestDistance == null ? distanceNum : Math.max(personalRecords.longestDistance, distanceNum),
+          longestDuration: personalRecords.longestDuration == null ? durationSeconds : Math.max(personalRecords.longestDuration, durationSeconds)
+        };
+        await savePersonalRecords(newPRs);
+        return newPRs;
+      };
 
-                const ctx = canvas.getContext('2d');
-                const width = 1080;
-                const height = 1080;
-                canvas.width = width;
-                canvas.height = height;
+      // --- intensity & rarity ---
+      const calculateIntensity = (paceSeconds, distanceNum, durationSeconds) => {
+        let intensity = 0;
 
-                ctx.fillStyle = '#C5C9B8';
-                ctx.fillRect(0, 0, width, height);
+        // Pace scoring
+        if (paceSeconds < 360) intensity += 40;          // < 6:00
+        else if (paceSeconds < 420) intensity += 35;     // < 7:00
+        else if (paceSeconds < 480) intensity += 30;     // < 8:00
+        else if (paceSeconds < 540) intensity += 25;     // < 9:00
+        else if (paceSeconds < 600) intensity += 20;     // <10:00
+        else intensity += 15;
 
-                const spriteUrl = getCurrentSpriteUrl();
-                if (spriteUrl) {
-                    const img = new Image();
-                    img.crossOrigin = "anonymous";
-                    img.onload = () => {
-                        const scale = 6;
-                        const spriteWidth = img.width * scale;
-                        const spriteHeight = img.height * scale;
-                        const spriteX = (width - spriteWidth) / 2;
-                        const spriteY = 220;
-                        
-                        // Pokemon name above sprite (null-safe)
-                        if (pokemonData?.name) {
-                            ctx.fillStyle = '#000000';
-                            ctx.font = 'bold 48px Arial';
-                            ctx.textAlign = 'center';
-                            const pokemonName = pokemonData.name.toUpperCase();
-                            ctx.fillText(pokemonName, width / 2, spriteY - 60);
-                        }
-                        
-                        ctx.imageSmoothingEnabled = false;
-                        
-                        if (isShiny) {
-                            ctx.shadowColor = '#FFD700';
-                            ctx.shadowBlur = 30;
-                            for (let i = 0; i < 5; i++) {
-                                ctx.drawImage(img, spriteX, spriteY, spriteWidth, spriteHeight);
-                            }
-                            ctx.shadowBlur = 0;
-                        }
-                        
-                        ctx.drawImage(img, spriteX, spriteY, spriteWidth, spriteHeight);
-                        
-                        // Draw rarity icon (TCG style) - moved up for better spacing
-                        if (rarityRoll) {
-                            const iconSize = 60;
-                            const iconX = width / 2 - iconSize / 2;
-                            const iconY = spriteY - 180; // Increased gap from -150 to -180
-                            
-                            drawRarityIcon(ctx, iconX, iconY, iconSize, rarityRoll.tier);
-                        }
-                        
-                        ctx.fillStyle = '#666666';
-                        ctx.font = '20px monospace';
-                        ctx.textAlign = 'left';
-                        const timestamp = new Date().toLocaleString();
-                        ctx.fillText(timestamp, spriteX - 60, spriteY + spriteHeight + 100);
-                        
-                        drawStatsBox(ctx, width, height);
-                    };
-                    img.onerror = () => {
-                        console.error('Failed to load sprite image');
-                    };
-                    img.src = spriteUrl;
-                }
-            };
+        // Distance scoring
+        if (distanceNum >= 26.2) intensity += 40;
+        else if (distanceNum >= 13.1) intensity += 35;
+        else if (distanceNum >= 10) intensity += 30;
+        else if (distanceNum >= 6.2) intensity += 25;
+        else if (distanceNum >= 3.1) intensity += 20;
+        else if (distanceNum >= 1) intensity += 15;
+        else intensity += 10;
 
-            const drawRarityIcon = (ctx, x, y, size, tier) => {
-                ctx.save();
-                
-                switch(tier) {
-                    case 'common':
-                        // Circle
-                        ctx.fillStyle = '#6B7280';
-                        ctx.beginPath();
-                        ctx.arc(x + size/2, y + size/2, size/2, 0, Math.PI * 2);
-                        ctx.fill();
-                        ctx.strokeStyle = '#FFFFFF';
-                        ctx.lineWidth = 3;
-                        ctx.stroke();
-                        break;
-                        
-                    case 'uncommon':
-                        // Diamond
-                        ctx.fillStyle = '#10B981';
-                        ctx.beginPath();
-                        ctx.moveTo(x + size/2, y);
-                        ctx.lineTo(x + size, y + size/2);
-                        ctx.lineTo(x + size/2, y + size);
-                        ctx.lineTo(x, y + size/2);
-                        ctx.closePath();
-                        ctx.fill();
-                        ctx.strokeStyle = '#FFFFFF';
-                        ctx.lineWidth = 3;
-                        ctx.stroke();
-                        break;
-                        
-                    case 'rare':
-                        // Star
-                        ctx.fillStyle = '#3B82F6';
-                        drawStar(ctx, x + size/2, y + size/2, 5, size/2, size/4);
-                        ctx.strokeStyle = '#FFFFFF';
-                        ctx.lineWidth = 3;
-                        ctx.stroke();
-                        break;
-                        
-                    case 'epic':
-                        // Double Star
-                        ctx.fillStyle = '#8B5CF6';
-                        ctx.globalAlpha = 0.7;
-                        drawStar(ctx, x + size/2 - 8, y + size/2, 5, size/2.2, size/4.4);
-                        ctx.globalAlpha = 1;
-                        drawStar(ctx, x + size/2 + 8, y + size/2, 5, size/2.2, size/4.4);
-                        ctx.strokeStyle = '#FFFFFF';
-                        ctx.lineWidth = 2;
-                        ctx.stroke();
-                        break;
-                        
-                    case 'legendary':
-                        // Crown/Triple Star
-                        ctx.fillStyle = '#F59E0B';
-                        drawStar(ctx, x + size/2, y + size/3, 5, size/2.5, size/5);
-                        drawStar(ctx, x + size/4, y + size*2/3, 5, size/3, size/6);
-                        drawStar(ctx, x + size*3/4, y + size*2/3, 5, size/3, size/6);
-                        ctx.strokeStyle = '#FFFFFF';
-                        ctx.lineWidth = 2;
-                        ctx.stroke();
-                        break;
-                }
-                
-                ctx.restore();
-            };
+        // Duration scoring
+        const minutes = durationSeconds / 60;
+        if (minutes >= 120) intensity += 20;
+        else if (minutes >= 60) intensity += 17;
+        else if (minutes >= 30) intensity += 14;
+        else intensity += 10;
 
-            const drawStar = (ctx, cx, cy, spikes, outerRadius, innerRadius) => {
-                let rot = Math.PI / 2 * 3;
-                let x = cx;
-                let y = cy;
-                const step = Math.PI / spikes;
+        return Math.min(100, intensity);
+      };
 
-                ctx.beginPath();
-                ctx.moveTo(cx, cy - outerRadius);
-                
-                for (let i = 0; i < spikes; i++) {
-                    x = cx + Math.cos(rot) * outerRadius;
-                    y = cy + Math.sin(rot) * outerRadius;
-                    ctx.lineTo(x, y);
-                    rot += step;
+      const calculateRarityChances = (intensity, streak, newPRs) => {
+        const intensityMultiplier = 1 + (intensity / 50);
+        const dayStreakMultiplier = 1 + (Math.min(streak.days, 30) * 0.05);
+        const weekStreakMultiplier = 1 + (Math.min(streak.weeks, 10) * 0.1);
+        const prCount = Object.values(newPRs).filter(Boolean).length;
+        const prMultiplier = 1 + (prCount * 0.5);
 
-                    x = cx + Math.cos(rot) * innerRadius;
-                    y = cy + Math.sin(rot) * innerRadius;
-                    ctx.lineTo(x, y);
-                    rot += step;
-                }
-                
-                ctx.lineTo(cx, cy - outerRadius);
-                ctx.closePath();
-                ctx.fill();
-            };
+        const totalMultiplier = intensityMultiplier * dayStreakMultiplier * weekStreakMultiplier * prMultiplier;
 
-            const getRarityColor = (color) => {
-                const colors = { gray: '#6B7280', green: '#10B981', blue: '#3B82F6', purple: '#8B5CF6', orange: '#F59E0B' };
-                return colors[color] || colors.gray;
-            };
-
-            const drawStatsBox = (ctx, width, height) => {
-                const boxWidth = 800;
-                const boxHeight = 250;
-                const boxX = (width - boxWidth) / 2;
-                const boxY = height - 330;
-
-                ctx.fillStyle = '#000000';
-                ctx.fillRect(boxX - 8, boxY - 8, boxWidth + 16, boxHeight + 16);
-                ctx.fillStyle = '#FFFFFF';
-                ctx.fillRect(boxX - 4, boxY - 4, boxWidth + 8, boxHeight + 8);
-                ctx.fillStyle = '#E8E8D0';
-                ctx.fillRect(boxX, boxY, boxWidth, boxHeight);
-
-                ctx.fillStyle = '#000000';
-                ctx.font = 'bold 50px Arial';
-                ctx.textAlign = 'left';
-                
-                const padding = 60;
-                let textY = boxY + 70;
-                
-                ctx.fillText(`Avg Pace ${pace} min/mi`, boxX + padding, textY);
-                textY += 80;
-                ctx.fillText(`Distance ${distance} mi`, boxX + padding, textY);
-                textY += 80;
-                ctx.fillText(`Duration ${duration}`, boxX + padding, textY);
-            };
-
-            const downloadImage = async () => {
-                const canvas = canvasRef.current;
-                if (!canvas) return;
-                
-                try {
-                    // Convert canvas to blob
-                    canvas.toBlob(async (blob) => {
-                        if (!blob) return;
-                        
-                        // Use Web Share API if available (works on mobile)
-                        if (navigator.share && navigator.canShare) {
-                            const file = new File([blob], `pokerun-${pokemonData?.name || 'pokemon'}.png`, { type: 'image/png' });
-                            
-                            if (navigator.canShare({ files: [file] })) {
-                                try {
-                                    await navigator.share({
-                                        files: [file],
-                                        title: 'My PokéRun',
-                                        text: `Caught ${pokemonData?.name}!`
-                                    });
-                                    return;
-                                } catch (err) {
-                                    console.log('Share cancelled or failed:', err);
-                                }
-                            }
-                        }
-                        
-                        // Fallback to download
-                        const link = document.createElement('a');
-                        link.download = `pokerun-${pokemonData?.name || 'pokemon'}.png`;
-                        link.href = canvas.toDataURL();
-                        link.click();
-                    }, 'image/png');
-                } catch (error) {
-                    console.error('Error sharing:', error);
-                    // Final fallback
-                    const link = document.createElement('a');
-                    link.download = `pokerun-${pokemonData?.name || 'pokemon'}.png`;
-                    link.href = canvas.toDataURL();
-                    link.click();
-                }
-            };
-
-            return (
-                <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 p-4 pb-20">
-                    <div className="max-w-2xl mx-auto">
-                        <div className="text-center mb-6">
-                            <h1 className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-transparent mb-2">
-                                PokéRun Journey
-                            </h1>
-                            <p className="text-sm text-gray-600">Track runs • Catch Pokémon • Complete journeys</p>
-                        </div>
-
-                        {/* Compact Stats */}
-                        <div className="grid grid-cols-2 gap-3 mb-6">
-                            <div className="bg-gradient-to-br from-orange-500 to-red-500 rounded-xl p-3 text-white shadow-lg">
-                                <div className="text-xs font-semibold mb-1">🔥 Streak</div>
-                                <div className="text-2xl font-bold">{currentStreak.days}d</div>
-                            </div>
-                            <div className="bg-gradient-to-br from-purple-500 to-pink-500 rounded-xl p-3 text-white shadow-lg">
-                                <div className="text-xs font-semibold mb-1">🏃 Runs</div>
-                                <div className="text-2xl font-bold">{runHistory.length}</div>
-                            </div>
-                        </div>
-
-                        {/* Input Form */}
-                        <div className="bg-white rounded-2xl shadow-lg p-6 mb-6">
-                            <h2 className="text-xl font-bold text-gray-800 mb-4">Your Run</h2>
-                            
-                            <div className="space-y-4">
-                                <div>
-                                    <label className="block text-sm font-semibold text-gray-700 mb-2">Pace (min/mi)</label>
-                                    <input type="text" value={pace} onChange={(e) => handlePaceChange(e.target.value)} 
-                                           className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg text-lg" placeholder="8:53" />
-                                </div>
-
-                                <div>
-                                    <label className="block text-sm font-semibold text-gray-700 mb-2">Distance (miles)</label>
-                                    <input type="text" value={distance} onChange={(e) => handleDistanceChange(e.target.value)}
-                                           className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg text-lg" placeholder="1.82" />
-                                </div>
-
-                                <div>
-                                    <label className="block text-sm font-semibold text-gray-700 mb-2">Duration (mm:ss)</label>
-                                    <input type="text" value={duration} onChange={(e) => handleDurationChange(e.target.value)}
-                                           className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg text-lg" placeholder="16:27" />
-                                </div>
-
-                                <button onClick={generatePokemon} disabled={isLoading}
-                                    className="w-full py-4 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-lg font-bold text-lg transition shadow-lg disabled:opacity-50">
-                                    {isLoading ? '⏳ Rolling...' : '✨ Roll for Pokémon!'}
-                                </button>
-                            </div>
-                        </div>
-
-                        {/* Results */}
-                        {pokemonData && (
-                            <div className="bg-white rounded-2xl shadow-lg p-6">
-                                <div className="flex justify-between items-center mb-4">
-                                    <h2 className="text-xl font-bold capitalize">{pokemonData.name}</h2>
-                                    <div className="flex gap-2">
-                                        {rarityRoll && (
-                                            <span className={`px-3 py-1 rounded-lg font-bold text-sm ${
-                                                rarityRoll.tier === 'legendary' ? 'bg-gradient-to-r from-yellow-400 to-orange-400 text-white' :
-                                                rarityRoll.tier === 'epic' ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white' :
-                                                rarityRoll.tier === 'rare' ? 'bg-blue-500 text-white' :
-                                                rarityRoll.tier === 'uncommon' ? 'bg-green-500 text-white' :
-                                                'bg-gray-500 text-white'
-                                            }`}>
-                                                {rarityRoll.tier.toUpperCase()}
-                                            </span>
-                                        )}
-                                        {isShiny && <span className="px-3 py-1 bg-yellow-400 text-white rounded-lg font-bold text-sm">✨ SHINY</span>}
-                                    </div>
-                                </div>
-                                
-                                <div className="bg-gray-100 rounded-lg p-4 mb-4">
-                                    <canvas ref={canvasRef} className="w-full h-auto rounded-lg" style={{ maxHeight: '400px' }} />
-                                </div>
-
-                                <button onClick={downloadImage}
-                                    className="w-full py-3 bg-black hover:bg-gray-900 text-white rounded-lg font-medium transition">
-                                    Share your PokeRun
-                                </button>
-                            </div>
-                        )}
-                    </div>
-                </div>
-            );
+        const adjusted = {
+          common:    { ...RARITY_TIERS.common,    chance: Math.max(0.10, RARITY_TIERS.common.chance / totalMultiplier) },
+          uncommon:  { ...RARITY_TIERS.uncommon,  chance: RARITY_TIERS.uncommon.chance * 1.2 },
+          rare:      { ...RARITY_TIERS.rare,      chance: RARITY_TIERS.rare.chance * totalMultiplier * 0.8 },
+          epic:      { ...RARITY_TIERS.epic,      chance: RARITY_TIERS.epic.chance * totalMultiplier * 1.2 },
+          legendary: { ...RARITY_TIERS.legendary, chance: Math.min(0.25, RARITY_TIERS.legendary.chance * totalMultiplier * 2) }
         };
 
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        console.log('Root created, attempting render...');
-        root.render(<PokemonRunTracker />);
-        console.log('Render called successfully');
-    </script>
+        const total = Object.values(adjusted).reduce((sum, t) => sum + t.chance, 0);
+        for (const k of Object.keys(adjusted)) adjusted[k].chance = adjusted[k].chance / total;
+
+        return { chances: adjusted, multiplier: totalMultiplier };
+      };
+
+      const rollRarity = (chances) => {
+        const roll = Math.random();
+        let cumulative = 0;
+        for (const [tier, data] of Object.entries(chances)) {
+          cumulative += data.chance;
+          if (roll <= cumulative) return { tier, ...data };
+        }
+        return { tier: 'common', ...chances.common };
+      };
+
+      const getPokemonByRarity = async (rarityTier, streakDays) => {
+        let pokemonId;
+
+        if (rarityTier === 'legendary') {
+          pokemonId = LEGENDARY_IDS[Math.floor(Math.random() * LEGENDARY_IDS.length)];
+        } else {
+          const tier = RARITY_TIERS[rarityTier];
+          pokemonId = Math.floor(Math.random() * (tier.maxId - tier.minId + 1)) + tier.minId;
+        }
+
+        const baseShinyChance = 1 / 4096;
+        const streakBonus = (streakDays || 0) * (1 / 500);
+        const shinyChance = Math.min(0.10, baseShinyChance + streakBonus);
+        const shinyRoll = Math.random() < shinyChance;
+
+        setIsShiny(shinyRoll);
+        return { pokemonId, isShiny: shinyRoll, shinyChance };
+      };
+
+      // --- PokeAPI fetch ---
+      const fetchPokemonData = async (pokemonId, shinyPreferred) => {
+        const response = await fetch(`https://pokeapi.co/api/v2/pokemon/${pokemonId}`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+
+        setPokemonData(data);
+
+        const variants = [];
+        if (data?.sprites?.front_default) variants.push({ name: 'Default', key: 'front_default', url: data.sprites.front_default });
+        if (data?.sprites?.front_shiny) variants.push({ name: 'Shiny ✨', key: 'front_shiny', url: data.sprites.front_shiny });
+
+        setAvailableVariants(variants);
+
+        const preferShiny = !!shinyPreferred && !!data?.sprites?.front_shiny;
+        setSpriteVariant(preferShiny ? 'front_shiny' : (variants[0]?.key || 'front_default'));
+
+        return data;
+      };
+
+      // --- canvas drawing ---
+      const getCurrentSpriteUrl = () => {
+        if (!pokemonData) return null;
+        const variant = availableVariants.find(v => v.key === spriteVariant);
+        return variant?.url || pokemonData?.sprites?.front_default || null;
+      };
+
+      const drawStar = (ctx, cx, cy, spikes, outerRadius, innerRadius) => {
+        let rot = Math.PI / 2 * 3;
+        const step = Math.PI / spikes;
+
+        ctx.beginPath();
+        ctx.moveTo(cx, cy - outerRadius);
+
+        for (let i = 0; i < spikes; i++) {
+          let x = cx + Math.cos(rot) * outerRadius;
+          let y = cy + Math.sin(rot) * outerRadius;
+          ctx.lineTo(x, y);
+          rot += step;
+
+          x = cx + Math.cos(rot) * innerRadius;
+          y = cy + Math.sin(rot) * innerRadius;
+          ctx.lineTo(x, y);
+          rot += step;
+        }
+        ctx.closePath();
+        ctx.fill();
+      };
+
+      const drawRarityIcon = (ctx, x, y, size, tier) => {
+        ctx.save();
+        switch (tier) {
+          case 'common': {
+            ctx.fillStyle = '#6B7280';
+            ctx.beginPath();
+            ctx.arc(x + size/2, y + size/2, size/2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#FFFFFF';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            break;
+          }
+          case 'uncommon': {
+            ctx.fillStyle = '#10B981';
+            ctx.beginPath();
+            ctx.moveTo(x + size/2, y);
+            ctx.lineTo(x + size, y + size/2);
+            ctx.lineTo(x + size/2, y + size);
+            ctx.lineTo(x, y + size/2);
+            ctx.closePath();
+            ctx.fill();
+            ctx.strokeStyle = '#FFFFFF';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            break;
+          }
+          case 'rare': {
+            ctx.fillStyle = '#3B82F6';
+            drawStar(ctx, x + size/2, y + size/2, 5, size/2, size/4);
+            ctx.strokeStyle = '#FFFFFF';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            break;
+          }
+          case 'epic': {
+            ctx.fillStyle = '#8B5CF6';
+            ctx.globalAlpha = 0.7;
+            drawStar(ctx, x + size/2 - 8, y + size/2, 5, size/2.2, size/4.4);
+            ctx.globalAlpha = 1;
+            drawStar(ctx, x + size/2 + 8, y + size/2, 5, size/2.2, size/4.4);
+            ctx.strokeStyle = '#FFFFFF';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            break;
+          }
+          case 'legendary': {
+            ctx.fillStyle = '#F59E0B';
+            drawStar(ctx, x + size/2, y + size/3, 5, size/2.5, size/5);
+            drawStar(ctx, x + size/4, y + size*2/3, 5, size/3, size/6);
+            drawStar(ctx, x + size*3/4, y + size*2/3, 5, size/3, size/6);
+            ctx.strokeStyle = '#FFFFFF';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            break;
+          }
+        }
+        ctx.restore();
+      };
+
+      const drawStatsBox = (ctx, width, height) => {
+        const boxWidth = 800;
+        const boxHeight = 250;
+        const boxX = (width - boxWidth) / 2;
+        const boxY = height - 330;
+
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(boxX - 8, boxY - 8, boxWidth + 16, boxHeight + 16);
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(boxX - 4, boxY - 4, boxWidth + 8, boxHeight + 8);
+        ctx.fillStyle = '#E8E8D0';
+        ctx.fillRect(boxX, boxY, boxWidth, boxHeight);
+
+        ctx.fillStyle = '#000000';
+        ctx.font = 'bold 50px Arial';
+        ctx.textAlign = 'left';
+
+        const padding = 60;
+        let textY = boxY + 70;
+
+        ctx.fillText(`Avg Pace ${pace} min/mi`, boxX + padding, textY);
+        textY += 80;
+        ctx.fillText(`Distance ${distance} mi`, boxX + padding, textY);
+        textY += 80;
+        ctx.fillText(`Duration ${duration}`, boxX + padding, textY);
+      };
+
+      const generateImage = () => {
+        const canvas = canvasRef.current;
+        if (!canvas || !pokemonData) return;
+
+        const ctx = canvas.getContext('2d');
+        const width = 1080;
+        const height = 1080;
+        canvas.width = width;
+        canvas.height = height;
+
+        ctx.fillStyle = '#C5C9B8';
+        ctx.fillRect(0, 0, width, height);
+
+        const spriteUrl = getCurrentSpriteUrl();
+        if (!spriteUrl) return;
+
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        img.onload = () => {
+          const scale = 6;
+          const spriteWidth = img.width * scale;
+          const spriteHeight = img.height * scale;
+          const spriteX = (width - spriteWidth) / 2;
+          const spriteY = 220;
+
+          // Name
+          ctx.fillStyle = '#000000';
+          ctx.font = 'bold 48px Arial';
+          ctx.textAlign = 'center';
+          ctx.fillText(String(pokemonData.name || '').toUpperCase(), width / 2, spriteY - 60);
+
+          ctx.imageSmoothingEnabled = false;
+
+          if (isShiny) {
+            ctx.shadowColor = '#FFD700';
+            ctx.shadowBlur = 30;
+            for (let i = 0; i < 5; i++) ctx.drawImage(img, spriteX, spriteY, spriteWidth, spriteHeight);
+            ctx.shadowBlur = 0;
+          }
+
+          ctx.drawImage(img, spriteX, spriteY, spriteWidth, spriteHeight);
+
+          // Rarity Icon
+          if (rarityRoll?.tier) {
+            const iconSize = 60;
+            const iconX = width / 2 - iconSize / 2;
+            const iconY = spriteY - 180;
+            drawRarityIcon(ctx, iconX, iconY, iconSize, rarityRoll.tier);
+          }
+
+          // Timestamp
+          ctx.fillStyle = '#666666';
+          ctx.font = '20px monospace';
+          ctx.textAlign = 'left';
+          const timestamp = new Date().toLocaleString();
+          ctx.fillText(timestamp, spriteX - 60, spriteY + spriteHeight + 100);
+
+          drawStatsBox(ctx, width, height);
+        };
+        img.onerror = () => console.error('Failed to load sprite image');
+        img.src = spriteUrl;
+      };
+
+      useEffect(() => {
+        if (pokemonData) generateImage();
+      }, [pokemonData, spriteVariant, rarityRoll, isShiny]);
+
+      // --- share/download ---
+      const downloadImage = async () => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        try {
+          canvas.toBlob(async (blob) => {
+            if (!blob) return;
+
+            if (navigator.share && navigator.canShare) {
+              const file = new File([blob], `pokerun-${pokemonData?.name || 'pokemon'}.png`, { type: 'image/png' });
+              if (navigator.canShare({ files: [file] })) {
+                try {
+                  await navigator.share({
+                    files: [file],
+                    title: 'My PokéRun',
+                    text: `Caught ${pokemonData?.name || 'a Pokémon'}!`
+                  });
+                  return;
+                } catch (err) {
+                  console.log('Share cancelled/failed:', err);
+                }
+              }
+            }
+
+            const link = document.createElement('a');
+            link.download = `pokerun-${pokemonData?.name || 'pokemon'}.png`;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+          }, 'image/png');
+        } catch (e) {
+          console.error('Error sharing:', e);
+          const link = document.createElement('a');
+          link.download = `pokerun-${pokemonData?.name || 'pokemon'}.png`;
+          link.href = canvas.toDataURL('image/png');
+          link.click();
+        }
+      };
+
+      // --- main action ---
+      const generatePokemon = async () => {
+        setIsLoading(true);
+
+        try {
+          const paceSeconds = parseTimeToSeconds(pace);
+          const distanceNum = parseFloat(distance);
+          const durationSeconds = parseTimeToSeconds(duration);
+
+          if (paceSeconds == null || durationSeconds == null || !Number.isFinite(distanceNum) || distanceNum <= 0) {
+            alert('Please enter valid Pace (m:ss), Distance (>0), and Duration (m:ss). Example: 8:53, 1.82, 16:27');
+            setIsLoading(false);
+            return;
+          }
+
+          // PRs + streak
+          const newPRs = checkForPRs(paceSeconds, distanceNum, durationSeconds);
+          const nextStreak = computeNextStreak(runHistory);
+          await saveStreak(nextStreak);
+
+          const intensity = calculateIntensity(paceSeconds, distanceNum, durationSeconds);
+
+          // Rarity roll
+          const { chances, multiplier } = calculateRarityChances(intensity, nextStreak, newPRs);
+          const rolled = rollRarity(chances); // { tier, color, chance... }
+
+          // Pokemon pick + shiny roll
+          const { pokemonId, isShiny: shinyRoll, shinyChance } = await getPokemonByRarity(rolled.tier, nextStreak.days);
+
+          // Fetch pokemon (and set state)
+          const fetched = await fetchPokemonData(pokemonId, shinyRoll);
+
+          // Save run + PRs
+          const newRun = {
+            date: new Date().toISOString(),
+            pace: paceSeconds,
+            distance: distanceNum,
+            duration: durationSeconds,
+            intensity,
+            rarity: rolled.tier,
+            pokemonId,
+            pokemonName: fetched?.name || 'unknown',
+            isShiny: shinyRoll,
+            newPRs: Object.keys(newPRs).filter(k => newPRs[k])
+          };
+
+          await saveRunHistory(newRun);
+          await updatePersonalRecords(paceSeconds, distanceNum, durationSeconds);
+
+          // UI rarity summary
+          setRarityRoll({
+            tier: rolled.tier,
+            color: rolled.color,
+            intensity,
+            multiplier,
+            chances,
+            shinyChance: (shinyChance * 100).toFixed(2)
+          });
+
+        } catch (err) {
+          console.error(err);
+          alert('Something went wrong. Check console for details.');
+        } finally {
+          setIsLoading(false);
+        }
+      };
+
+      return (
+        <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 p-4 pb-20">
+          <div className="max-w-2xl mx-auto">
+
+            <div className="text-center mb-6">
+              <h1 className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-transparent mb-2">
+                PokéRun Journey
+              </h1>
+              <p className="text-sm text-gray-600">Track runs • Catch Pokémon • Roll rarity</p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 mb-6">
+              <div className="bg-gradient-to-br from-orange-500 to-red-500 rounded-xl p-3 text-white shadow-lg">
+                <div className="text-xs font-semibold mb-1">🔥 Streak</div>
+                <div className="text-2xl font-bold">{currentStreak.days}d</div>
+              </div>
+              <div className="bg-gradient-to-br from-purple-500 to-pink-500 rounded-xl p-3 text-white shadow-lg">
+                <div className="text-xs font-semibold mb-1">🏃 Runs</div>
+                <div className="text-2xl font-bold">{runHistory.length}</div>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-2xl shadow-lg p-6 mb-6">
+              <h2 className="text-xl font-bold text-gray-800 mb-4">Your Run</h2>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Pace (min/mi)</label>
+                  <input
+                    type="text"
+                    value={pace}
+                    onChange={(e) => handlePaceChange(e.target.value)}
+                    className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg text-lg"
+                    placeholder="8:53"
+                    inputMode="numeric"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Distance (miles)</label>
+                  <input
+                    type="text"
+                    value={distance}
+                    onChange={(e) => handleDistanceChange(e.target.value)}
+                    className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg text-lg"
+                    placeholder="1.82"
+                    inputMode="decimal"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Duration (mm:ss)</label>
+                  <input
+                    type="text"
+                    value={duration}
+                    onChange={(e) => handleDurationChange(e.target.value)}
+                    className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg text-lg"
+                    placeholder="16:27"
+                    inputMode="numeric"
+                  />
+                </div>
+
+                <button
+                  onClick={generatePokemon}
+                  disabled={isLoading}
+                  className="w-full py-4 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-lg font-bold text-lg transition shadow-lg disabled:opacity-50"
+                >
+                  {isLoading ? '⏳ Rolling...' : '✨ Roll for Pokémon!'}
+                </button>
+              </div>
+            </div>
+
+            {pokemonData && (
+              <div className="bg-white rounded-2xl shadow-lg p-6">
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-xl font-bold capitalize">{pokemonData.name}</h2>
+                  <div className="flex gap-2">
+                    {rarityRoll && (
+                      <span className={`px-3 py-1 rounded-lg font-bold text-sm ${
+                        rarityRoll.tier === 'legendary' ? 'bg-gradient-to-r from-yellow-400 to-orange-400 text-white' :
+                        rarityRoll.tier === 'epic' ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white' :
+                        rarityRoll.tier === 'rare' ? 'bg-blue-500 text-white' :
+                        rarityRoll.tier === 'uncommon' ? 'bg-green-500 text-white' :
+                        'bg-gray-500 text-white'
+                      }`}>
+                        {rarityRoll.tier.toUpperCase()}
+                      </span>
+                    )}
+                    {isShiny && (
+                      <span className="px-3 py-1 bg-yellow-400 text-white rounded-lg font-bold text-sm">
+                        ✨ SHINY
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="bg-gray-100 rounded-lg p-4 mb-4">
+                  <canvas ref={canvasRef} className="w-full h-auto rounded-lg" style={{ maxHeight: '400px' }} />
+                </div>
+
+                <button
+                  onClick={downloadImage}
+                  className="w-full py-3 bg-black hover:bg-gray-900 text-white rounded-lg font-medium transition"
+                >
+                  Share your PokeRun
+                </button>
+
+                {rarityRoll && (
+                  <div className="mt-4 text-xs text-gray-600">
+                    <div><span className="font-semibold">Intensity:</span> {rarityRoll.intensity}/100</div>
+                    <div><span className="font-semibold">Multiplier:</span> {rarityRoll.multiplier.toFixed(2)}x</div>
+                    <div><span className="font-semibold">Shiny chance:</span> {rarityRoll.shinyChance}%</div>
+                  </div>
+                )}
+              </div>
+            )}
+
+          </div>
+        </div>
+      );
+    };
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<PokemonRunTracker />);
+    console.log('Render complete');
+  </script>
 </body>
 </html>
