@@ -400,10 +400,10 @@
                 if (rarity.tier === 'legendary') {
                     pokemonId = LEGENDARY_IDS[Math.floor(Math.random() * LEGENDARY_IDS.length)];
                 } else {
+                    // Pick from generation range based on rarity
                     const genStart = (rarity.minGen - 1) * 151 + 1;
-                    const genEnd = rarity.maxGen * 151;
+                    const genEnd = Math.min(rarity.maxGen * 151, 898); // Cap at gen 8 max
                     pokemonId = Math.floor(Math.random() * (genEnd - genStart + 1)) + genStart;
-                    pokemonId = Math.min(898, pokemonId);
                 }
                 
                 const baseShinyChance = 1/4096;
