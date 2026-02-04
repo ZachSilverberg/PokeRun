@@ -1039,6 +1039,7 @@
             const [pace, setPace] = useState('');
             const [distance, setDistance] = useState('');
             const [duration, setDuration] = useState('');
+            const [lastEdited, setLastEdited] = useState(null); // Track which field was edited last
             const [pokemonData, setPokemonData] = useState(null);
             const [spriteVariant, setSpriteVariant] = useState('default');
             const [availableVariants, setAvailableVariants] = useState([]);
@@ -1046,48 +1047,77 @@
             
             // Auto-calculate third value ONLY when two are entered and third is empty
             const isFieldEmpty = (value) => {
-                return !value || value === '' || value === '0' || value === '0:00' || value === '0.0';
+                return !value || value === '' || value === '0' || value === '0:00' || value === '0.0' || value === ':';
             };
+            
+            // Simplified calculation logic:
+            // - Duration is ALWAYS calculated from Pace + Distance
+            // - If user edits Duration, recalculate Pace to match
             
             const handlePaceChange = (value) => {
                 setPace(value);
+                setLastEdited('pace');
                 
-                // Only calculate duration if it's currently empty
-                if (distance && value && isFieldEmpty(duration)) {
+                // Calculate duration if we have distance
+                const dist = parseFloat(distance);
+                if (value.includes(':') && !isNaN(dist) && dist > 0) {
                     const [min, sec] = value.split(':').map(Number);
                     if (!isNaN(min) && !isNaN(sec)) {
                         const paceSeconds = min * 60 + (sec || 0);
-                        const dist = parseFloat(distance);
-                        if (!isNaN(dist) && dist > 0) {
-                            const totalSeconds = paceSeconds * dist;
-                            const durMin = Math.floor(totalSeconds / 60);
-                            const durSec = Math.round(totalSeconds % 60);
-                            setDuration(`${durMin}:${durSec.toString().padStart(2, '0')}`);
-                        }
+                        const totalSeconds = paceSeconds * dist;
+                        const durMin = Math.floor(totalSeconds / 60);
+                        const durSec = Math.round(totalSeconds % 60);
+                        setDuration(`${durMin}:${durSec.toString().padStart(2, '0')}`);
+                    }
+                }
+            };
+
+            const handlePaceBlur = () => {
+                // Ensure calculation happens even with partial input
+                const dist = parseFloat(distance);
+                if (pace.includes(':') && !isNaN(dist) && dist > 0) {
+                    const [min, sec] = pace.split(':').map(Number);
+                    if (!isNaN(min) && !isNaN(sec)) {
+                        const paceSeconds = min * 60 + (sec || 0);
+                        const totalSeconds = paceSeconds * dist;
+                        const durMin = Math.floor(totalSeconds / 60);
+                        const durSec = Math.round(totalSeconds % 60);
+                        setDuration(`${durMin}:${durSec.toString().padStart(2, '0')}`);
                     }
                 }
             };
 
             const handleDistanceChange = (value) => {
                 setDistance(value);
+                setLastEdited('distance');
+                
                 const dist = parseFloat(value);
                 
-                // Priority 1: If pace is empty but we have duration, calculate pace
-                if (isFieldEmpty(pace) && !isFieldEmpty(duration) && !isNaN(dist) && dist > 0) {
-                    const [durMin, durSec] = duration.split(':').map(Number);
-                    if (!isNaN(durMin) && !isNaN(durSec)) {
-                        const totalSeconds = durMin * 60 + (durSec || 0);
-                        const paceSeconds = totalSeconds / dist;
-                        const paceMin = Math.floor(paceSeconds / 60);
-                        const paceSec = Math.round(paceSeconds % 60);
-                        setPace(`${paceMin}:${paceSec.toString().padStart(2, '0')}`);
+                // Skip calculation if still typing decimal or invalid
+                if ((value.length < 3 && value.endsWith('.')) || isNaN(dist) || dist <= 0) {
+                    return;
+                }
+                
+                // Calculate duration if we have pace
+                if (pace.includes(':')) {
+                    const [min, sec] = pace.split(':').map(Number);
+                    if (!isNaN(min) && !isNaN(sec)) {
+                        const paceSeconds = min * 60 + (sec || 0);
+                        const totalSeconds = paceSeconds * dist;
+                        const durMin = Math.floor(totalSeconds / 60);
+                        const durSec = Math.round(totalSeconds % 60);
+                        setDuration(`${durMin}:${durSec.toString().padStart(2, '0')}`);
                     }
                 }
-                // Priority 2: If duration is empty but we have pace, calculate duration
-                else if (isFieldEmpty(duration) && !isFieldEmpty(pace) && !isNaN(dist) && dist > 0) {
-                    const [paceMin, paceSec] = pace.split(':').map(Number);
-                    if (!isNaN(paceMin) && !isNaN(paceSec)) {
-                        const paceSeconds = paceMin * 60 + (paceSec || 0);
+            };
+
+            const handleDistanceBlur = () => {
+                // Trigger calculation on blur for single-digit entries
+                const dist = parseFloat(distance);
+                if (!isNaN(dist) && dist > 0 && pace.includes(':')) {
+                    const [min, sec] = pace.split(':').map(Number);
+                    if (!isNaN(min) && !isNaN(sec)) {
+                        const paceSeconds = min * 60 + (sec || 0);
                         const totalSeconds = paceSeconds * dist;
                         const durMin = Math.floor(totalSeconds / 60);
                         const durSec = Math.round(totalSeconds % 60);
@@ -1098,19 +1128,33 @@
 
             const handleDurationChange = (value) => {
                 setDuration(value);
+                setLastEdited('duration');
                 
-                // Only calculate pace if it's currently empty
-                if (distance && value && isFieldEmpty(pace)) {
+                // If user manually edits duration, recalculate pace to match
+                const dist = parseFloat(distance);
+                if (value.includes(':') && !isNaN(dist) && dist > 0) {
                     const [min, sec] = value.split(':').map(Number);
                     if (!isNaN(min) && !isNaN(sec)) {
-                        const totalSeconds = min * 60 + (sec || 0);
-                        const dist = parseFloat(distance);
-                        if (!isNaN(dist) && dist > 0) {
-                            const paceSeconds = totalSeconds / dist;
-                            const paceMin = Math.floor(paceSeconds / 60);
-                            const paceSec = Math.round(paceSeconds % 60);
-                            setPace(`${paceMin}:${paceSec.toString().padStart(2, '0')}`);
-                        }
+                        const durationSeconds = min * 60 + (sec || 0);
+                        const paceSeconds = durationSeconds / dist;
+                        const paceMin = Math.floor(paceSeconds / 60);
+                        const paceSec = Math.round(paceSeconds % 60);
+                        setPace(`${paceMin}:${paceSec.toString().padStart(2, '0')}`);
+                    }
+                }
+            };
+
+            const handleDurationBlur = () => {
+                // Ensure pace recalculation happens on blur
+                const dist = parseFloat(distance);
+                if (duration.includes(':') && !isNaN(dist) && dist > 0) {
+                    const [min, sec] = duration.split(':').map(Number);
+                    if (!isNaN(min) && !isNaN(sec)) {
+                        const durationSeconds = min * 60 + (sec || 0);
+                        const paceSeconds = durationSeconds / dist;
+                        const paceMin = Math.floor(paceSeconds / 60);
+                        const paceSec = Math.round(paceSeconds % 60);
+                        setPace(`${paceMin}:${paceSec.toString().padStart(2, '0')}`);
                     }
                 }
             };
@@ -1689,19 +1733,25 @@
                             <div className="space-y-4">
                                 <div>
                                     <label className="block text-sm font-semibold text-gray-700 mb-2">Pace (min/mi)</label>
-                                    <input type="text" value={pace} onChange={(e) => handlePaceChange(e.target.value)} 
+                                    <input type="text" value={pace} 
+                                           onChange={(e) => handlePaceChange(e.target.value)}
+                                           onBlur={handlePaceBlur}
                                            className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg text-lg" placeholder="8:53" />
                                 </div>
 
                                 <div>
                                     <label className="block text-sm font-semibold text-gray-700 mb-2">Distance (miles)</label>
-                                    <input type="text" value={distance} onChange={(e) => handleDistanceChange(e.target.value)}
+                                    <input type="text" value={distance} 
+                                           onChange={(e) => handleDistanceChange(e.target.value)}
+                                           onBlur={handleDistanceBlur}
                                            className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg text-lg" placeholder="1.82" />
                                 </div>
 
                                 <div>
                                     <label className="block text-sm font-semibold text-gray-700 mb-2">Duration (mm:ss)</label>
-                                    <input type="text" value={duration} onChange={(e) => handleDurationChange(e.target.value)}
+                                    <input type="text" value={duration} 
+                                           onChange={(e) => handleDurationChange(e.target.value)}
+                                           onBlur={handleDurationBlur}
                                            className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg text-lg" placeholder="16:27" />
                                 </div>
 
