@@ -8,6 +8,11 @@
     <meta name="theme-color" content="#8B5CF6">
     <title>PokéRun - Legendary Journey Tracker</title>
     
+    <!-- 🔥 Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+    
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -63,6 +68,16 @@
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
+
+        /* 🌟 Shiny glow animation for notifications */
+        @keyframes shinyGlow {
+            0%, 100% { box-shadow: 0 0 10px rgba(255, 215, 0, 0.8), 0 0 20px rgba(255, 215, 0, 0.5); }
+            50% { box-shadow: 0 0 20px rgba(255, 215, 0, 1), 0 0 30px rgba(255, 215, 0, 0.7); }
+        }
+        
+        .notification-glow {
+            animation: shinyGlow 2s ease-in-out infinite;
+        }
     </style>
 </head>
 <body>
@@ -89,6 +104,291 @@
                 }
             };
         }
+
+        // =========================
+        // 🔥 FIREBASE INITIALIZATION
+        // =========================
+        const firebaseConfig = {
+            apiKey: "AIzaSyDbWk2fXpMSokKpvxzZRUXX4GXj6UQtTiM",
+            authDomain: "pokerun-e36be.firebaseapp.com",
+            databaseURL: "https://pokerun-e36be-default-rtdb.firebaseio.com",
+            projectId: "pokerun-e36be",
+            storageBucket: "pokerun-e36be.firebasestorage.app",
+            messagingSenderId: "813130222312",
+            appId: "1:813130222312:web:140ab42b21341cb8c1575d"
+        };
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const database = firebase.database();
+        
+        console.log('🔥 Firebase initialized successfully');
+
+        // =========================
+        // 🎨 TRAINER NAME GENERATION
+        // =========================
+        const TRAINER_NAMES = [
+            'Ash', 'Red', 'Blue', 'Green', 'Yellow', 'Gold', 'Silver', 'Crystal',
+            'Ruby', 'Sapphire', 'Emerald', 'Diamond', 'Pearl', 'Platinum',
+            'Black', 'White', 'X', 'Y', 'Sun', 'Moon', 'Elio', 'Selene',
+            'Victor', 'Gloria', 'Chase', 'Elaine', 'Leaf', 'Ethan', 'Lyra',
+            'Brendan', 'May', 'Lucas', 'Dawn', 'Hilbert', 'Hilda', 'Nate', 'Rosa',
+            'Calem', 'Serena', 'Hop', 'Marnie', 'Bede', 'Trace', 'Gladion',
+            'Lillie', 'Hau', 'Bianca', 'Cheren', 'N', 'Barry', 'Wally', 'Zinnia'
+        ];
+
+        const TRAINER_COLORS = [
+            'Crimson', 'Scarlet', 'Ruby', 'Cherry', 'Rose', 'Coral', 'Salmon',
+            'Orange', 'Amber', 'Gold', 'Yellow', 'Lime', 'Emerald', 'Jade',
+            'Teal', 'Cyan', 'Azure', 'Sapphire', 'Cobalt', 'Navy', 'Indigo',
+            'Violet', 'Purple', 'Magenta', 'Pink', 'Silver', 'Gray', 'Slate',
+            'Onyx', 'Ebony', 'Ivory', 'Pearl', 'Frost', 'Sky', 'Ocean', 'Forest'
+        ];
+
+        const COLOR_HEX_MAP = {
+            'Crimson': '#DC143C', 'Scarlet': '#FF2400', 'Ruby': '#E0115F', 'Cherry': '#DE3163',
+            'Rose': '#FF007F', 'Coral': '#FF7F50', 'Salmon': '#FA8072', 'Orange': '#FF8C00',
+            'Amber': '#FFBF00', 'Gold': '#FFD700', 'Yellow': '#FFFF00', 'Lime': '#32CD32',
+            'Emerald': '#50C878', 'Jade': '#00A86B', 'Teal': '#008080', 'Cyan': '#00FFFF',
+            'Azure': '#007FFF', 'Sapphire': '#0F52BA', 'Cobalt': '#0047AB', 'Navy': '#000080',
+            'Indigo': '#4B0082', 'Violet': '#8F00FF', 'Purple': '#800080', 'Magenta': '#FF00FF',
+            'Pink': '#FFC0CB', 'Silver': '#C0C0C0', 'Gray': '#808080', 'Slate': '#708090',
+            'Onyx': '#353839', 'Ebony': '#555D50', 'Ivory': '#FFFFF0', 'Pearl': '#F0EAD6',
+            'Frost': '#E1F5FE', 'Sky': '#87CEEB', 'Ocean': '#006994', 'Forest': '#228B22'
+        };
+
+        function generateUniqueTrainerName(existingNames = []) {
+            const used = new Set(existingNames);
+            let attempts = 0;
+            const maxAttempts = 5000;
+
+            while (attempts < maxAttempts) {
+                const color = TRAINER_COLORS[Math.floor(Math.random() * TRAINER_COLORS.length)];
+                const name = TRAINER_NAMES[Math.floor(Math.random() * TRAINER_NAMES.length)];
+                const prefix = attempts > 3000 ? 'Dark ' : '';
+                const fullName = `${prefix}${color} ${name}`;
+
+                if (!used.has(fullName)) {
+                    return {
+                        displayName: fullName,
+                        badgeColor: COLOR_HEX_MAP[color] || '#808080'
+                    };
+                }
+                attempts++;
+            }
+
+            // Fallback with timestamp
+            return {
+                displayName: `Trainer ${Date.now()}`,
+                badgeColor: '#808080'
+            };
+        }
+
+        // =========================
+        // 🔐 FIREBASE AUTH & MIGRATION SYSTEM
+        // =========================
+        class FirebaseManager {
+            constructor() {
+                this.user = null;
+                this.isOnline = navigator.onLine;
+                this.migrationInProgress = false;
+                this.pendingWrites = [];
+
+                // Listen for online/offline
+                window.addEventListener('online', () => {
+                    this.isOnline = true;
+                    console.log('📡 Back online');
+                    this.syncPendingWrites();
+                });
+                window.addEventListener('offline', () => {
+                    this.isOnline = false;
+                    console.log('📴 Offline mode');
+                });
+
+                // Check for existing auth state
+                auth.onAuthStateChanged((user) => {
+                    if (user) {
+                        this.user = user;
+                        console.log('✅ Auth state restored:', user.uid);
+                    }
+                });
+            }
+
+            async signInAnonymously() {
+                try {
+                    const userCredential = await auth.signInAnonymously();
+                    this.user = userCredential.user;
+                    console.log('✅ Anonymous auth successful:', this.user.uid);
+                    return this.user;
+                } catch (error) {
+                    console.error('❌ Anonymous auth failed:', error);
+                    throw error;
+                }
+            }
+
+            async createTrainerProfile() {
+                if (!this.user) {
+                    throw new Error('No authenticated user');
+                }
+
+                // Check if profile already exists
+                const profileSnapshot = await database.ref(`users/${this.user.uid}/profile`).once('value');
+                if (profileSnapshot.exists()) {
+                    console.log('✅ Profile already exists');
+                    return profileSnapshot.val();
+                }
+
+                // Fetch all existing names to ensure uniqueness
+                const usersSnapshot = await database.ref('users').once('value');
+                const existingNames = [];
+                usersSnapshot.forEach(child => {
+                    const profile = child.val().profile;
+                    if (profile && profile.displayName) {
+                        existingNames.push(profile.displayName);
+                    }
+                });
+
+                // Generate unique name
+                const { displayName, badgeColor } = generateUniqueTrainerName(existingNames);
+
+                // Create profile
+                const profile = {
+                    displayName,
+                    badgeColor,
+                    createdAt: firebase.database.ServerValue.TIMESTAMP
+                };
+
+                await database.ref(`users/${this.user.uid}/profile`).set(profile);
+                console.log('✅ Trainer profile created:', displayName);
+
+                return profile;
+            }
+
+            async migrateLocalStorageToFirebase() {
+                if (!this.user || this.migrationInProgress) {
+                    return;
+                }
+
+                this.migrationInProgress = true;
+                console.log('🔄 Starting migration from localStorage to Firebase...');
+
+                try {
+                    // Migrate runs
+                    const runsData = localStorage.getItem('pokemonRuns');
+                    if (runsData) {
+                        const runs = JSON.parse(runsData);
+                        if (Array.isArray(runs) && runs.length > 0) {
+                            const runsRef = database.ref(`users/${this.user.uid}/runs`);
+                            const runsObject = {};
+                            runs.forEach((run, index) => {
+                                runsObject[`run_${Date.now()}_${index}`] = run;
+                            });
+                            await runsRef.set(runsObject);
+                            console.log(`✅ Migrated ${runs.length} runs`);
+                        }
+                    }
+
+                    // Migrate PC
+                    const pcData = localStorage.getItem('pokemonPC');
+                    if (pcData) {
+                        const pc = JSON.parse(pcData);
+                        if (Array.isArray(pc) && pc.length > 0) {
+                            await database.ref(`users/${this.user.uid}/pc`).set(pc);
+                            console.log(`✅ Migrated ${pc.length} Pokémon to PC`);
+                        }
+                    }
+
+                    // Migrate starters
+                    const startersData = localStorage.getItem('starterTeam');
+                    if (startersData) {
+                        const starters = JSON.parse(startersData);
+                        if (Array.isArray(starters) && starters.length > 0) {
+                            await database.ref(`users/${this.user.uid}/starters`).set(starters);
+                            console.log(`✅ Migrated ${starters.length} starters`);
+                        }
+                    }
+
+                    // Clear localStorage after successful migration
+                    localStorage.removeItem('pokemonRuns');
+                    localStorage.removeItem('pokemonPC');
+                    localStorage.removeItem('starterTeam');
+                    
+                    // Keep profile backup in localStorage for offline recovery
+                    const profile = await this.getProfile();
+                    localStorage.setItem('profileBackup', JSON.stringify({
+                        uid: this.user.uid,
+                        displayName: profile.displayName,
+                        badgeColor: profile.badgeColor,
+                        timestamp: Date.now()
+                    }));
+
+                    console.log('✅ Migration complete! localStorage cleared, profile backed up.');
+                    this.migrationInProgress = false;
+                    return true;
+                } catch (error) {
+                    console.error('❌ Migration failed:', error);
+                    this.migrationInProgress = false;
+                    throw error;
+                }
+            }
+
+            async getProfile() {
+                if (!this.user) return null;
+                const snapshot = await database.ref(`users/${this.user.uid}/profile`).once('value');
+                return snapshot.val();
+            }
+
+            async updateProfile(updates) {
+                if (!this.user) return;
+                await database.ref(`users/${this.user.uid}/profile`).update(updates);
+                
+                // Update backup
+                const profile = await this.getProfile();
+                localStorage.setItem('profileBackup', JSON.stringify({
+                    uid: this.user.uid,
+                    ...profile,
+                    timestamp: Date.now()
+                }));
+            }
+
+            async syncPendingWrites() {
+                if (!this.isOnline || this.pendingWrites.length === 0) return;
+
+                console.log(`🔄 Syncing ${this.pendingWrites.length} pending writes...`);
+                
+                const writes = [...this.pendingWrites];
+                this.pendingWrites = [];
+
+                for (const write of writes) {
+                    try {
+                        await database.ref(write.path).set(write.data);
+                        console.log('✅ Synced:', write.path);
+                    } catch (error) {
+                        console.error('❌ Sync failed for:', write.path, error);
+                        this.pendingWrites.push(write); // Retry later
+                    }
+                }
+            }
+
+            queueWrite(path, data) {
+                if (this.isOnline && this.user) {
+                    return database.ref(path).set(data);
+                } else {
+                    this.pendingWrites.push({ path, data });
+                    console.log('📦 Queued for sync:', path);
+                    
+                    // Also save to localStorage as backup
+                    const key = path.replace(/\//g, '_');
+                    localStorage.setItem(`pending_${key}`, JSON.stringify(data));
+                    
+                    return Promise.resolve();
+                }
+            }
+        }
+
+        const firebaseManager = new FirebaseManager();
+
 
         // =========================
         // ✅ NEW RARITY DATABASE (1–898)
@@ -1045,6 +1345,25 @@
             const [availableVariants, setAvailableVariants] = useState([]);
             const [isShiny, setIsShiny] = useState(false);
             
+            // 🔥 Firebase Profile State
+            const [firebaseUser, setFirebaseUser] = useState(null);
+            const [firebaseProfile, setFirebaseProfile] = useState(null);
+            const [isCreatingProfile, setIsCreatingProfile] = useState(false);
+            const [hasNotifications, setHasNotifications] = useState(false); // For future friend requests
+            const [showWipeConfirmation, setShowWipeConfirmation] = useState(false);
+            const [isWiping, setIsWiping] = useState(false);
+            
+            // 👥 Friend System State
+            const [showFriendSearch, setShowFriendSearch] = useState(false);
+            const [friendSearchQuery, setFriendSearchQuery] = useState('');
+            const [friendSearchResults, setFriendSearchResults] = useState([]);
+            const [isSearching, setIsSearching] = useState(false);
+            const [friends, setFriends] = useState([]);
+            const [friendProfiles, setFriendProfiles] = useState({}); // Map of friendId -> profile
+            const [incomingRequests, setIncomingRequests] = useState([]);
+            const [outgoingRequests, setOutgoingRequests] = useState([]);
+            const [requestCounts, setRequestCounts] = useState({}); // Track request attempts per user
+            
             // Profile customization
             const [trainerName, setTrainerName] = useState('Trainer');
             const [profileColor, setProfileColor] = useState('#FF6B6B');
@@ -1207,6 +1526,7 @@
 
             useEffect(() => {
                 loadRunHistory();
+                checkFirebaseAuth(); // 🔥 Check if user is already authenticated
                 // Hide loading screen
                 setTimeout(() => {
                     document.getElementById('loading').classList.add('hidden');
@@ -1244,6 +1564,345 @@
                     return v ?? fallback;
                 } catch {
                     return fallback;
+                }
+            };
+
+            // 🔥 Check Firebase Auth State
+            const checkFirebaseAuth = async () => {
+                try {
+                    // Check if user is already authenticated
+                    if (firebaseManager.user) {
+                        setFirebaseUser(firebaseManager.user);
+                        const profile = await firebaseManager.getProfile();
+                        if (profile) {
+                            setFirebaseProfile(profile);
+                            setTrainerName(profile.displayName);
+                            setProfileColor(profile.badgeColor);
+                            console.log('✅ Firebase profile loaded:', profile.displayName);
+                            
+                            // Load friends data
+                            await loadFriendsData();
+                        }
+                    }
+                } catch (error) {
+                    console.error('❌ Error checking Firebase auth:', error);
+                }
+            };
+
+            // 🔥 Handle Trainer Badge Click - Create Profile if First Time
+            const handleTrainerBadgeClick = async () => {
+                // If already has Firebase profile, just toggle menu
+                if (firebaseProfile) {
+                    setShowProfileMenu(!showProfileMenu);
+                    return;
+                }
+
+                // First time clicking - create Firebase profile
+                setIsCreatingProfile(true);
+                try {
+                    console.log('🎯 First badge click - creating Firebase profile...');
+                    
+                    // Sign in anonymously
+                    await firebaseManager.signInAnonymously();
+                    setFirebaseUser(firebaseManager.user);
+                    
+                    // Create profile
+                    const profile = await firebaseManager.createTrainerProfile();
+                    setFirebaseProfile(profile);
+                    setTrainerName(profile.displayName);
+                    setProfileColor(profile.badgeColor);
+                    
+                    // Migrate existing data
+                    await firebaseManager.migrateLocalStorageToFirebase();
+                    
+                    // Load friends data (will be empty for new user)
+                    await loadFriendsData();
+                    
+                    console.log('✅ Firebase profile created:', profile.displayName);
+                    
+                    // Open menu to show the new profile
+                    setShowProfileMenu(true);
+                    
+                } catch (error) {
+                    console.error('❌ Failed to create Firebase profile:', error);
+                    alert('Failed to create trainer profile. Please try again.');
+                } finally {
+                    setIsCreatingProfile(false);
+                }
+            };
+
+            // Update trainer name in Firebase when changed
+            const handleNameChange = async (newName) => {
+                if (newName.length > 12) {
+                    newName = newName.substring(0, 12);
+                    setTrainerName(newName);
+                }
+                
+                // Update in Firebase if profile exists
+                if (firebaseProfile) {
+                    try {
+                        await firebaseManager.updateProfile({ displayName: newName });
+                        setFirebaseProfile({ ...firebaseProfile, displayName: newName });
+                        console.log('✅ Name updated in Firebase:', newName);
+                    } catch (error) {
+                        console.error('❌ Failed to update name:', error);
+                    }
+                }
+                
+                // Also save to localStorage for backward compatibility
+                saveProfile(newName, profileColor);
+            };
+
+            // Update badge color in Firebase when changed
+            const handleColorChange = async (newColor) => {
+                setProfileColor(newColor);
+                
+                // Update in Firebase if profile exists
+                if (firebaseProfile) {
+                    try {
+                        await firebaseManager.updateProfile({ badgeColor: newColor });
+                        setFirebaseProfile({ ...firebaseProfile, badgeColor: newColor });
+                        console.log('✅ Color updated in Firebase:', newColor);
+                    } catch (error) {
+                        console.error('❌ Failed to update color:', error);
+                    }
+                }
+                
+                // Also save to localStorage for backward compatibility
+                saveProfile(trainerName, newColor);
+            };
+
+            // 🔥 Wipe Firebase Profile & Reset to Fresh State
+            const handleWipeProfile = async () => {
+                setIsWiping(true);
+                try {
+                    console.log('🗑️ Wiping profile data...');
+                    
+                    // Delete Firebase data
+                    if (firebaseManager.user) {
+                        await database.ref(`users/${firebaseManager.user.uid}`).remove();
+                        console.log('✅ Firebase data deleted');
+                    }
+                    
+                    // Sign out
+                    await auth.signOut();
+                    firebaseManager.user = null;
+                    
+                    // Clear all localStorage
+                    localStorage.clear();
+                    console.log('✅ localStorage cleared');
+                    
+                    // Reset all state
+                    setFirebaseUser(null);
+                    setFirebaseProfile(null);
+                    setTrainerName('Trainer');
+                    setProfileColor('#FF6B6B');
+                    setPokemonPC([]);
+                    setStarterTeam([null, null, null, null, null, null]);
+                    setRunHistory([]);
+                    setCurrentStreak({ days: 0, weeks: 0 });
+                    setPersonalRecords({ fastestPace: null, longestDistance: null, longestDuration: null });
+                    setCurrentJourney(null);
+                    setJourneyHistory([]);
+                    setShowWipeConfirmation(false);
+                    setShowProfileMenu(false);
+                    
+                    console.log('✅ Profile wiped! Fresh start as Arceus intended.');
+                    alert('Profile wiped! Arceus has deemed you start from scratch... tough luck! 🌩️');
+                    
+                    // Reload page for clean slate
+                    setTimeout(() => window.location.reload(), 1000);
+                    
+                } catch (error) {
+                    console.error('❌ Error wiping profile:', error);
+                    alert('Failed to wipe profile. Please try again.');
+                } finally {
+                    setIsWiping(false);
+                }
+            };
+
+            // =========================
+            // 👥 FRIEND SYSTEM FUNCTIONS
+            // =========================
+
+            // Load friends and friend requests
+            const loadFriendsData = async () => {
+                if (!firebaseManager.user) return;
+
+                try {
+                    const uid = firebaseManager.user.uid;
+
+                    // Load friend list
+                    const friendsSnapshot = await database.ref(`users/${uid}/friends`).once('value');
+                    const friendsData = friendsSnapshot.val() || {};
+                    const friendIds = Object.keys(friendsData);
+                    setFriends(friendIds);
+
+                    // Load friend profiles
+                    const profiles = {};
+                    for (const friendId of friendIds) {
+                        const profileSnapshot = await database.ref(`users/${friendId}/profile`).once('value');
+                        if (profileSnapshot.exists()) {
+                            profiles[friendId] = profileSnapshot.val();
+                        }
+                    }
+                    setFriendProfiles(profiles);
+
+                    // Load incoming requests
+                    const incomingSnapshot = await database.ref(`users/${uid}/friendRequests/incoming`).once('value');
+                    const incomingData = incomingSnapshot.val() || {};
+                    const incoming = Object.keys(incomingData);
+                    setIncomingRequests(incoming);
+
+                    // Update notification badge
+                    setHasNotifications(incoming.length > 0);
+
+                    // Load outgoing requests
+                    const outgoingSnapshot = await database.ref(`users/${uid}/friendRequests/outgoing`).once('value');
+                    const outgoingData = outgoingSnapshot.val() || {};
+                    setOutgoingRequests(Object.keys(outgoingData));
+
+                    console.log(`✅ Loaded ${friendIds.length} friends, ${incoming.length} incoming requests`);
+                } catch (error) {
+                    console.error('❌ Error loading friends:', error);
+                }
+            };
+
+            // Search for trainers by exact name
+            const searchTrainers = async () => {
+                if (!friendSearchQuery.trim() || !firebaseManager.user) return;
+
+                setIsSearching(true);
+                setFriendSearchResults([]);
+
+                try {
+                    const query = friendSearchQuery.trim();
+                    const usersSnapshot = await database.ref('users').once('value');
+                    const results = [];
+
+                    usersSnapshot.forEach(child => {
+                        const uid = child.key;
+                        const profile = child.val().profile;
+
+                        // Skip self and check exact name match
+                        if (uid !== firebaseManager.user.uid && profile && profile.displayName === query) {
+                            results.push({
+                                uid,
+                                displayName: profile.displayName,
+                                badgeColor: profile.badgeColor,
+                                isFriend: friends.includes(uid),
+                                hasPendingRequest: outgoingRequests.includes(uid)
+                            });
+                        }
+                    });
+
+                    setFriendSearchResults(results);
+                    console.log(`🔍 Found ${results.length} trainers matching "${query}"`);
+                } catch (error) {
+                    console.error('❌ Search error:', error);
+                } finally {
+                    setIsSearching(false);
+                }
+            };
+
+            // Send friend request
+            const sendFriendRequest = async (targetUid) => {
+                if (!firebaseManager.user) return;
+
+                try {
+                    const myUid = firebaseManager.user.uid;
+
+                    // Check request count (max 5 attempts)
+                    const currentCount = requestCounts[targetUid] || 0;
+                    if (currentCount >= 5) {
+                        alert('You have already sent 5 requests to this trainer.');
+                        return;
+                    }
+
+                    // Check if already friends
+                    if (friends.includes(targetUid)) {
+                        alert('Already friends with this trainer!');
+                        return;
+                    }
+
+                    // Check if already has pending request
+                    if (outgoingRequests.includes(targetUid)) {
+                        // Cancel the request
+                        await database.ref(`users/${myUid}/friendRequests/outgoing/${targetUid}`).remove();
+                        await database.ref(`users/${targetUid}/friendRequests/incoming/${myUid}`).remove();
+                        
+                        setOutgoingRequests(prev => prev.filter(id => id !== targetUid));
+                        console.log('✅ Friend request cancelled');
+                        
+                        // Refresh search results
+                        await searchTrainers();
+                        return;
+                    }
+
+                    // Send request
+                    const timestamp = firebase.database.ServerValue.TIMESTAMP;
+                    await database.ref(`users/${myUid}/friendRequests/outgoing/${targetUid}`).set(timestamp);
+                    await database.ref(`users/${targetUid}/friendRequests/incoming/${myUid}`).set(timestamp);
+
+                    // Update request count
+                    setRequestCounts(prev => ({
+                        ...prev,
+                        [targetUid]: currentCount + 1
+                    }));
+
+                    setOutgoingRequests(prev => [...prev, targetUid]);
+                    console.log('✅ Friend request sent');
+
+                    // Refresh search results
+                    await searchTrainers();
+                } catch (error) {
+                    console.error('❌ Error sending friend request:', error);
+                    alert('Failed to send friend request. Please try again.');
+                }
+            };
+
+            // Accept friend request
+            const acceptFriendRequest = async (senderUid) => {
+                if (!firebaseManager.user) return;
+
+                try {
+                    const myUid = firebaseManager.user.uid;
+
+                    // Add to both friend lists
+                    await database.ref(`users/${myUid}/friends/${senderUid}`).set(true);
+                    await database.ref(`users/${senderUid}/friends/${myUid}`).set(true);
+
+                    // Remove friend requests
+                    await database.ref(`users/${myUid}/friendRequests/incoming/${senderUid}`).remove();
+                    await database.ref(`users/${senderUid}/friendRequests/outgoing/${myUid}`).remove();
+
+                    console.log('✅ Friend request accepted');
+
+                    // Reload friends data
+                    await loadFriendsData();
+                } catch (error) {
+                    console.error('❌ Error accepting friend request:', error);
+                    alert('Failed to accept friend request. Please try again.');
+                }
+            };
+
+            // Decline friend request
+            const declineFriendRequest = async (senderUid) => {
+                if (!firebaseManager.user) return;
+
+                try {
+                    const myUid = firebaseManager.user.uid;
+
+                    // Remove friend requests
+                    await database.ref(`users/${myUid}/friendRequests/incoming/${senderUid}`).remove();
+                    await database.ref(`users/${senderUid}/friendRequests/outgoing/${myUid}`).remove();
+
+                    console.log('✅ Friend request declined');
+
+                    // Reload friends data
+                    await loadFriendsData();
+                } catch (error) {
+                    console.error('❌ Error declining friend request:', error);
                 }
             };
 
@@ -1312,16 +1971,6 @@
                     name: name || 'Trainer',
                     color: color || profileColor
                 }));
-            };
-
-            const handleColorChange = async (newColor) => {
-                setProfileColor(newColor);
-                await saveProfile(trainerName, newColor);
-            };
-
-            const handleNameChange = async (newName) => {
-                setTrainerName(newName);
-                await saveProfile(newName, profileColor);
             };
 
             // PC Storage functions
@@ -1966,75 +2615,319 @@
                                     {/* Profile Badge */}
                                     <div className="relative" ref={profileMenuRef}>
                                     <button 
-                                        onClick={() => setShowProfileMenu(!showProfileMenu)}
-                                        className="flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm text-white shadow-md hover:shadow-lg transition-all"
+                                        onClick={handleTrainerBadgeClick}
+                                        disabled={isCreatingProfile}
+                                        className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm text-white shadow-md hover:shadow-lg transition-all ${
+                                            hasNotifications ? 'notification-glow' : ''
+                                        } ${isCreatingProfile ? 'opacity-50 cursor-wait' : ''}`}
                                         style={{ backgroundColor: profileColor }}
                                     >
                                         <span>⚡</span>
-                                        <span>{trainerName}</span>
+                                        <span>{isCreatingProfile ? 'Creating...' : (firebaseProfile ? firebaseProfile.displayName : trainerName)}</span>
                                     </button>
                                     
                                     {/* Profile Dropdown Menu */}
                                     {showProfileMenu && (
                                         <div className="absolute right-0 top-full mt-2 bg-white rounded-xl shadow-2xl p-4 z-50 w-64 border-2 border-gray-200">
-                                            <div className="mb-4">
-                                                <label className="block text-xs font-semibold text-gray-600 mb-2">TRAINER NAME</label>
-                                                {isEditingName ? (
-                                                    <input 
-                                                        type="text" 
-                                                        value={trainerName}
-                                                        onChange={(e) => setTrainerName(e.target.value)}
-                                                        onBlur={() => {
-                                                            setIsEditingName(false);
-                                                            handleNameChange(trainerName);
-                                                        }}
-                                                        onKeyPress={(e) => {
-                                                            if (e.key === 'Enter') {
-                                                                setIsEditingName(false);
-                                                                handleNameChange(trainerName);
-                                                            }
-                                                        }}
-                                                        autoFocus
-                                                        className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg text-sm"
-                                                        maxLength={15}
-                                                    />
-                                                ) : (
-                                                    <button
-                                                        onClick={() => setIsEditingName(true)}
-                                                        className="w-full px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium text-left transition"
-                                                    >
-                                                        {trainerName}
-                                                    </button>
-                                                )}
-                                            </div>
-                                            
-                                            <div>
-                                                <label className="block text-xs font-semibold text-gray-600 mb-2">BADGE COLOR</label>
-                                                <div className="grid grid-cols-4 gap-2">
-                                                    {PROFILE_COLORS.map((color) => (
+                                            {!showWipeConfirmation ? (
+                                                <>
+                                                    <div className="mb-4">
+                                                        <div className="flex items-center gap-2 mb-2">
+                                                            <label className="block text-xs font-semibold text-gray-600">TRAINER NAME</label>
+                                                            {firebaseProfile && (
+                                                                <svg className="w-4 h-4 text-green-500" viewBox="0 0 24 24" fill="currentColor">
+                                                                    <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+                                                                    <circle cx="12" cy="12" r="11" fill="none" stroke="currentColor" strokeWidth="2"/>
+                                                                </svg>
+                                                            )}
+                                                        </div>
+                                                        {isEditingName ? (
+                                                            <input 
+                                                                type="text" 
+                                                                value={trainerName}
+                                                                onChange={(e) => setTrainerName(e.target.value)}
+                                                                onBlur={() => {
+                                                                    setIsEditingName(false);
+                                                                    handleNameChange(trainerName);
+                                                                }}
+                                                                onKeyPress={(e) => {
+                                                                    if (e.key === 'Enter') {
+                                                                        setIsEditingName(false);
+                                                                        handleNameChange(trainerName);
+                                                                    }
+                                                                }}
+                                                                autoFocus
+                                                                className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg text-sm"
+                                                                maxLength={12}
+                                                            />
+                                                        ) : (
+                                                            <button
+                                                                onClick={() => setIsEditingName(true)}
+                                                                className="w-full px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium text-left transition"
+                                                            >
+                                                                {trainerName}
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                    
+                                                    <div>
+                                                        <label className="block text-xs font-semibold text-gray-600 mb-2">BADGE COLOR</label>
+                                                        <div className="grid grid-cols-4 gap-2">
+                                                            {PROFILE_COLORS.map((color) => (
+                                                                <button
+                                                                    key={color.hex}
+                                                                    onClick={() => {
+                                                                        handleColorChange(color.hex);
+                                                                    }}
+                                                                    className={`w-full aspect-square rounded-lg transition-all ${
+                                                                        profileColor === color.hex 
+                                                                            ? 'ring-4 ring-offset-2 ring-gray-800 scale-110' 
+                                                                            : 'hover:scale-105'
+                                                                    }`}
+                                                                    style={{ backgroundColor: color.hex }}
+                                                                    title={color.name}
+                                                                />
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                    
+                                                    <div className="flex gap-2 mt-4">
+                                                        {firebaseProfile && (
+                                                            <>
+                                                                <button
+                                                                    onClick={() => {
+                                                                        setShowProfileMenu(false);
+                                                                        setShowFriendSearch(true);
+                                                                    }}
+                                                                    className="flex-1 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium transition relative"
+                                                                >
+                                                                    👥 Friends
+                                                                    {friends.length > 0 && (
+                                                                        <span className="absolute -top-2 -right-2 w-5 h-5 bg-gray-800 text-white rounded-full text-xs flex items-center justify-center font-bold">
+                                                                            {friends.length}
+                                                                        </span>
+                                                                    )}
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => setShowWipeConfirmation(true)}
+                                                                    className="px-3 py-2 bg-gray-400 hover:bg-gray-500 text-white rounded-lg text-sm font-medium transition"
+                                                                >
+                                                                    ⚙️
+                                                                </button>
+                                                            </>
+                                                        )}
                                                         <button
-                                                            key={color.hex}
-                                                            onClick={() => {
-                                                                handleColorChange(color.hex);
-                                                            }}
-                                                            className={`w-full aspect-square rounded-lg transition-all ${
-                                                                profileColor === color.hex 
-                                                                    ? 'ring-4 ring-offset-2 ring-gray-800 scale-110' 
-                                                                    : 'hover:scale-105'
-                                                            }`}
-                                                            style={{ backgroundColor: color.hex }}
-                                                            title={color.name}
+                                                            onClick={() => setShowProfileMenu(false)}
+                                                            className="px-3 py-2 bg-gray-800 hover:bg-gray-900 text-white rounded-lg text-sm font-medium transition"
+                                                        >
+                                                            ✕
+                                                        </button>
+                                                    </div>
+                                                </>
+                                            ) : (
+                                                /* Wipe Confirmation Dialog */
+                                                <div className="text-center">
+                                                    <div className="text-4xl mb-3">⚠️</div>
+                                                    <h3 className="text-lg font-bold text-gray-800 mb-2">Delete All Data?</h3>
+                                                    <p className="text-xs text-gray-600 mb-4">
+                                                        This will permanently delete your trainer profile, all runs, Pokémon, and progress. You'll start fresh.
+                                                    </p>
+                                                    <div className="flex gap-2">
+                                                        <button
+                                                            onClick={handleWipeProfile}
+                                                            disabled={isWiping}
+                                                            className="flex-1 px-3 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-bold transition disabled:opacity-50"
+                                                        >
+                                                            {isWiping ? 'Wiping...' : 'Yes, Delete'}
+                                                        </button>
+                                                        <button
+                                                            onClick={() => setShowWipeConfirmation(false)}
+                                                            disabled={isWiping}
+                                                            className="flex-1 px-3 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-lg text-sm font-medium transition disabled:opacity-50"
+                                                        >
+                                                            Cancel
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                    
+                                    {/* 👥 Friends Search & List Modal */}
+                                    {showFriendSearch && firebaseProfile && (
+                                        <div className="fixed inset-0 bg-black bg-opacity-50 z-[60] flex items-center justify-center p-4">
+                                            <div className="bg-white rounded-xl shadow-2xl w-full max-w-md max-h-[80vh] overflow-hidden flex flex-col">
+                                                {/* Header */}
+                                                <div className="p-4 border-b border-gray-200">
+                                                    <div className="flex justify-between items-center mb-3">
+                                                        <h3 className="text-lg font-bold text-gray-800">👥 Friends</h3>
+                                                        <button
+                                                            onClick={() => setShowFriendSearch(false)}
+                                                            className="w-8 h-8 bg-gray-200 hover:bg-gray-300 rounded-full flex items-center justify-center transition"
+                                                        >
+                                                            ✕
+                                                        </button>
+                                                    </div>
+                                                    
+                                                    {/* Search Bar */}
+                                                    <div className="flex gap-2">
+                                                        <input
+                                                            type="text"
+                                                            value={friendSearchQuery}
+                                                            onChange={(e) => setFriendSearchQuery(e.target.value)}
+                                                            onKeyPress={(e) => e.key === 'Enter' && searchTrainers()}
+                                                            placeholder="Search exact trainer name..."
+                                                            className="flex-1 px-3 py-2 border-2 border-gray-300 rounded-lg text-sm"
+                                                            maxLength={30}
                                                         />
-                                                    ))}
+                                                        <button
+                                                            onClick={searchTrainers}
+                                                            disabled={isSearching || !friendSearchQuery.trim()}
+                                                            className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium transition disabled:opacity-50"
+                                                        >
+                                                            {isSearching ? '⏳' : '🔍'}
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                
+                                                {/* Content Area - Scrollable */}
+                                                <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                                                    {/* Search Results */}
+                                                    {friendSearchResults.length > 0 && (
+                                                        <div>
+                                                            <h4 className="text-xs font-semibold text-gray-600 mb-2">SEARCH RESULTS</h4>
+                                                            <div className="space-y-2">
+                                                                {friendSearchResults.map(result => (
+                                                                    <div
+                                                                        key={result.uid}
+                                                                        className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition"
+                                                                    >
+                                                                        <div className="flex items-center gap-2">
+                                                                            <div
+                                                                                className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-sm"
+                                                                                style={{ backgroundColor: result.badgeColor }}
+                                                                            >
+                                                                                ⚡
+                                                                            </div>
+                                                                            <span className="font-medium text-sm">{result.displayName}</span>
+                                                                        </div>
+                                                                        {result.isFriend ? (
+                                                                            <span className="text-xs text-green-600 font-medium">✓ Friends</span>
+                                                                        ) : (
+                                                                            <button
+                                                                                onClick={() => sendFriendRequest(result.uid)}
+                                                                                className={`w-8 h-8 rounded-full flex items-center justify-center text-white font-bold transition ${
+                                                                                    result.hasPendingRequest 
+                                                                                        ? 'bg-yellow-500 hover:bg-yellow-600 ring-2 ring-yellow-300' 
+                                                                                        : 'bg-green-500 hover:bg-green-600'
+                                                                                }`}
+                                                                            >
+                                                                                {result.hasPendingRequest ? '−' : '+'}
+                                                                            </button>
+                                                                        )}
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                    
+                                                    {/* Incoming Friend Requests */}
+                                                    {incomingRequests.length > 0 && (
+                                                        <div>
+                                                            <h4 className="text-xs font-semibold text-gray-600 mb-2">FRIEND REQUESTS</h4>
+                                                            <div className="space-y-2">
+                                                                {incomingRequests.map(senderId => {
+                                                                    const senderProfile = friendProfiles[senderId];
+                                                                    if (!senderProfile) {
+                                                                        // Load profile if not cached
+                                                                        database.ref(`users/${senderId}/profile`).once('value').then(snap => {
+                                                                            if (snap.exists()) {
+                                                                                setFriendProfiles(prev => ({
+                                                                                    ...prev,
+                                                                                    [senderId]: snap.val()
+                                                                                }));
+                                                                            }
+                                                                        });
+                                                                        return null;
+                                                                    }
+                                                                    return (
+                                                                        <div
+                                                                            key={senderId}
+                                                                            className="flex items-center justify-between p-3 bg-gray-100 bg-opacity-50 rounded-lg relative"
+                                                                        >
+                                                                            <div className="flex items-center gap-2">
+                                                                                <div
+                                                                                    className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-sm"
+                                                                                    style={{ backgroundColor: senderProfile.badgeColor }}
+                                                                                >
+                                                                                    ⚡
+                                                                                </div>
+                                                                                <span className="font-medium text-sm">{senderProfile.displayName}</span>
+                                                                            </div>
+                                                                            <div className="flex gap-1">
+                                                                                <button
+                                                                                    onClick={() => acceptFriendRequest(senderId)}
+                                                                                    className="w-8 h-8 bg-green-500 hover:bg-green-600 rounded-full flex items-center justify-center text-white font-bold transition"
+                                                                                >
+                                                                                    ✓
+                                                                                </button>
+                                                                                <button
+                                                                                    onClick={() => declineFriendRequest(senderId)}
+                                                                                    className="w-8 h-8 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center text-white font-bold transition"
+                                                                                >
+                                                                                    ✕
+                                                                                </button>
+                                                                            </div>
+                                                                            {/* Question mark indicator */}
+                                                                            <div className="absolute right-2 top-2 w-4 h-4 bg-gray-400 rounded-full flex items-center justify-center text-white text-xs">
+                                                                                ?
+                                                                            </div>
+                                                                        </div>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                    
+                                                    {/* Friends List */}
+                                                    {friends.length > 0 && (
+                                                        <div>
+                                                            <h4 className="text-xs font-semibold text-gray-600 mb-2">MY FRIENDS ({friends.length})</h4>
+                                                            <div className="space-y-2">
+                                                                {friends
+                                                                    .map(friendId => ({
+                                                                        id: friendId,
+                                                                        profile: friendProfiles[friendId]
+                                                                    }))
+                                                                    .filter(f => f.profile)
+                                                                    .sort((a, b) => a.profile.displayName.localeCompare(b.profile.displayName))
+                                                                    .map(friend => (
+                                                                        <div
+                                                                            key={friend.id}
+                                                                            className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg"
+                                                                        >
+                                                                            <div
+                                                                                className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-sm"
+                                                                                style={{ backgroundColor: friend.profile.badgeColor }}
+                                                                            >
+                                                                                ⚡
+                                                                            </div>
+                                                                            <span className="font-medium text-sm">{friend.profile.displayName}</span>
+                                                                        </div>
+                                                                    ))}
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                    
+                                                    {/* Empty States */}
+                                                    {friends.length === 0 && incomingRequests.length === 0 && friendSearchResults.length === 0 && (
+                                                        <div className="text-center py-8 text-gray-500">
+                                                            <div className="text-4xl mb-2">👥</div>
+                                                            <div className="text-sm">Search for trainers to add friends!</div>
+                                                        </div>
+                                                    )}
                                                 </div>
                                             </div>
-                                            
-                                            <button
-                                                onClick={() => setShowProfileMenu(false)}
-                                                className="w-full mt-4 px-3 py-2 bg-gray-800 hover:bg-gray-900 text-white rounded-lg text-sm font-medium transition"
-                                            >
-                                                Close
-                                            </button>
                                         </div>
                                     )}
                                 </div>
@@ -2325,6 +3218,69 @@
         console.log('Root created, attempting render...');
         root.render(<PokemonRunTracker />);
         console.log('Render called successfully');
+
+        // =========================
+        // 🧪 STEP 1 QA: TEST COMMANDS
+        // =========================
+        // Expose firebaseManager globally for console testing
+        window.firebaseManager = firebaseManager;
+        window.testFirebase = {
+            async testAuth() {
+                console.log('🧪 Testing Anonymous Auth...');
+                try {
+                    await firebaseManager.signInAnonymously();
+                    console.log('✅ Auth test passed');
+                    return true;
+                } catch (error) {
+                    console.error('❌ Auth test failed:', error);
+                    return false;
+                }
+            },
+            async testProfile() {
+                console.log('🧪 Testing Profile Creation...');
+                try {
+                    const profile = await firebaseManager.createTrainerProfile();
+                    console.log('✅ Profile created:', profile);
+                    return profile;
+                } catch (error) {
+                    console.error('❌ Profile test failed:', error);
+                    return false;
+                }
+            },
+            async testMigration() {
+                console.log('🧪 Testing Migration...');
+                try {
+                    await firebaseManager.migrateLocalStorageToFirebase();
+                    console.log('✅ Migration test passed');
+                    return true;
+                } catch (error) {
+                    console.error('❌ Migration test failed:', error);
+                    return false;
+                }
+            },
+            async runAll() {
+                console.log('🧪 Running all Step 1 tests...');
+                const authResult = await this.testAuth();
+                if (!authResult) return;
+                
+                const profileResult = await this.testProfile();
+                if (!profileResult) return;
+                
+                await this.testMigration();
+                
+                console.log('✅ All Step 1 tests complete! Check Firebase Console for data.');
+            }
+        };
+
+        console.log('');
+        console.log('🔥 FIREBASE STEP 1 LOADED');
+        console.log('📋 Test Commands:');
+        console.log('  testFirebase.runAll()       - Run all tests');
+        console.log('  testFirebase.testAuth()     - Test anonymous auth');
+        console.log('  testFirebase.testProfile()  - Test profile creation');
+        console.log('  testFirebase.testMigration() - Test localStorage migration');
+        console.log('');
     </script>
+
 </body>
 </html>
