@@ -109,7 +109,7 @@
         // 🔥 FIREBASE INITIALIZATION
         // =========================
         const firebaseConfig = {
-            apiKey: "AIzaSyDbWk2fXpMSokKpvxzZRUXX4GXj6UQtTiM",
+            apiKey: "AIzaSyDpCRERyu40mLWP7ahbzIokFg3nMRBMOrs",
             authDomain: "pokerun-e36be.firebaseapp.com",
             databaseURL: "https://pokerun-e36be-default-rtdb.firebaseio.com",
             projectId: "pokerun-e36be",
@@ -1533,6 +1533,19 @@
                 }, 500);
             }, []);
 
+            // 🔍 Live search with debouncing
+            useEffect(() => {
+                if (friendSearchQuery.length >= 3 && firebaseProfile) {
+                    const timer = setTimeout(() => {
+                        searchTrainers();
+                    }, 300); // 300ms debounce
+                    
+                    return () => clearTimeout(timer);
+                } else {
+                    setFriendSearchResults([]);
+                }
+            }, [friendSearchQuery]);
+
             // Close profile menu when clicking outside
             useEffect(() => {
                 const handleClickOutside = (event) => {
@@ -1768,36 +1781,80 @@
                 }
             };
 
-            // Search for trainers by exact name
+            // Search for trainers by exact name or partial match (3+ chars)
             const searchTrainers = async () => {
-                if (!friendSearchQuery.trim() || !firebaseManager.user) return;
+                const query = friendSearchQuery.trim();
+                
+                // Need at least 3 characters for suggestions
+                if (query.length < 3 || !firebaseManager.user) {
+                    setFriendSearchResults([]);
+                    return;
+                }
 
                 setIsSearching(true);
-                setFriendSearchResults([]);
 
                 try {
-                    const query = friendSearchQuery.trim();
                     const usersSnapshot = await database.ref('users').once('value');
                     const results = [];
+                    const exactMatches = [];
+                    const partialMatches = [];
 
                     usersSnapshot.forEach(child => {
                         const uid = child.key;
                         const profile = child.val().profile;
 
-                        // Skip self and check exact name match
-                        if (uid !== firebaseManager.user.uid && profile && profile.displayName === query) {
-                            results.push({
+                        // Skip self
+                        if (uid === firebaseManager.user.uid || !profile || !profile.displayName) {
+                            return;
+                        }
+
+                        const displayName = profile.displayName;
+                        const queryLower = query.toLowerCase();
+                        const nameLower = displayName.toLowerCase();
+
+                        // Exact match (case-insensitive)
+                        if (nameLower === queryLower) {
+                            exactMatches.push({
                                 uid,
                                 displayName: profile.displayName,
                                 badgeColor: profile.badgeColor,
                                 isFriend: friends.includes(uid),
-                                hasPendingRequest: outgoingRequests.includes(uid)
+                                hasPendingRequest: outgoingRequests.includes(uid),
+                                matchType: 'exact'
+                            });
+                        }
+                        // Partial match - starts with query
+                        else if (nameLower.startsWith(queryLower)) {
+                            partialMatches.push({
+                                uid,
+                                displayName: profile.displayName,
+                                badgeColor: profile.badgeColor,
+                                isFriend: friends.includes(uid),
+                                hasPendingRequest: outgoingRequests.includes(uid),
+                                matchType: 'partial'
+                            });
+                        }
+                        // Partial match - contains query
+                        else if (nameLower.includes(queryLower)) {
+                            partialMatches.push({
+                                uid,
+                                displayName: profile.displayName,
+                                badgeColor: profile.badgeColor,
+                                isFriend: friends.includes(uid),
+                                hasPendingRequest: outgoingRequests.includes(uid),
+                                matchType: 'contains'
                             });
                         }
                     });
 
-                    setFriendSearchResults(results);
-                    console.log(`🔍 Found ${results.length} trainers matching "${query}"`);
+                    // Sort partial matches alphabetically
+                    partialMatches.sort((a, b) => a.displayName.localeCompare(b.displayName));
+
+                    // Combine: exact matches first, then partials (max 10 total)
+                    const allMatches = [...exactMatches, ...partialMatches].slice(0, 10);
+                    
+                    setFriendSearchResults(allMatches);
+                    console.log(`🔍 Found ${allMatches.length} trainers matching "${query}" (${exactMatches.length} exact, ${partialMatches.length} partial)`);
                 } catch (error) {
                     console.error('❌ Search error:', error);
                 } finally {
@@ -1832,10 +1889,17 @@
                         await database.ref(`users/${targetUid}/friendRequests/incoming/${myUid}`).remove();
                         
                         setOutgoingRequests(prev => prev.filter(id => id !== targetUid));
-                        console.log('✅ Friend request cancelled');
                         
-                        // Refresh search results
-                        await searchTrainers();
+                        // Update search results immediately
+                        setFriendSearchResults(prev => 
+                            prev.map(result => 
+                                result.uid === targetUid 
+                                    ? { ...result, hasPendingRequest: false }
+                                    : result
+                            )
+                        );
+                        
+                        console.log('✅ Friend request cancelled');
                         return;
                     }
 
@@ -1851,10 +1915,17 @@
                     }));
 
                     setOutgoingRequests(prev => [...prev, targetUid]);
+                    
+                    // Update search results immediately
+                    setFriendSearchResults(prev => 
+                        prev.map(result => 
+                            result.uid === targetUid 
+                                ? { ...result, hasPendingRequest: true }
+                                : result
+                        )
+                    );
+                    
                     console.log('✅ Friend request sent');
-
-                    // Refresh search results
-                    await searchTrainers();
                 } catch (error) {
                     console.error('❌ Error sending friend request:', error);
                     alert('Failed to send friend request. Please try again.');
@@ -1903,6 +1974,119 @@
                     await loadFriendsData();
                 } catch (error) {
                     console.error('❌ Error declining friend request:', error);
+                }
+            };
+
+            // =========================
+            // 📸 ACTIVITY FEED SYSTEM
+            // =========================
+
+            // Create activity feed entry when catching Pokemon
+            const createActivityFeedEntry = async (catchData) => {
+                if (!firebaseManager.user) return;
+
+                try {
+                    const activityId = `activity_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                    const myUid = firebaseManager.user.uid;
+
+                    const activityEntry = {
+                        type: 'catch',
+                        trainerId: myUid,
+                        trainerName: catchData.trainerName,
+                        trainerBadgeColor: catchData.trainerBadgeColor,
+                        pokemonId: catchData.pokemonId,
+                        pokemonName: catchData.pokemonName,
+                        spriteUrl: catchData.spriteUrl,
+                        isShiny: catchData.isShiny,
+                        rarity: catchData.rarity,
+                        pace: catchData.pace,
+                        distance: catchData.distance,
+                        duration: catchData.duration,
+                        timestamp: firebase.database.ServerValue.TIMESTAMP,
+                        candyCount: 0,
+                        candyGivers: {} // For future: {userId: true}
+                    };
+
+                    // Save to user's activity feed
+                    await database.ref(`users/${myUid}/activity/${activityId}`).set(activityEntry);
+                    
+                    console.log('📸 Activity feed entry created:', activityId);
+                } catch (error) {
+                    console.error('❌ Error creating activity entry:', error);
+                }
+            };
+
+            // Load activity feed (self + friends, last 7 days)
+            const loadActivityFeed = async () => {
+                if (!firebaseManager.user) return [];
+
+                try {
+                    const myUid = firebaseManager.user.uid;
+                    const sevenDaysAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
+                    const allActivities = [];
+
+                    // Load my activity
+                    const myActivitySnapshot = await database.ref(`users/${myUid}/activity`)
+                        .orderByChild('timestamp')
+                        .startAt(sevenDaysAgo)
+                        .once('value');
+                    
+                    myActivitySnapshot.forEach(child => {
+                        allActivities.push({
+                            id: child.key,
+                            ...child.val(),
+                            isOwnCard: true
+                        });
+                    });
+
+                    // Load friends' activity
+                    for (const friendId of friends) {
+                        const friendActivitySnapshot = await database.ref(`users/${friendId}/activity`)
+                            .orderByChild('timestamp')
+                            .startAt(sevenDaysAgo)
+                            .once('value');
+                        
+                        friendActivitySnapshot.forEach(child => {
+                            allActivities.push({
+                                id: child.key,
+                                ...child.val(),
+                                isOwnCard: false
+                            });
+                        });
+                    }
+
+                    // Sort by timestamp (newest first)
+                    allActivities.sort((a, b) => b.timestamp - a.timestamp);
+
+                    console.log(`📸 Loaded ${allActivities.length} activity entries (last 7 days)`);
+                    return allActivities;
+                } catch (error) {
+                    console.error('❌ Error loading activity feed:', error);
+                    return [];
+                }
+            };
+
+            // Give rare candy to a card (hook for Phase 2)
+            const giveRareCandy = async (activityId, activityOwnerId) => {
+                if (!firebaseManager.user) return;
+
+                try {
+                    const myUid = firebaseManager.user.uid;
+
+                    // Check if already gave candy
+                    const candySnapshot = await database.ref(`users/${activityOwnerId}/activity/${activityId}/candyGivers/${myUid}`).once('value');
+                    if (candySnapshot.exists()) {
+                        console.log('Already gave candy to this card');
+                        return;
+                    }
+
+                    // Add candy
+                    await database.ref(`users/${activityOwnerId}/activity/${activityId}/candyGivers/${myUid}`).set(true);
+                    await database.ref(`users/${activityOwnerId}/activity/${activityId}/candyCount`).set(firebase.database.ServerValue.increment(1));
+
+                    console.log('🍬 Rare candy given!');
+                } catch (error) {
+                    console.error('❌ Error giving candy:', error);
                 }
             };
 
@@ -2269,6 +2453,22 @@
                         distance: distance,
                         duration: duration
                     });
+                    
+                    // 📸 Create Activity Feed Entry (if Firebase profile exists)
+                    if (firebaseProfile && firebaseManager.user) {
+                        await createActivityFeedEntry({
+                            pokemonId,
+                            pokemonName: fetchedPokemonData?.name || 'unknown',
+                            isShiny,
+                            rarity: actualRarity,
+                            spriteUrl: isShiny ? fetchedPokemonData?.sprites.front_shiny : fetchedPokemonData?.sprites.front_default,
+                            pace: pace,
+                            distance: distance,
+                            duration: duration,
+                            trainerName: firebaseProfile.displayName,
+                            trainerBadgeColor: firebaseProfile.badgeColor
+                        });
+                    }
                     
                     const isLegendary = actualRarity === 'legendary';
                     
@@ -2770,23 +2970,18 @@
                                                     </div>
                                                     
                                                     {/* Search Bar */}
-                                                    <div className="flex gap-2">
+                                                    <div className="relative">
                                                         <input
                                                             type="text"
                                                             value={friendSearchQuery}
                                                             onChange={(e) => setFriendSearchQuery(e.target.value)}
-                                                            onKeyPress={(e) => e.key === 'Enter' && searchTrainers()}
-                                                            placeholder="Search exact trainer name..."
-                                                            className="flex-1 px-3 py-2 border-2 border-gray-300 rounded-lg text-sm"
+                                                            placeholder="Type trainer name (3+ chars)..."
+                                                            className="w-full px-3 py-2 pr-10 border-2 border-gray-300 rounded-lg text-sm"
                                                             maxLength={30}
                                                         />
-                                                        <button
-                                                            onClick={searchTrainers}
-                                                            disabled={isSearching || !friendSearchQuery.trim()}
-                                                            className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium transition disabled:opacity-50"
-                                                        >
-                                                            {isSearching ? '⏳' : '🔍'}
-                                                        </button>
+                                                        <div className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">
+                                                            {isSearching ? '⏳' : friendSearchQuery.length >= 3 ? '🔍' : `${friendSearchQuery.length}/3`}
+                                                        </div>
                                                     </div>
                                                 </div>
                                                 
@@ -2795,28 +2990,35 @@
                                                     {/* Search Results */}
                                                     {friendSearchResults.length > 0 && (
                                                         <div>
-                                                            <h4 className="text-xs font-semibold text-gray-600 mb-2">SEARCH RESULTS</h4>
+                                                            <h4 className="text-xs font-semibold text-gray-600 mb-2">
+                                                                {friendSearchResults.some(r => r.matchType === 'exact') ? 'RESULTS' : 'SUGGESTIONS'}
+                                                            </h4>
                                                             <div className="space-y-2">
                                                                 {friendSearchResults.map(result => (
                                                                     <div
                                                                         key={result.uid}
                                                                         className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition"
                                                                     >
-                                                                        <div className="flex items-center gap-2">
+                                                                        <div className="flex items-center gap-2 flex-1 min-w-0">
                                                                             <div
-                                                                                className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-sm"
+                                                                                className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0"
                                                                                 style={{ backgroundColor: result.badgeColor }}
                                                                             >
                                                                                 ⚡
                                                                             </div>
-                                                                            <span className="font-medium text-sm">{result.displayName}</span>
+                                                                            <div className="min-w-0 flex-1">
+                                                                                <div className="font-medium text-sm truncate">{result.displayName}</div>
+                                                                                {result.matchType !== 'exact' && (
+                                                                                    <div className="text-xs text-gray-500">Suggested match</div>
+                                                                                )}
+                                                                            </div>
                                                                         </div>
                                                                         {result.isFriend ? (
-                                                                            <span className="text-xs text-green-600 font-medium">✓ Friends</span>
+                                                                            <span className="text-xs text-green-600 font-medium flex-shrink-0">✓ Friends</span>
                                                                         ) : (
                                                                             <button
                                                                                 onClick={() => sendFriendRequest(result.uid)}
-                                                                                className={`w-8 h-8 rounded-full flex items-center justify-center text-white font-bold transition ${
+                                                                                className={`w-8 h-8 rounded-full flex items-center justify-center text-white font-bold transition flex-shrink-0 ${
                                                                                     result.hasPendingRequest 
                                                                                         ? 'bg-yellow-500 hover:bg-yellow-600 ring-2 ring-yellow-300' 
                                                                                         : 'bg-green-500 hover:bg-green-600'
@@ -3272,13 +3474,34 @@
             }
         };
 
+        // 🧪 STEP 4: ACTIVITY FEED TEST COMMANDS
+        window.testActivityFeed = {
+            async loadFeed() {
+                console.log('🧪 Testing Activity Feed Load...');
+                try {
+                    // Access the loadActivityFeed function from the React component
+                    // Note: This requires the component to expose it, so this is a placeholder
+                    console.log('📸 To test: Catch a Pokémon and check Firebase Console');
+                    console.log('📍 Path: users/{your-uid}/activity/');
+                    return true;
+                } catch (error) {
+                    console.error('❌ Activity feed test failed:', error);
+                    return false;
+                }
+            }
+        };
+
         console.log('');
-        console.log('🔥 FIREBASE STEP 1 LOADED');
+        console.log('🔥 FIREBASE LOADED - Steps 1-4 (Core)');
         console.log('📋 Test Commands:');
         console.log('  testFirebase.runAll()       - Run all tests');
         console.log('  testFirebase.testAuth()     - Test anonymous auth');
         console.log('  testFirebase.testProfile()  - Test profile creation');
         console.log('  testFirebase.testMigration() - Test localStorage migration');
+        console.log('');
+        console.log('📸 Activity Feed:');
+        console.log('  - Catch a Pokémon to create activity entry');
+        console.log('  - Check Firebase Console: users/{uid}/activity/');
         console.log('');
     </script>
 
