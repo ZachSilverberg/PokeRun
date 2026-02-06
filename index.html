@@ -1363,6 +1363,16 @@
             const [incomingRequests, setIncomingRequests] = useState([]);
             const [outgoingRequests, setOutgoingRequests] = useState([]);
             const [requestCounts, setRequestCounts] = useState({}); // Track request attempts per user
+            const [friendModalTab, setFriendModalTab] = useState('list'); // 'list' or 'search'
+            
+            // 📸 Activity Feed State
+            const [activityFeed, setActivityFeed] = useState([]);
+            const [isLoadingFeed, setIsLoadingFeed] = useState(false);
+            const [feedFilter, setFeedFilter] = useState('all'); // 'all' or 'mine'
+            
+            // 👤 Friend Profile View State
+            const [viewingFriendId, setViewingFriendId] = useState(null);
+            const [viewingFriendStarters, setViewingFriendStarters] = useState([]);
             
             // Profile customization
             const [trainerName, setTrainerName] = useState('Trainer');
@@ -1373,7 +1383,7 @@
             // PC Storage & Starters
             const [pokemonPC, setPokemonPC] = useState([]); // All caught Pokemon
             const [starterTeam, setStarterTeam] = useState([null, null, null, null, null, null]); // 6 starter slots
-            const [currentView, setCurrentView] = useState('main'); // 'main', 'pc', 'starters'
+            const [currentView, setCurrentView] = useState('main'); // 'main', 'pc', 'starters', 'friends', 'feed'
             const [showDeletePrompt, setShowDeletePrompt] = useState(null); // Pokemon ID to delete
             const [selectingForSlot, setSelectingForSlot] = useState(null); // Which starter slot is being filled
             const [deleteMode, setDeleteMode] = useState(false); // Delete mode for PC
@@ -1546,6 +1556,25 @@
                 }
             }, [friendSearchQuery]);
 
+            // 📸 Load activity feed when opening feed view
+            useEffect(() => {
+                if (currentView === 'feed' && firebaseProfile && activityFeed.length === 0) {
+                    loadActivityFeedData();
+                }
+            }, [currentView]);
+
+            const loadActivityFeedData = async () => {
+                setIsLoadingFeed(true);
+                try {
+                    const feed = await loadActivityFeed();
+                    setActivityFeed(feed);
+                } catch (error) {
+                    console.error('❌ Error loading activity feed:', error);
+                } finally {
+                    setIsLoadingFeed(false);
+                }
+            };
+
             // Close profile menu when clicking outside
             useEffect(() => {
                 const handleClickOutside = (event) => {
@@ -1583,9 +1612,17 @@
             // 🔥 Check Firebase Auth State
             const checkFirebaseAuth = async () => {
                 try {
-                    // Check if user is already authenticated
-                    if (firebaseManager.user) {
-                        setFirebaseUser(firebaseManager.user);
+                    // Wait for auth state to be determined
+                    const user = await new Promise((resolve) => {
+                        const unsubscribe = auth.onAuthStateChanged((user) => {
+                            unsubscribe();
+                            resolve(user);
+                        });
+                    });
+
+                    if (user) {
+                        firebaseManager.user = user;
+                        setFirebaseUser(user);
                         const profile = await firebaseManager.getProfile();
                         if (profile) {
                             setFirebaseProfile(profile);
@@ -2087,6 +2124,19 @@
                     console.log('🍬 Rare candy given!');
                 } catch (error) {
                     console.error('❌ Error giving candy:', error);
+                }
+            };
+
+            // 👤 View friend's starters
+            const viewFriendStarters = async (friendId) => {
+                try {
+                    const startersSnapshot = await database.ref(`users/${friendId}/starters`).once('value');
+                    const starters = startersSnapshot.val() || [null, null, null, null, null, null];
+                    setViewingFriendStarters(Array.isArray(starters) ? starters : [null, null, null, null, null, null]);
+                    setViewingFriendId(friendId);
+                    console.log(`✅ Loaded ${friendId}'s starters`);
+                } catch (error) {
+                    console.error('❌ Error loading friend starters:', error);
                 }
             };
 
@@ -2774,7 +2824,7 @@
                             <p className="text-sm text-gray-600">Track runs • Catch Pokémon • Complete journeys</p>
                         </div>
 
-                        {/* Bill's PC & Starters Buttons */}
+                        {/* Bill's PC, Starters & Feed Buttons */}
                         <div className="grid grid-cols-2 gap-3 mb-6">
                             <button
                                 onClick={() => setCurrentView('pc')}
@@ -2790,6 +2840,15 @@
                                 <div className="text-xs font-semibold mb-1">⭐ Starters</div>
                                 <div className="text-lg font-bold">{(Array.isArray(starterTeam) ? starterTeam : []).filter(s => s !== null).length}/6</div>
                             </button>
+                            {firebaseProfile && (
+                                <button
+                                    onClick={() => setCurrentView('feed')}
+                                    className="col-span-2 bg-gradient-to-br from-purple-400 to-purple-500 hover:from-purple-500 hover:to-purple-600 rounded-xl p-3 text-white shadow-md hover:shadow-lg transition-all"
+                                >
+                                    <div className="text-xs font-semibold mb-1">📸 Activity Feed</div>
+                                    <div className="text-lg font-bold">View Recent Catches</div>
+                                </button>
+                            )}
                         </div>
 
                         {currentView === 'main' && (
@@ -3408,6 +3467,247 @@
                                         </div>
                                     ))}
                                 </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* 👥 Friends List View - Full Screen */}
+                        {currentView === 'friends' && firebaseProfile && (
+                            <div className="fixed inset-0 bg-gradient-to-br from-blue-600 to-indigo-600 z-50 overflow-y-auto">
+                                <div className="min-h-screen p-6">
+                                    <div className="flex justify-between items-center mb-6">
+                                        <h2 className="text-2xl font-bold text-white">👥 Friends</h2>
+                                        <button
+                                            onClick={() => setCurrentView('main')}
+                                            className="px-4 py-2 bg-white hover:bg-gray-100 text-gray-800 rounded-lg text-sm font-medium transition shadow-lg"
+                                        >
+                                            Back
+                                        </button>
+                                    </div>
+
+                                    {/* Search Button */}
+                                    <button
+                                        onClick={() => setShowFriendSearch(true)}
+                                        className="w-full mb-6 px-4 py-3 bg-white hover:bg-gray-50 text-gray-800 rounded-xl font-medium transition shadow-lg flex items-center justify-center gap-2"
+                                    >
+                                        <span>🔍</span>
+                                        <span>Search for Trainers</span>
+                                    </button>
+
+                                    {/* Incoming Friend Requests */}
+                                    {incomingRequests.length > 0 && (
+                                        <div className="mb-6">
+                                            <h3 className="text-lg font-bold text-white mb-3">Friend Requests ({incomingRequests.length})</h3>
+                                            <div className="space-y-3">
+                                                {incomingRequests.map(senderId => {
+                                                    const senderProfile = friendProfiles[senderId];
+                                                    if (!senderProfile) {
+                                                        database.ref(`users/${senderId}/profile`).once('value').then(snap => {
+                                                            if (snap.exists()) {
+                                                                setFriendProfiles(prev => ({
+                                                                    ...prev,
+                                                                    [senderId]: snap.val()
+                                                                }));
+                                                            }
+                                                        });
+                                                        return null;
+                                                    }
+                                                    return (
+                                                        <div
+                                                            key={senderId}
+                                                            className="bg-white bg-opacity-50 backdrop-blur rounded-xl p-4 flex items-center justify-between"
+                                                        >
+                                                            <div className="flex items-center gap-3">
+                                                                <div
+                                                                    className="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-lg shadow-lg"
+                                                                    style={{ backgroundColor: senderProfile.badgeColor }}
+                                                                >
+                                                                    ⚡
+                                                                </div>
+                                                                <div>
+                                                                    <div className="font-bold text-gray-800">{senderProfile.displayName}</div>
+                                                                    <div className="text-xs text-gray-600">Wants to be friends</div>
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex gap-2">
+                                                                <button
+                                                                    onClick={() => acceptFriendRequest(senderId)}
+                                                                    className="w-10 h-10 bg-green-500 hover:bg-green-600 rounded-full flex items-center justify-center text-white font-bold transition shadow-lg"
+                                                                >
+                                                                    ✓
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => declineFriendRequest(senderId)}
+                                                                    className="w-10 h-10 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center text-white font-bold transition shadow-lg"
+                                                                >
+                                                                    ✕
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Friends List */}
+                                    {friends.length > 0 ? (
+                                        <div>
+                                            <h3 className="text-lg font-bold text-white mb-3">My Friends ({friends.length})</h3>
+                                            <div className="space-y-3">
+                                                {friends
+                                                    .map(friendId => ({
+                                                        id: friendId,
+                                                        profile: friendProfiles[friendId]
+                                                    }))
+                                                    .filter(f => f.profile)
+                                                    .sort((a, b) => a.profile.displayName.localeCompare(b.profile.displayName))
+                                                    .map(friend => (
+                                                        <button
+                                                            key={friend.id}
+                                                            onClick={() => viewFriendStarters(friend.id)}
+                                                            className="w-full bg-white rounded-xl p-4 flex items-center gap-3 shadow-lg hover:shadow-xl hover:bg-gray-50 transition cursor-pointer text-left"
+                                                        >
+                                                            <div
+                                                                className="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-lg shadow-lg"
+                                                                style={{ backgroundColor: friend.profile.badgeColor }}
+                                                            >
+                                                                ⚡
+                                                            </div>
+                                                            <div className="flex-1">
+                                                                <div className="font-bold text-gray-800">{friend.profile.displayName}</div>
+                                                                <div className="text-xs text-gray-500">Tap to view starters →</div>
+                                                            </div>
+                                                        </button>
+                                                    ))}
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="text-center py-12">
+                                            <div className="text-6xl mb-4">👥</div>
+                                            <div className="text-white text-lg font-medium mb-2">No friends yet!</div>
+                                            <div className="text-blue-100 text-sm">Search for trainers to add friends</div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* 👤 Friend's Starters View Modal */}
+                        {viewingFriendId && friendProfiles[viewingFriendId] && (
+                            <div className="fixed inset-0 bg-black bg-opacity-50 z-[70] flex items-center justify-center p-4">
+                                <div className="bg-gradient-to-br from-purple-600 to-pink-600 rounded-2xl shadow-2xl w-full max-w-md max-h-[80vh] overflow-y-auto">
+                                    <div className="p-6">
+                                        {/* Header */}
+                                        <div className="flex justify-between items-center mb-6">
+                                            <div className="flex items-center gap-3">
+                                                <div
+                                                    className="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-lg shadow-lg"
+                                                    style={{ backgroundColor: friendProfiles[viewingFriendId].badgeColor }}
+                                                >
+                                                    ⚡
+                                                </div>
+                                                <div>
+                                                    <h3 className="text-xl font-bold text-white">{friendProfiles[viewingFriendId].displayName}</h3>
+                                                    <div className="text-sm text-purple-100">Starter Team</div>
+                                                </div>
+                                            </div>
+                                            <button
+                                                onClick={() => {
+                                                    setViewingFriendId(null);
+                                                    setViewingFriendStarters([]);
+                                                }}
+                                                className="w-10 h-10 bg-white bg-opacity-20 hover:bg-opacity-30 rounded-full flex items-center justify-center text-white text-xl transition"
+                                            >
+                                                ✕
+                                            </button>
+                                        </div>
+
+                                        {/* Starters Grid */}
+                                        <div className="grid grid-cols-2 gap-4">
+                                            {viewingFriendStarters.map((starter, index) => (
+                                                <div
+                                                    key={index}
+                                                    className="relative bg-white bg-opacity-90 rounded-lg p-3 border-2 border-white shadow-lg"
+                                                >
+                                                    {starter ? (
+                                                        <>
+                                                            <div className="text-center text-xs font-semibold capitalize text-gray-800">
+                                                                {starter.pokemonName}
+                                                            </div>
+                                                            <div className="flex justify-around text-xs text-gray-600 font-medium my-1">
+                                                                <span>{starter.pace || '--'}</span>
+                                                                <span>{starter.distance || '--'}mi</span>
+                                                                <span>{starter.duration || '--'}</span>
+                                                            </div>
+                                                            <img 
+                                                                src={starter.spriteUrl} 
+                                                                alt={starter.pokemonName}
+                                                                className="w-20 h-20 mx-auto"
+                                                            />
+                                                            <div className="flex gap-1 justify-center mt-1">
+                                                                <span className={`px-2 py-0.5 rounded text-xs font-bold ${
+                                                                    starter.rarity === 'legendary' ? 'bg-yellow-400' :
+                                                                    starter.rarity === 'epic' ? 'bg-purple-500 text-white' :
+                                                                    starter.rarity === 'rare' ? 'bg-blue-500 text-white' :
+                                                                    starter.rarity === 'uncommon' ? 'bg-green-500 text-white' :
+                                                                    'bg-gray-400 text-white'
+                                                                }`}>
+                                                                    {starter.rarity.toUpperCase()}
+                                                                </span>
+                                                                {starter.isShiny && (
+                                                                    <span className="px-2 py-0.5 bg-yellow-300 rounded text-xs font-bold">
+                                                                        ✨
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </>
+                                                    ) : (
+                                                        <div className="w-full h-full flex flex-col items-center justify-center py-4">
+                                                            <div className="text-3xl opacity-30 mb-1">⚪</div>
+                                                            <div className="text-sm text-gray-400">Empty</div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* 📸 Activity Feed View - Simplified Vertical Scroll */}
+                        {currentView === 'feed' && firebaseProfile && (
+                            <div className="fixed inset-0 bg-gradient-to-br from-purple-600 to-pink-600 z-50 overflow-y-auto">
+                                <div className="min-h-screen p-6">
+                                    <div className="flex justify-between items-center mb-6">
+                                        <h2 className="text-2xl font-bold text-white">📸 Activity Feed</h2>
+                                        <button
+                                            onClick={() => setCurrentView('main')}
+                                            className="px-4 py-2 bg-white hover:bg-gray-100 text-gray-800 rounded-lg text-sm font-medium transition shadow-lg"
+                                        >
+                                            Back
+                                        </button>
+                                    </div>
+
+                                    {/* Coming Soon Placeholder */}
+                                    <div className="text-center py-12">
+                                        <div className="text-6xl mb-4">🚧</div>
+                                        <div className="text-white text-lg font-medium mb-2">Activity Feed Coming Soon!</div>
+                                        <div className="text-purple-100 text-sm mb-6">
+                                            Your catches are being saved to Firebase.<br/>
+                                            The swipeable card feed will be added next.
+                                        </div>
+                                        <div className="bg-white bg-opacity-20 backdrop-blur rounded-xl p-4 max-w-md mx-auto">
+                                            <div className="text-white text-sm font-medium mb-2">✅ Backend Ready:</div>
+                                            <div className="text-purple-100 text-xs text-left space-y-1">
+                                                <div>• Activity entries created on catch</div>
+                                                <div>• Last 7 days stored</div>
+                                                <div>• Rare candy hooks in place</div>
+                                                <div>• Friend activity tracking active</div>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         )}
