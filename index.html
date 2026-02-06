@@ -115,6 +115,22 @@
         .badge-loading {
             animation: badgePulse 1.5s ease-in-out infinite;
         }
+        
+        /* Pokéball Shake Animation */
+        @keyframes pokeballShake {
+            0%, 100% { transform: rotate(0deg); }
+            10% { transform: rotate(-15deg); }
+            20% { transform: rotate(15deg); }
+            30% { transform: rotate(-10deg); }
+            40% { transform: rotate(10deg); }
+            50% { transform: rotate(-5deg); }
+            60% { transform: rotate(5deg); }
+            70% { transform: rotate(0deg); }
+        }
+        
+        .pokeball-shake {
+            animation: pokeballShake 0.6s ease-in-out infinite;
+        }
     </style>
 </head>
 <body>
@@ -1590,12 +1606,18 @@
 
             // Check if current user has already given candy - USE ACTIVITY ID AS KEY
             React.useEffect(() => {
-                if (activity.candyGivers && currentUserId) {
+                // Reset state when activity changes
+                setHasGivenCandy(false);
+                setCandyCount(0);
+                
+                if (activity && activity.candyGivers && currentUserId) {
                     const userGaveCandy = activity.candyGivers[currentUserId] === true;
                     setHasGivenCandy(userGaveCandy);
                 }
-                setCandyCount(activity.candyCount || 0);
-            }, [activity, activity.id, currentUserId]); // Added activity.id to dependencies
+                if (activity) {
+                    setCandyCount(activity.candyCount || 0);
+                }
+            }, [activity?.id, currentUserId]); // Use activity?.id to properly detect changes
 
             // Generate card image
             React.useEffect(() => {
@@ -1696,23 +1718,20 @@
                         ctx.fillStyle = '#F3F4F6'; // gray-100
                         ctx.fillRect(0, 0, 1080, 1080);
 
-                        // Pokemon name at top (bold, centered) - SAME SIZE
-                        ctx.fillStyle = '#1F2937'; // gray-800 for text
+                        // Draw rarity icon at very top with more space
+                        const iconSize = 70;
+                        const iconX = 540 - iconSize / 2;
+                        const iconY = 25;
+                        drawRarityIcon(ctx, iconX, iconY, iconSize, activity.rarity);
+
+                        // Pokemon name below icon - moved down to prevent touching
+                        ctx.fillStyle = '#1F2937';
                         ctx.font = 'bold 56px sans-serif';
                         ctx.textAlign = 'center';
-                        ctx.fillText(activity.pokemonName.toUpperCase(), 540, 80);
+                        ctx.fillText(activity.pokemonName.toUpperCase(), 540, 150); // Was 130, now 150
                         ctx.textAlign = 'left';
 
-                        // Stats row below name (pace, distance, duration) - SCALED UP
-                        ctx.fillStyle = '#4B5563'; // gray-600
-                        ctx.font = '42px sans-serif';
-                        ctx.textAlign = 'center';
-                        const statsY = 160;
-                        const statsText = `${activity.pace}    ${activity.distance}mi    ${activity.duration}`;
-                        ctx.fillText(statsText, 540, statsY);
-                        ctx.textAlign = 'left';
-
-                        // Load and draw Pokemon sprite (centered) - SCALED UP
+                        // Load and draw Pokemon sprite first
                         const img = new Image();
                         img.crossOrigin = 'anonymous';
                         img.src = activity.spriteUrl;
@@ -1721,33 +1740,26 @@
                             img.onerror = reject;
                         });
 
-                        // Draw sprite (centered, larger to fill space)
-                        const spriteSize = 550;
-                        const spriteY = 220;
+                        // Draw sprite (centered, good size)
+                        const spriteSize = 450;
+                        const spriteY = 200;
                         ctx.drawImage(img, (1080 - spriteSize) / 2, spriteY, spriteSize, spriteSize);
 
-                        // Draw rarity icon above sprite (using existing function)
-                        const iconSize = 80;
-                        const iconX = 540 - iconSize / 2; // Center X (adjusted for icon width)
-                        const iconY = spriteY - 40 - iconSize / 2; // Above sprite (adjusted for icon height)
-                        drawRarityIcon(ctx, iconX, iconY, iconSize, activity.rarity);
-
-                        // Rarity badge colors (matching the current scheme)
+                        // Rarity badge colors
                         const rarityColors = {
-                            legendary: '#F59E0B', // Orange (matches icon)
-                            epic: '#A855F7',      // Purple-500
-                            rare: '#3B82F6',      // Blue-500
-                            uncommon: '#10B981',  // Green-500
-                            common: '#9CA3AF'     // Gray-400
+                            legendary: '#F59E0B',
+                            epic: '#A855F7',
+                            rare: '#3B82F6',
+                            uncommon: '#10B981',
+                            common: '#9CA3AF'
                         };
 
-                        // Rarity badge (centered below sprite) - SCALED UP
-                        const rarityBadgeY = spriteY + spriteSize + 50;
+                        // Rarity badge below sprite - moved up
+                        const rarityBadgeY = spriteY + spriteSize + 30; // Was +50, now +30
                         const rarityBadgeWidth = 380;
                         const rarityBadgeHeight = 90;
                         const rarityBadgeX = (1080 - rarityBadgeWidth) / 2;
                         
-                        // Rounded rectangle for rarity badge
                         const radius = 16;
                         ctx.fillStyle = rarityColors[activity.rarity] || rarityColors.common;
                         ctx.beginPath();
@@ -1769,15 +1781,14 @@
                         ctx.fillText(activity.rarity.toUpperCase(), 540, rarityBadgeY + 62);
                         ctx.textAlign = 'left';
 
-                        // Trainer badge (50% scale, BLACK with WHITE text, centered below rarity badge) - SCALED UP
+                        // Trainer badge below rarity - moved up
                         const trainerName = activity.trainerName || 'Trainer';
                         const trainerBadgeHeight = 45;
                         const trainerBadgeWidth = Math.max(190, trainerName.length * 13 + 40);
-                        const trainerBadgeY = rarityBadgeY + rarityBadgeHeight + 25;
+                        const trainerBadgeY = rarityBadgeY + rarityBadgeHeight + 15; // Was +25, now +15
                         const trainerBadgeX = (1080 - trainerBadgeWidth) / 2;
                         
-                        // Rounded rectangle for trainer badge - BLACK
-                        ctx.fillStyle = '#000000'; // Black
+                        ctx.fillStyle = '#000000';
                         ctx.beginPath();
                         ctx.moveTo(trainerBadgeX + radius, trainerBadgeY);
                         ctx.lineTo(trainerBadgeX + trainerBadgeWidth - radius, trainerBadgeY);
@@ -1795,6 +1806,20 @@
                         ctx.font = 'bold 26px sans-serif';
                         ctx.textAlign = 'center';
                         ctx.fillText(trainerName, 540, trainerBadgeY + 30);
+
+                        // Workout data below trainer badge - NEW POSITION
+                        const workoutDataY = trainerBadgeY + trainerBadgeHeight + 35;
+                        ctx.fillStyle = '#4B5563';
+                        ctx.font = '36px sans-serif';
+                        ctx.textAlign = 'center';
+                        
+                        // Check if lift or cardio
+                        const isLift = activity.pace === '--' || !activity.pace || activity.pace === 'undefined';
+                        const statsText = isLift
+                            ? `${activity.duration || '--'}`
+                            : `${activity.pace}    ${activity.distance}mi    ${activity.duration}`;
+                        
+                        ctx.fillText(statsText, 540, workoutDataY);
                         ctx.textAlign = 'left';
 
                         // Shiny badge (if shiny) - small badge in top right corner
@@ -1901,11 +1926,563 @@
             );
         };
 
+        // ========================================
+        // 🎴 POKEMON CARD COMPONENT (for PC, Starters, Activity Feed)
+        // ========================================
+        const PokemonCard = ({ pokemon, onClick, showDelete, onDelete, className = "" }) => {
+            const canvasRef = useRef(null);
+            const [cardImage, setCardImage] = useState(null);
+
+            // Helper to draw rarity icon
+            const drawRarityIcon = (ctx, x, y, size, tier) => {
+                const drawStar = (ctx, cx, cy, spikes, outerRadius, innerRadius) => {
+                    let rot = Math.PI / 2 * 3;
+                    const step = Math.PI / spikes;
+                    ctx.beginPath();
+                    ctx.moveTo(cx, cy - outerRadius);
+                    for (let i = 0; i < spikes; i++) {
+                        let x = cx + Math.cos(rot) * outerRadius;
+                        let y = cy + Math.sin(rot) * outerRadius;
+                        ctx.lineTo(x, y);
+                        rot += step;
+                        x = cx + Math.cos(rot) * innerRadius;
+                        y = cy + Math.sin(rot) * innerRadius;
+                        ctx.lineTo(x, y);
+                        rot += step;
+                    }
+                    ctx.lineTo(cx, cy - outerRadius);
+                    ctx.closePath();
+                    ctx.fill();
+                };
+
+                ctx.save();
+                switch(tier) {
+                    case 'common':
+                        ctx.fillStyle = '#6B7280';
+                        ctx.beginPath();
+                        ctx.arc(x + size/2, y + size/2, size/2, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.strokeStyle = '#FFFFFF';
+                        ctx.lineWidth = 3;
+                        ctx.stroke();
+                        break;
+                    case 'uncommon':
+                        ctx.fillStyle = '#10B981';
+                        ctx.beginPath();
+                        ctx.moveTo(x + size/2, y);
+                        ctx.lineTo(x + size, y + size/2);
+                        ctx.lineTo(x + size/2, y + size);
+                        ctx.lineTo(x, y + size/2);
+                        ctx.closePath();
+                        ctx.fill();
+                        ctx.strokeStyle = '#FFFFFF';
+                        ctx.lineWidth = 3;
+                        ctx.stroke();
+                        break;
+                    case 'rare':
+                        ctx.fillStyle = '#3B82F6';
+                        drawStar(ctx, x + size/2, y + size/2, 5, size/2, size/4);
+                        ctx.strokeStyle = '#FFFFFF';
+                        ctx.lineWidth = 3;
+                        ctx.stroke();
+                        break;
+                    case 'epic':
+                        ctx.fillStyle = '#8B5CF6';
+                        ctx.globalAlpha = 0.7;
+                        drawStar(ctx, x + size/2 - 6, y + size/2, 5, size/2.2, size/4.4);
+                        ctx.globalAlpha = 1;
+                        drawStar(ctx, x + size/2 + 6, y + size/2, 5, size/2.2, size/4.4);
+                        ctx.strokeStyle = '#FFFFFF';
+                        ctx.lineWidth = 2.5;
+                        ctx.stroke();
+                        break;
+                    case 'legendary':
+                        ctx.fillStyle = '#F59E0B';
+                        drawStar(ctx, x + size/2, y + size/3, 5, size/2.5, size/5);
+                        drawStar(ctx, x + size/4, y + size*2/3, 5, size/3, size/6);
+                        drawStar(ctx, x + size*3/4, y + size*2/3, 5, size/3, size/6);
+                        ctx.strokeStyle = '#FFFFFF';
+                        ctx.lineWidth = 2.5;
+                        ctx.stroke();
+                        break;
+                }
+                ctx.restore();
+            };
+
+            useEffect(() => {
+                const canvas = document.createElement('canvas');
+                canvas.width = 400; // Higher resolution (was 200)
+                canvas.height = 400;
+                const ctx = canvas.getContext('2d');
+
+                // Light gray background
+                ctx.fillStyle = '#F3F4F6';
+                ctx.fillRect(0, 0, 400, 400);
+
+                // Pokemon name
+                ctx.fillStyle = '#1F2937';
+                ctx.font = 'bold 24px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(pokemon.pokemonName.toUpperCase(), 200, 35);
+
+                // Rarity icon at top
+                const iconSize = 40;
+                const iconX = 200 - iconSize / 2;
+                const iconY = 45;
+                drawRarityIcon(ctx, iconX, iconY, iconSize, pokemon.rarity);
+
+                // Load sprite
+                const img = new Image();
+                img.crossOrigin = 'anonymous';
+                img.src = pokemon.spriteUrl;
+                img.onload = () => {
+                    // Draw sprite
+                    const spriteSize = 140;
+                    const spriteX = (400 - spriteSize) / 2;
+                    const spriteY = 105;
+                    ctx.imageSmoothingEnabled = false;
+                    ctx.drawImage(img, spriteX, spriteY, spriteSize, spriteSize);
+
+                    // Rarity badge below sprite
+                    const rarityColors = {
+                        legendary: '#F59E0B',
+                        epic: '#8B5CF6',
+                        rare: '#3B82F6',
+                        uncommon: '#10B981',
+                        common: '#9CA3AF'
+                    };
+                    
+                    const badgeY = 260;
+                    const badgeWidth = 180;
+                    const badgeHeight = 32;
+                    const badgeX = (400 - badgeWidth) / 2;
+                    
+                    ctx.fillStyle = rarityColors[pokemon.rarity] || rarityColors.common;
+                    ctx.beginPath();
+                    ctx.roundRect(badgeX, badgeY, badgeWidth, badgeHeight, 8);
+                    ctx.fill();
+                    
+                    ctx.fillStyle = 'white';
+                    ctx.font = 'bold 16px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(pokemon.rarity.toUpperCase(), 200, badgeY + 21);
+
+                    // Workout data below badge - single row, no labels
+                    ctx.fillStyle = '#4B5563';
+                    ctx.font = '14px Arial';
+                    ctx.textAlign = 'center';
+                    
+                    const isLift = pokemon.pace === '--' || !pokemon.pace || pokemon.pace === 'undefined';
+                    
+                    if (isLift) {
+                        // Lift: duration | calories | HR (one row, no labels)
+                        const duration = pokemon.duration || '--';
+                        const calories = pokemon.caloriesBurned || '--';
+                        const hr = pokemon.avgHR || '--';
+                        ctx.fillText(`${duration}  ${calories}  ${hr}`, 200, 330);
+                    } else {
+                        // Cardio: pace | distance | duration (one row)
+                        const pace = pokemon.pace || '--';
+                        const distance = pokemon.distance || '--';
+                        const duration = pokemon.duration || '--';
+                        ctx.fillText(`${pace}  ${distance}mi  ${duration}`, 200, 330);
+                    }
+
+                    setCardImage(canvas.toDataURL());
+                };
+            }, [pokemon]);
+
+            return (
+                <div className={`relative ${className}`} onClick={onClick}>
+                    {showDelete && (
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onDelete();
+                            }}
+                            className="absolute bottom-2 left-2 w-8 h-8 bg-red-500 hover:bg-red-600 text-white rounded-lg text-lg font-bold shadow-lg z-10"
+                        >
+                            ×
+                        </button>
+                    )}
+                    {cardImage && (
+                        <img src={cardImage} alt={pokemon.pokemonName} className="w-full h-auto rounded-lg" />
+                    )}
+                </div>
+            );
+        };
+
+        // ========================================
+        // 🎯 ENCOUNTER CARD COMPONENT (Canvas-based like old shareable cards)
+        // ========================================
+        const EncounterCard = ({ encounter, workoutData, isCatchAnimating, catchResult, shakeCount }) => {
+            const [cardImageUrl, setCardImageUrl] = useState(null);
+            const canvasRef = useRef(null);
+
+            // Helper functions for drawing (copied from existing code)
+            const drawStar = (ctx, cx, cy, spikes, outerRadius, innerRadius) => {
+                let rot = Math.PI / 2 * 3;
+                let x = cx;
+                let y = cy;
+                const step = Math.PI / spikes;
+
+                ctx.beginPath();
+                ctx.moveTo(cx, cy - outerRadius);
+                
+                for (let i = 0; i < spikes; i++) {
+                    x = cx + Math.cos(rot) * outerRadius;
+                    y = cy + Math.sin(rot) * outerRadius;
+                    ctx.lineTo(x, y);
+                    rot += step;
+
+                    x = cx + Math.cos(rot) * innerRadius;
+                    y = cy + Math.sin(rot) * innerRadius;
+                    ctx.lineTo(x, y);
+                    rot += step;
+                }
+                
+                ctx.lineTo(cx, cy - outerRadius);
+                ctx.closePath();
+                ctx.fill();
+            };
+
+            const drawRarityIcon = (ctx, x, y, size, tier) => {
+                ctx.save();
+                
+                switch(tier) {
+                    case 'common':
+                        ctx.fillStyle = '#6B7280';
+                        ctx.beginPath();
+                        ctx.arc(x + size/2, y + size/2, size/2, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.strokeStyle = '#FFFFFF';
+                        ctx.lineWidth = 3;
+                        ctx.stroke();
+                        break;
+                    case 'uncommon':
+                        ctx.fillStyle = '#10B981';
+                        ctx.beginPath();
+                        ctx.moveTo(x + size/2, y);
+                        ctx.lineTo(x + size, y + size/2);
+                        ctx.lineTo(x + size/2, y + size);
+                        ctx.lineTo(x, y + size/2);
+                        ctx.closePath();
+                        ctx.fill();
+                        ctx.strokeStyle = '#FFFFFF';
+                        ctx.lineWidth = 3;
+                        ctx.stroke();
+                        break;
+                    case 'rare':
+                        ctx.fillStyle = '#3B82F6';
+                        drawStar(ctx, x + size/2, y + size/2, 5, size/2, size/4);
+                        ctx.strokeStyle = '#FFFFFF';
+                        ctx.lineWidth = 3;
+                        ctx.stroke();
+                        break;
+                    case 'epic':
+                        ctx.fillStyle = '#8B5CF6';
+                        ctx.globalAlpha = 0.7;
+                        drawStar(ctx, x + size/2 - 8, y + size/2, 5, size/2.2, size/4.4);
+                        ctx.globalAlpha = 1;
+                        drawStar(ctx, x + size/2 + 8, y + size/2, 5, size/2.2, size/4.4);
+                        ctx.strokeStyle = '#FFFFFF';
+                        ctx.lineWidth = 2;
+                        ctx.stroke();
+                        break;
+                    case 'legendary':
+                        ctx.fillStyle = '#F59E0B';
+                        drawStar(ctx, x + size/2, y + size/3, 5, size/2.5, size/5);
+                        drawStar(ctx, x + size/4, y + size*2/3, 5, size/3, size/6);
+                        drawStar(ctx, x + size*3/4, y + size*2/3, 5, size/3, size/6);
+                        ctx.strokeStyle = '#FFFFFF';
+                        ctx.lineWidth = 2;
+                        ctx.stroke();
+                        break;
+                }
+                
+                ctx.restore();
+            };
+
+            const drawStatsBox = (ctx, width, height, pace, distance, duration) => {
+                const boxWidth = 800;
+                const boxHeight = 250;
+                const boxX = (width - boxWidth) / 2;
+                const boxY = height - 330;
+
+                // Black border
+                ctx.fillStyle = '#000000';
+                ctx.fillRect(boxX - 8, boxY - 8, boxWidth + 16, boxHeight + 16);
+                
+                // White border
+                ctx.fillStyle = '#FFFFFF';
+                ctx.fillRect(boxX - 4, boxY - 4, boxWidth + 8, boxHeight + 8);
+                
+                // Tan background
+                ctx.fillStyle = '#E8E8D0';
+                ctx.fillRect(boxX, boxY, boxWidth, boxHeight);
+
+                // Stats text
+                ctx.fillStyle = '#000000';
+                ctx.font = 'bold 36px Arial';
+                ctx.textAlign = 'left';
+                
+                const labelX = boxX + 40;
+                let currentY = boxY + 60;
+                
+                ctx.fillText('Avg Pace', labelX, currentY);
+                ctx.fillText('min/mi', labelX + 480, currentY);
+                
+                currentY += 70;
+                ctx.fillText('Distance', labelX, currentY);
+                ctx.fillText('mi', labelX + 480, currentY);
+                
+                currentY += 70;
+                ctx.fillText('Duration', labelX, currentY);
+
+                // Timestamp
+                ctx.font = '20px monospace';
+                ctx.fillStyle = '#666666';
+                ctx.textAlign = 'right';
+                const timestamp = new Date().toLocaleString();
+                ctx.fillText(timestamp, boxX + boxWidth - 40, boxY + boxHeight - 20);
+            };
+
+            useEffect(() => {
+                const generateCard = () => {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = 1080;
+                    canvas.height = 1080;
+                    const ctx = canvas.getContext('2d');
+
+                    // Background
+                    ctx.fillStyle = '#C5C9B8';
+                    ctx.fillRect(0, 0, 1080, 1080);
+
+                    const img = new Image();
+                    img.crossOrigin = 'anonymous';
+                    img.src = encounter.spriteUrl;
+                    
+                    img.onload = () => {
+                        // Draw rarity icon at very top (not obstructing name)
+                        const iconSize = 60;
+                        const iconX = 540 - iconSize / 2;
+                        const iconY = 50; // Top of card
+                        drawRarityIcon(ctx, iconX, iconY, iconSize, encounter.rarity);
+
+                        // Pokemon name below icon
+                        ctx.fillStyle = '#000000';
+                        ctx.font = 'bold 48px Arial';
+                        ctx.textAlign = 'center';
+                        ctx.fillText(encounter.pokemonName.toUpperCase(), 540, 180);
+
+                        // Draw sprite higher up to avoid clipping
+                        const scale = 5.5; // Slightly smaller
+                        const spriteWidth = img.width * scale;
+                        const spriteHeight = img.height * scale;
+                        const spriteX = (1080 - spriteWidth) / 2;
+                        const spriteY = 240; // Moved up from 280
+                        
+                        ctx.imageSmoothingEnabled = false;
+                        
+                        // Shiny glow effect
+                        if (encounter.isShiny) {
+                            ctx.shadowColor = '#FFD700';
+                            ctx.shadowBlur = 30;
+                            for (let i = 0; i < 5; i++) {
+                                ctx.drawImage(img, spriteX, spriteY, spriteWidth, spriteHeight);
+                            }
+                            ctx.shadowBlur = 0;
+                        }
+                        
+                        ctx.drawImage(img, spriteX, spriteY, spriteWidth, spriteHeight);
+
+                        // Draw rarity badge below sprite - with spacing from stats box
+                        const rarityColors = {
+                            legendary: '#F59E0B',
+                            epic: '#8B5CF6',
+                            rare: '#3B82F6',
+                            uncommon: '#10B981',
+                            common: '#9CA3AF'
+                        };
+                        
+                        const badgeY = spriteY + spriteHeight + 30;
+                        const badgeWidth = 300;
+                        const badgeHeight = 70;
+                        const badgeX = (1080 - badgeWidth) / 2;
+                        
+                        // Rounded rectangle for badge
+                        ctx.fillStyle = rarityColors[encounter.rarity] || rarityColors.common;
+                        ctx.beginPath();
+                        ctx.moveTo(badgeX + 15, badgeY);
+                        ctx.lineTo(badgeX + badgeWidth - 15, badgeY);
+                        ctx.quadraticCurveTo(badgeX + badgeWidth, badgeY, badgeX + badgeWidth, badgeY + 15);
+                        ctx.lineTo(badgeX + badgeWidth, badgeY + badgeHeight - 15);
+                        ctx.quadraticCurveTo(badgeX + badgeWidth, badgeY + badgeHeight, badgeX + badgeWidth - 15, badgeY + badgeHeight);
+                        ctx.lineTo(badgeX + 15, badgeY + badgeHeight);
+                        ctx.quadraticCurveTo(badgeX, badgeY + badgeHeight, badgeX, badgeY + badgeHeight - 15);
+                        ctx.lineTo(badgeX, badgeY + 15);
+                        ctx.quadraticCurveTo(badgeX, badgeY, badgeX + 15, badgeY);
+                        ctx.closePath();
+                        ctx.fill();
+                        
+                        ctx.fillStyle = 'white';
+                        ctx.font = 'bold 40px Arial';
+                        ctx.textAlign = 'center';
+                        ctx.fillText(encounter.rarity.toUpperCase(), 540, badgeY + 50);
+
+                        // Draw horizontal stats box - narrower with even spacing
+                        const boxWidth = 700; // Narrower (was 950)
+                        const boxHeight = 140;
+                        const boxX = (1080 - boxWidth) / 2;
+                        const boxY = 1080 - 200; // Higher to fit better
+
+                        // Black border
+                        ctx.fillStyle = '#000000';
+                        ctx.fillRect(boxX - 8, boxY - 8, boxWidth + 16, boxHeight + 16);
+                        
+                        // White border
+                        ctx.fillStyle = '#FFFFFF';
+                        ctx.fillRect(boxX - 4, boxY - 4, boxWidth + 8, boxHeight + 8);
+                        
+                        // Tan background
+                        ctx.fillStyle = '#E8E8D0';
+                        ctx.fillRect(boxX, boxY, boxWidth, boxHeight);
+
+                        // Stats text - evenly spaced horizontally
+                        ctx.fillStyle = '#000000';
+                        ctx.textAlign = 'center'; // Center align for even spacing
+                        
+                        const columnWidth = boxWidth / 3;
+                        
+                        if (workoutData.workoutType === 'lift') {
+                            // Lift: Duration | Calories | Avg HR (evenly spaced)
+                            
+                            // Column 1: Duration
+                            const col1X = boxX + columnWidth / 2;
+                            ctx.font = 'bold 28px Arial';
+                            ctx.fillText('Duration', col1X, boxY + 45);
+                            ctx.font = 'bold 32px Arial';
+                            ctx.fillText((workoutData.liftDuration || '--') + ' min', col1X, boxY + 90);
+                            
+                            // Column 2: Calories
+                            const col2X = boxX + columnWidth * 1.5;
+                            ctx.font = 'bold 28px Arial';
+                            ctx.fillText('Calories', col2X, boxY + 45);
+                            ctx.font = 'bold 32px Arial';
+                            ctx.fillText((workoutData.caloriesBurned || '--') + ' kcal', col2X, boxY + 90);
+                            
+                            // Column 3: Avg HR
+                            const col3X = boxX + columnWidth * 2.5;
+                            ctx.font = 'bold 28px Arial';
+                            ctx.fillText('Avg HR', col3X, boxY + 45);
+                            ctx.font = 'bold 32px Arial';
+                            ctx.fillText(workoutData.avgHR || '--', col3X, boxY + 90);
+                        } else {
+                            // Cardio: Avg Pace | Distance | Duration (evenly spaced)
+                            
+                            // Column 1: Avg Pace
+                            const col1X = boxX + columnWidth / 2;
+                            ctx.font = 'bold 28px Arial';
+                            ctx.fillText('Avg Pace', col1X, boxY + 45);
+                            ctx.font = 'bold 32px Arial';
+                            ctx.fillText((workoutData.pace || '--') + ' min/mi', col1X, boxY + 90);
+                            
+                            // Column 2: Distance
+                            const col2X = boxX + columnWidth * 1.5;
+                            ctx.font = 'bold 28px Arial';
+                            ctx.fillText('Distance', col2X, boxY + 45);
+                            ctx.font = 'bold 32px Arial';
+                            ctx.fillText((workoutData.distance || '--') + ' mi', col2X, boxY + 90);
+                            
+                            // Column 3: Duration
+                            const col3X = boxX + columnWidth * 2.5;
+                            ctx.font = 'bold 28px Arial';
+                            ctx.fillText('Duration', col3X, boxY + 45);
+                            ctx.font = 'bold 32px Arial';
+                            ctx.fillText(workoutData.duration || '--', col3X, boxY + 90);
+                        }
+
+                        // Timestamp in bottom right corner (no overlap with data)
+                        ctx.font = '16px monospace';
+                        ctx.fillStyle = '#666666';
+                        ctx.textAlign = 'right';
+                        const timestamp = new Date().toLocaleString();
+                        ctx.fillText(timestamp, boxX + boxWidth - 15, boxY + boxHeight - 10);
+
+                        setCardImageUrl(canvas.toDataURL());
+                    };
+
+                    img.onerror = () => {
+                        console.error('Failed to load sprite');
+                    };
+                };
+
+                generateCard();
+            }, [encounter, workoutData]);
+
+            return (
+                <div className="relative" style={{ paddingTop: '100%' }}>
+                    {cardImageUrl && (
+                        <img 
+                            src={cardImageUrl}
+                            alt={encounter.pokemonName}
+                            className="absolute inset-0 w-full h-full object-cover"
+                        />
+                    )}
+                    
+                    {/* Pokéball Animation Overlay */}
+                    {isCatchAnimating && (
+                        <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+                            <div className="pokeball-shake text-8xl">
+                                ⚪
+                            </div>
+                        </div>
+                    )}
+                    
+                    {/* Result Overlay */}
+                    {catchResult && !isCatchAnimating && (
+                        <div className={`absolute inset-0 flex items-center justify-center transition-opacity ${
+                            catchResult === 'success' ? 'bg-green-500 bg-opacity-80' : 'bg-red-500 bg-opacity-80'
+                        }`}>
+                            <div className="text-center text-white">
+                                <div className="text-6xl mb-2">
+                                    {catchResult === 'success' ? '✓' : '✗'}
+                                </div>
+                                <div className="text-2xl font-bold">
+                                    {catchResult === 'success' ? 'Caught!' : 'Failed!'}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
         const PokemonRunTracker = () => {
+            // Cardio workout inputs (existing)
             const [pace, setPace] = useState('');
             const [distance, setDistance] = useState('');
             const [duration, setDuration] = useState('');
-            const [lastEdited, setLastEdited] = useState(null); // Track which field was edited last
+            const [lastEdited, setLastEdited] = useState(null);
+            
+            // 🏋️ Lift workout inputs (NEW)
+            const [liftDuration, setLiftDuration] = useState('');
+            const [caloriesBurned, setCaloriesBurned] = useState('');
+            const [avgHR, setAvgHR] = useState('');
+            
+            // 🎮 Pokéball System (Phase 1)
+            const [storedPokeballs, setStoredPokeballs] = useState(0);
+            const [workoutTab, setWorkoutTab] = useState('cardio');
+            const [hasExchanged, setHasExchanged] = useState(false);
+            
+            // 🎯 Capture Session System (Phase 2)
+            const [captureSession, setCaptureSession] = useState(null); // { sessionId, encounters[], currentIndex, createdAt }
+            const [currentEncounter, setCurrentEncounter] = useState(null);
+            const [isCatchAnimating, setIsCatchAnimating] = useState(false);
+            const [catchResult, setCatchResult] = useState(null); // 'success' | 'fail' | null
+            const [shakeCount, setShakeCount] = useState(0);
+            const [lastWorkoutIntensity, setLastWorkoutIntensity] = useState(null); // Store for session generation
+            
             const [pokemonData, setPokemonData] = useState(null);
             const [spriteVariant, setSpriteVariant] = useState('default');
             const [availableVariants, setAvailableVariants] = useState([]);
@@ -2105,6 +2682,25 @@
             useEffect(() => {
                 loadRunHistory();
                 checkFirebaseAuth(); // 🔥 Check if user is already authenticated
+                
+                // 🎮 Load stored Pokéballs
+                window.storage.get('stored-pokeballs').then(result => {
+                    if (result && result.value) {
+                        const balls = parseInt(result.value);
+                        if (!isNaN(balls)) {
+                            setStoredPokeballs(balls);
+                            console.log('🎮 Loaded stored Pokéballs:', balls);
+                        }
+                    }
+                }).catch(err => console.error('Error loading pokeballs:', err));
+                
+                // 🎯 Load active capture session
+                loadCaptureSession().then(session => {
+                    if (session) {
+                        console.log('📂 Resumed capture session');
+                    }
+                });
+                
                 // Hide loading screen
                 setTimeout(() => {
                     document.getElementById('loading').classList.add('hidden');
@@ -3062,6 +3658,471 @@
                 return { pokemonId, isShiny: isShinyRoll, shinyChance };
             };
 
+            // =========================
+            // 🎮 POKÉBALL EXCHANGE SYSTEM
+            // =========================
+            
+            const POKEBALL_CONFIG = {
+                MIN: 3,
+                MAX: 50,
+                // Cardio
+                CARDIO_BASE_MINUTES_PER_BALL: 6,
+                CARDIO_DISTANCE_THRESHOLD: 2,
+                CARDIO_DISTANCE_MULTIPLIER: 1.25,
+                CARDIO_PACE_TIERS: [
+                    { pace: 450, mult: 2.15 },   // < 7:30
+                    { pace: 510, mult: 1.9 },    // < 8:30
+                    { pace: 570, mult: 1.75 },   // < 9:30
+                    { pace: 630, mult: 1.5 }     // < 10:30
+                ],
+                // Lift
+                LIFT_CALORIES_PER_BALL: 70,
+                LIFT_TIME_THRESHOLD: 90,
+                LIFT_TIME_MULTIPLIER: 1.5,
+                // Streak
+                STREAK_BONUS_DIVISOR: 1.5
+            };
+
+            const handlePokeballExchange = () => {
+                let earned = 0;
+                
+                if (workoutTab === 'cardio') {
+                    // Parse cardio inputs
+                    const [paceMin, paceSec] = pace.split(':').map(Number);
+                    const paceSeconds = (paceMin * 60) + (paceSec || 0);
+                    const distanceNum = parseFloat(distance);
+                    const [durMin, durSec] = duration.split(':').map(Number);
+                    const durationSeconds = (durMin * 60) + (durSec || 0);
+                    const durationMinutes = durationSeconds / 60;
+                    
+                    // Base balls from duration
+                    const baseBalls = Math.max(
+                        POKEBALL_CONFIG.MIN,
+                        Math.round(durationMinutes / POKEBALL_CONFIG.CARDIO_BASE_MINUTES_PER_BALL)
+                    );
+                    
+                    // Distance multiplier
+                    let distanceMultiplier = 1.0;
+                    if (distanceNum > POKEBALL_CONFIG.CARDIO_DISTANCE_THRESHOLD) {
+                        const steps = Math.floor(distanceNum - POKEBALL_CONFIG.CARDIO_DISTANCE_THRESHOLD);
+                        distanceMultiplier = Math.pow(POKEBALL_CONFIG.CARDIO_DISTANCE_MULTIPLIER, steps);
+                    }
+                    
+                    // Pace multiplier (check fastest tier first)
+                    let paceMultiplier = 1.0;
+                    for (const tier of POKEBALL_CONFIG.CARDIO_PACE_TIERS) {
+                        if (paceSeconds < tier.pace) {
+                            paceMultiplier = tier.mult;
+                            break;
+                        }
+                    }
+                    
+                    // Streak bonus
+                    const streakBonus = Math.floor((currentStreak.days * 2) / 3);
+                    
+                    // Calculate final
+                    earned = Math.round(baseBalls * distanceMultiplier * paceMultiplier) + streakBonus;
+                    
+                    console.log('🏃 Cardio Exchange:', {
+                        baseBalls,
+                        distanceMultiplier,
+                        paceMultiplier,
+                        streakBonus,
+                        earned
+                    });
+                    
+                } else if (workoutTab === 'lift') {
+                    // Parse lift inputs
+                    const calories = parseFloat(caloriesBurned);
+                    const [durMin, durSec] = liftDuration.split(':').map(Number);
+                    const durationMinutes = (durMin * 60 + (durSec || 0)) / 60;
+                    
+                    // Base balls from calories
+                    const baseBalls = Math.max(
+                        POKEBALL_CONFIG.MIN,
+                        Math.round(calories / POKEBALL_CONFIG.LIFT_CALORIES_PER_BALL)
+                    );
+                    
+                    // Time multiplier
+                    let timeMultiplier = 1.0;
+                    if (durationMinutes > POKEBALL_CONFIG.LIFT_TIME_THRESHOLD) {
+                        timeMultiplier = POKEBALL_CONFIG.LIFT_TIME_MULTIPLIER;
+                    }
+                    
+                    // Streak bonus
+                    const streakBonus = Math.floor((currentStreak.days * 2) / 3);
+                    
+                    // Calculate final
+                    earned = Math.round(baseBalls * timeMultiplier) + streakBonus;
+                    
+                    console.log('🏋️ Lift Exchange:', {
+                        baseBalls,
+                        timeMultiplier,
+                        streakBonus,
+                        earned
+                    });
+                }
+                
+                // Clamp to min/max
+                earned = Math.max(POKEBALL_CONFIG.MIN, Math.min(POKEBALL_CONFIG.MAX, earned));
+                
+                // Add to stored pokeballs
+                const newTotal = storedPokeballs + earned;
+                setStoredPokeballs(newTotal);
+                setHasExchanged(true);
+                
+                console.log(`✨ Earned ${earned} Pokéballs! Total: ${newTotal}`);
+                
+                // Save to localStorage  
+                window.storage.set('stored-pokeballs', newTotal.toString());
+                
+                // Store workout intensity AND workout data for capture session
+                if (workoutTab === 'cardio') {
+                    const [paceMin, paceSec] = pace.split(':').map(Number);
+                    const paceSeconds = (paceMin * 60) + (paceSec || 0);
+                    const distanceNum = parseFloat(distance);
+                    const [durMin, durSec] = duration.split(':').map(Number);
+                    const durationSeconds = (durMin * 60) + (durSec || 0);
+                    
+                    const newPRs = checkForPRs(paceSeconds, distanceNum, durationSeconds);
+                    const intensity = calculateIntensity(paceSeconds, distanceNum, durationSeconds);
+                    const { chances } = calculateRarityChances(intensity, currentStreak, newPRs);
+                    
+                    setLastWorkoutIntensity({ 
+                        chances, 
+                        newPRs,
+                        workoutType: 'cardio',
+                        pace,
+                        distance,
+                        duration
+                    });
+                } else if (workoutTab === 'lift') {
+                    // For lift, use default chances since we don't have intensity calculation yet
+                    const chances = {
+                        common: { chance: 0.50 },
+                        uncommon: { chance: 0.30 },
+                        rare: { chance: 0.15 },
+                        epic: { chance: 0.04 },
+                        legendary: { chance: 0.01 }
+                    };
+                    
+                    setLastWorkoutIntensity({
+                        chances,
+                        newPRs: {},
+                        workoutType: 'lift',
+                        liftDuration,
+                        caloriesBurned,
+                        avgHR
+                    });
+                }
+            };
+
+            // =========================
+            // 🎯 CAPTURE SESSION SYSTEM (Phase 2)
+            // =========================
+            
+            const CATCH_CONFIG = {
+                BASE_PROBABILITY: {
+                    legendary: 0.20,
+                    epic: 0.50,
+                    rare: 0.50,
+                    uncommon: 0.70,
+                    common: 0.90
+                },
+                SHINY_BONUS: {
+                    legendary: 0.50,
+                    default: 0.20
+                }
+            };
+
+            // Generate 5-encounter capture session
+            const generateCaptureSession = async () => {
+                console.log('🎯 Generating 5-encounter capture session...');
+                
+                if (!lastWorkoutIntensity) {
+                    alert('No workout intensity data. Please do a Pokéball Exchange first.');
+                    return;
+                }
+                
+                const encounters = [];
+                const { chances } = lastWorkoutIntensity;
+                
+                // Generate 5 Pokémon using the same intensity
+                for (let i = 0; i < 5; i++) {
+                    const rarity = rollRarity(chances);
+                    const { pokemonId, isShiny } = await getPokemonByRarity(rarity);
+                    const actualRarity = getPokemonRarity(pokemonId);
+                    
+                    // Fetch Pokemon data
+                    const response = await fetch(`https://pokeapi.co/api/v2/pokemon/${pokemonId}`);
+                    const fetchedData = await response.json();
+                    
+                    encounters.push({
+                        encounterId: `encounter_${Date.now()}_${i}`,
+                        pokemonId,
+                        pokemonName: fetchedData?.name || 'unknown',
+                        spriteUrl: isShiny ? fetchedData?.sprites.front_shiny : fetchedData?.sprites.front_default,
+                        rarity: actualRarity,
+                        isShiny,
+                        status: 'active', // 'active' | 'captured' | 'ran'
+                        attempts: 0
+                    });
+                    
+                    // Small delay between generations
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                }
+                
+                const session = {
+                    sessionId: `session_${Date.now()}`,
+                    encounters,
+                    currentIndex: 0,
+                    createdAt: Date.now(),
+                    workoutData: lastWorkoutIntensity.workoutType === 'lift' 
+                        ? {
+                            workoutType: 'lift',
+                            liftDuration: lastWorkoutIntensity.liftDuration,
+                            caloriesBurned: lastWorkoutIntensity.caloriesBurned,
+                            avgHR: lastWorkoutIntensity.avgHR
+                          }
+                        : {
+                            workoutType: 'cardio',
+                            pace: lastWorkoutIntensity.pace,
+                            distance: lastWorkoutIntensity.distance,
+                            duration: lastWorkoutIntensity.duration
+                          }
+                };
+                
+                setCaptureSession(session);
+                setCurrentEncounter(encounters[0]);
+                
+                // Save session to storage
+                await window.storage.set('capture-session', JSON.stringify(session));
+                
+                console.log('✅ Session created:', session);
+                return session;
+            };
+
+            // Load existing session from storage
+            const loadCaptureSession = async () => {
+                try {
+                    const result = await window.storage.get('capture-session');
+                    if (result && result.value && result.value !== 'null') {
+                        const session = JSON.parse(result.value);
+                        setCaptureSession(session);
+                        setCurrentEncounter(session.encounters[session.currentIndex]);
+                        console.log('📂 Loaded existing session:', session);
+                        return session;
+                    }
+                } catch (err) {
+                    console.error('Error loading session:', err);
+                }
+                return null;
+            };
+
+            // Calculate catch probability
+            const getCatchProbability = (rarity, isShiny) => {
+                const base = CATCH_CONFIG.BASE_PROBABILITY[rarity] || CATCH_CONFIG.BASE_PROBABILITY.common;
+                const shinyBonus = isShiny 
+                    ? (rarity === 'legendary' ? CATCH_CONFIG.SHINY_BONUS.legendary : CATCH_CONFIG.SHINY_BONUS.default)
+                    : 0;
+                return Math.min(1.0, base + shinyBonus);
+            };
+
+            // Attempt to catch current encounter
+            const attemptCatch = async () => {
+                if (!currentEncounter || storedPokeballs <= 0 || isCatchAnimating) return;
+                if (currentEncounter.status !== 'active') return;
+                
+                // Consume 1 Pokéball
+                const newBallCount = storedPokeballs - 1;
+                setStoredPokeballs(newBallCount);
+                await window.storage.set('stored-pokeballs', newBallCount.toString());
+                
+                // Calculate success
+                const probability = getCatchProbability(currentEncounter.rarity, currentEncounter.isShiny);
+                const roll = Math.random();
+                const success = roll <= probability;
+                
+                // Determine shake count based on closeness
+                let shakes;
+                if (success) {
+                    // Successful catches: 1-3 shakes randomly
+                    shakes = Math.random() < 0.3 ? 1 : (Math.random() < 0.6 ? 2 : 3);
+                } else {
+                    // Failed catches: more shakes for close calls
+                    const howClose = roll / probability;
+                    if (howClose < 1.2) shakes = 3; // Very close
+                    else if (howClose < 1.5) shakes = 2; // Close
+                    else shakes = 1; // Not close
+                }
+                
+                setShakeCount(shakes);
+                setIsCatchAnimating(true);
+                
+                console.log('🎲 Catch attempt:', { probability, roll, success, shakes, rarity: currentEncounter.rarity });
+                
+                // Animate shakes (600ms per shake + 500ms initial)
+                await new Promise(resolve => setTimeout(resolve, shakes * 600 + 500));
+                
+                setCatchResult(success ? 'success' : 'fail');
+                setIsCatchAnimating(false);
+                
+                // Auto-clear result after 1.5 seconds if failed (allow retry)
+                if (!success) {
+                    setTimeout(() => {
+                        setCatchResult(null);
+                    }, 1500);
+                }
+                
+                // Update encounter status
+                if (success) {
+                    const updatedEncounter = {
+                        ...currentEncounter,
+                        status: 'captured',
+                        attempts: currentEncounter.attempts + 1
+                    };
+                    updateEncounterInSession(updatedEncounter);
+                    
+                    // Add to PC
+                    // Add to PC with correct workout data
+                    const pcData = {
+                        pokemonId: updatedEncounter.pokemonId,
+                        name: updatedEncounter.pokemonName,
+                        isShiny: updatedEncounter.isShiny,
+                        rarity: updatedEncounter.rarity,
+                        spriteUrl: updatedEncounter.spriteUrl
+                    };
+                    
+                    if (captureSession.workoutData.workoutType === 'cardio') {
+                        pcData.pace = captureSession.workoutData.pace;
+                        pcData.distance = captureSession.workoutData.distance;
+                        pcData.duration = captureSession.workoutData.duration;
+                    } else {
+                        // Lift data
+                        pcData.pace = '--';
+                        pcData.distance = '--';
+                        pcData.duration = captureSession.workoutData.liftDuration || '--';
+                        pcData.caloriesBurned = captureSession.workoutData.caloriesBurned || '--';
+                        pcData.avgHR = captureSession.workoutData.avgHR || '--';
+                    }
+                    
+                    await addPokemonToPC(pcData);
+                    
+                    // Create activity feed entry with correct workout data
+                    if (firebaseProfile && firebaseManager.user) {
+                        const feedData = {
+                            pokemonId: updatedEncounter.pokemonId,
+                            pokemonName: updatedEncounter.pokemonName,
+                            isShiny: updatedEncounter.isShiny,
+                            rarity: updatedEncounter.rarity,
+                            spriteUrl: updatedEncounter.spriteUrl,
+                            trainerName: firebaseProfile.displayName,
+                            trainerBadgeColor: firebaseProfile.badgeColor
+                        };
+                        
+                        if (captureSession.workoutData.workoutType === 'cardio') {
+                            feedData.pace = captureSession.workoutData.pace;
+                            feedData.distance = captureSession.workoutData.distance;
+                            feedData.duration = captureSession.workoutData.duration;
+                        } else {
+                            feedData.pace = '--';
+                            feedData.distance = '--';
+                            feedData.duration = captureSession.workoutData.liftDuration || '--';
+                        }
+                        
+                        await createActivityFeedEntry(feedData);
+                    }
+                    
+                    console.log('✅ Pokémon captured!');
+                } else {
+                    const updatedEncounter = {
+                        ...currentEncounter,
+                        attempts: currentEncounter.attempts + 1
+                    };
+                    updateEncounterInSession(updatedEncounter);
+                    console.log('❌ Catch failed');
+                }
+            };
+
+            // Run from current encounter
+            const runFromEncounter = () => {
+                if (!currentEncounter || currentEncounter.status !== 'active') return;
+                
+                const updatedEncounter = {
+                    ...currentEncounter,
+                    status: 'ran'
+                };
+                updateEncounterInSession(updatedEncounter);
+                
+                console.log('🏃 Ran from encounter');
+                
+                // Auto-advance to next
+                setTimeout(() => advanceToNext(), 500);
+            };
+
+            // Advance to next encounter
+            const advanceToNext = () => {
+                if (!captureSession) return;
+                
+                const nextIndex = captureSession.currentIndex + 1;
+                
+                if (nextIndex < captureSession.encounters.length) {
+                    const updatedSession = {
+                        ...captureSession,
+                        currentIndex: nextIndex
+                    };
+                    setCaptureSession(updatedSession);
+                    setCurrentEncounter(updatedSession.encounters[nextIndex]);
+                    setCatchResult(null);
+                    
+                    // Save updated session
+                    window.storage.set('capture-session', JSON.stringify(updatedSession));
+                    
+                    console.log(`➡️ Advanced to encounter ${nextIndex + 1}/5`);
+                } else {
+                    // Session complete
+                    endCaptureSession();
+                }
+            };
+
+            // Update encounter in session
+            const updateEncounterInSession = (updatedEncounter) => {
+                const updatedEncounters = captureSession.encounters.map(enc =>
+                    enc.encounterId === updatedEncounter.encounterId ? updatedEncounter : enc
+                );
+                
+                const updatedSession = {
+                    ...captureSession,
+                    encounters: updatedEncounters
+                };
+                
+                setCaptureSession(updatedSession);
+                setCurrentEncounter(updatedEncounter);
+                
+                // Save updated session
+                window.storage.set('capture-session', JSON.stringify(updatedSession));
+            };
+
+            // End capture session
+            const endCaptureSession = async () => {
+                console.log('🏁 Capture session complete!');
+                
+                // Count captured Pokémon
+                const capturedCount = captureSession.encounters.filter(e => e.status === 'captured').length;
+                
+                // Clear session from storage
+                await window.storage.set('capture-session', 'null');
+                
+                // Reset states
+                setCaptureSession(null);
+                setCurrentEncounter(null);
+                setCatchResult(null);
+                setHasExchanged(false); // Allow new exchange
+                
+                alert(`🎉 Capture session complete! You caught ${capturedCount}/5 Pokémon. Check your PC!`);
+            };
+            
+
             const generatePokemon = async () => {
                 setIsLoading(true);
                 try {
@@ -3487,10 +4548,16 @@
                         <>
                         <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl shadow-2xl p-6 mb-6 border border-slate-700">
                             <div className="flex justify-between items-center mb-4">
-                                <h2 className="text-xl font-bold text-white">Your Run</h2>
+                                <h2 className="text-xl font-bold text-white">Your Workout</h2>
                                 
-                                {/* All 3 Badges */}
+                                {/* All Badges + Pokéball Inventory */}
                                 <div className="flex gap-2">
+                                    {/* Pokéball Inventory */}
+                                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg font-bold text-xs text-white shadow-md bg-gradient-to-br from-red-600 to-red-700">
+                                        <span>⚪</span>
+                                        <span>{storedPokeballs}</span>
+                                    </div>
+                                    
                                     {/* Streak Badge */}
                                     <div className="flex items-center gap-2 px-3 py-2 rounded-lg font-bold text-xs text-white shadow-md bg-gradient-to-br from-gray-800 to-gray-900">
                                         <span>🔥</span>
@@ -3852,6 +4919,32 @@
                                 </div>
                             </div>
                             
+                            {/* Workout Type Tabs */}
+                            <div className="flex gap-2 mb-4">
+                                <button
+                                    onClick={() => setWorkoutTab('cardio')}
+                                    className={`flex-1 py-2 px-4 rounded-lg font-bold text-sm transition ${
+                                        workoutTab === 'cardio'
+                                            ? 'bg-purple-600 text-white'
+                                            : 'bg-slate-700 text-gray-300 hover:bg-slate-600'
+                                    }`}
+                                >
+                                    🏃 Cardio
+                                </button>
+                                <button
+                                    onClick={() => setWorkoutTab('lift')}
+                                    className={`flex-1 py-2 px-4 rounded-lg font-bold text-sm transition ${
+                                        workoutTab === 'lift'
+                                            ? 'bg-purple-600 text-white'
+                                            : 'bg-slate-700 text-gray-300 hover:bg-slate-600'
+                                    }`}
+                                >
+                                    🏋️ Lift
+                                </button>
+                            </div>
+                            
+                            {/* Cardio Inputs */}
+                            {workoutTab === 'cardio' && (
                             <div className="space-y-4">
                                 <div>
                                     <label className="block text-sm font-semibold text-gray-300 mb-2">Pace (min/mi)</label>
@@ -3876,13 +4969,137 @@
                                            onBlur={handleDurationBlur}
                                            className="w-full px-4 py-3 bg-slate-700 border-2 border-slate-600 rounded-lg text-lg text-white placeholder-gray-400 focus:border-purple-500 focus:outline-none transition" placeholder="16:27" />
                                 </div>
+                            </div>
+                            )}
+                            
+                            {/* Lift Inputs */}
+                            {workoutTab === 'lift' && (
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-semibold text-gray-300 mb-2">Duration (mm:ss)</label>
+                                    <input type="text" value={liftDuration} 
+                                           onChange={(e) => setLiftDuration(e.target.value)}
+                                           className="w-full px-4 py-3 bg-slate-700 border-2 border-slate-600 rounded-lg text-lg text-white placeholder-gray-400 focus:border-purple-500 focus:outline-none transition" placeholder="45:00" />
+                                </div>
 
-                                <button onClick={generatePokemon} disabled={isLoading}
-                                    className="w-full py-4 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-lg font-bold text-lg transition shadow-lg hover:shadow-purple-500/50 disabled:opacity-50">
-                                    {isLoading ? '⏳ Rolling...' : '✨ Roll for Pokémon!'}
+                                <div>
+                                    <label className="block text-sm font-semibold text-gray-300 mb-2">Calories Burned</label>
+                                    <input type="text" value={caloriesBurned} 
+                                           onChange={(e) => setCaloriesBurned(e.target.value)}
+                                           className="w-full px-4 py-3 bg-slate-700 border-2 border-slate-600 rounded-lg text-lg text-white placeholder-gray-400 focus:border-purple-500 focus:outline-none transition" placeholder="350" />
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-semibold text-gray-300 mb-2">Avg Heart Rate</label>
+                                    <input type="text" value={avgHR} 
+                                           onChange={(e) => setAvgHR(e.target.value)}
+                                           className="w-full px-4 py-3 bg-slate-700 border-2 border-slate-600 rounded-lg text-lg text-white placeholder-gray-400 focus:border-purple-500 focus:outline-none transition" placeholder="145" />
+                                </div>
+                            </div>
+                            )}
+                            
+                            {/* Action Buttons */}
+                            <div className="grid grid-cols-2 gap-3 mt-6">
+                                <button 
+                                    onClick={handlePokeballExchange}
+                                    disabled={hasExchanged}
+                                    className={`py-4 rounded-lg font-bold text-lg transition shadow-lg ${
+                                        hasExchanged
+                                            ? 'bg-gray-600 text-gray-400 cursor-not-allowed opacity-50'
+                                            : 'bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-700 hover:to-orange-700 text-white hover:shadow-red-500/50'
+                                    }`}
+                                >
+                                    {hasExchanged ? '✓ Exchanged' : '⚪ Pokéball Exchange'}
+                                </button>
+                                
+                                <button 
+                                    onClick={generateCaptureSession}
+                                    disabled={!hasExchanged || storedPokeballs === 0 || captureSession !== null}
+                                    className={`py-4 rounded-lg font-bold text-lg transition shadow-lg ${
+                                        hasExchanged && storedPokeballs > 0 && !captureSession
+                                            ? 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white hover:shadow-purple-500/50'
+                                            : 'bg-gray-600 text-gray-400 cursor-not-allowed opacity-50'
+                                    }`}
+                                >
+                                    {captureSession ? '🎯 Session Active' : '🎯 Go Capture'}
                                 </button>
                             </div>
                         </div>
+
+                        {/* 🎯 CAPTURE SESSION UI */}
+                        {captureSession && currentEncounter && (
+                            <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl shadow-2xl p-6 mb-6 border border-slate-700">
+                                <div className="flex justify-between items-center mb-4">
+                                    <h2 className="text-xl font-bold text-white capitalize">Wild {currentEncounter.pokemonName}!</h2>
+                                    <div className="text-sm font-bold text-gray-400">
+                                        Encounter {captureSession.currentIndex + 1}/5
+                                    </div>
+                                </div>
+                                
+                                {/* Pokemon Card - Match old shareable card style */}
+                                <div className="relative bg-[#C5C9B8] rounded-2xl overflow-hidden mb-4">
+                                    <EncounterCard 
+                                        encounter={currentEncounter}
+                                        workoutData={captureSession.workoutData}
+                                        isCatchAnimating={isCatchAnimating}
+                                        catchResult={catchResult}
+                                        shakeCount={shakeCount}
+                                    />
+                                </div>
+                                
+                                {/* Action Buttons */}
+                                <div className="grid grid-cols-2 gap-3">
+                                    {currentEncounter.status === 'active' && !catchResult ? (
+                                        <>
+                                            <button
+                                                onClick={attemptCatch}
+                                                disabled={storedPokeballs === 0 || isCatchAnimating}
+                                                className="py-4 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white rounded-lg font-bold text-lg transition shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                                            >
+                                                ⚪ Catch ({storedPokeballs} left)
+                                            </button>
+                                            <button
+                                                onClick={runFromEncounter}
+                                                disabled={isCatchAnimating}
+                                                className="py-4 bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-700 hover:to-gray-800 text-white rounded-lg font-bold text-lg transition shadow-lg disabled:opacity-50"
+                                            >
+                                                🏃 Run
+                                            </button>
+                                        </>
+                                    ) : currentEncounter.status === 'captured' ? (
+                                        <>
+                                            <button
+                                                disabled
+                                                className="py-4 bg-green-600 text-white rounded-lg font-bold text-lg opacity-50 cursor-not-allowed"
+                                            >
+                                                ✓ Captured
+                                            </button>
+                                            <button
+                                                onClick={advanceToNext}
+                                                className="py-4 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-lg font-bold text-lg transition shadow-lg"
+                                            >
+                                                ➡️ Next
+                                            </button>
+                                        </>
+                                    ) : null}
+                                </div>
+                                
+                                {/* Session Progress Dots */}
+                                <div className="flex gap-2 justify-center mt-4">
+                                    {captureSession.encounters.map((enc, idx) => (
+                                        <div
+                                            key={enc.encounterId}
+                                            className={`w-3 h-3 rounded-full ${
+                                                enc.status === 'captured' ? 'bg-green-500' :
+                                                enc.status === 'ran' ? 'bg-gray-500' :
+                                                idx === captureSession.currentIndex ? 'bg-purple-500 ring-2 ring-purple-300' :
+                                                'bg-gray-700'
+                                            }`}
+                                        />
+                                    ))}
+                                </div>
+                            </div>
+                        )}
 
                         {pokemonData && (
                             <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl shadow-2xl p-6 border border-slate-700">
@@ -3966,60 +5183,21 @@
                                         )}
                                         <div className="grid grid-cols-2 gap-3 max-h-96 overflow-y-auto">
                                             {(Array.isArray(pokemonPC) ? pokemonPC : []).map((pokemon) => (
-                                                <div
-                                                    key={pokemon.id}
-                                                    className="relative bg-gray-50 rounded-lg p-3 border-2 border-gray-200"
-                                                    onClick={() => {
-                                                        if (selectingForSlot !== null && !deleteMode) {
-                                                            addToStarters(selectingForSlot, pokemon);
-                                                        }
-                                                    }}
-                                                >
-                                                    {/* Delete button - bottom left when delete mode active */}
-                                                    {deleteMode && (
-                                                        <button
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                setShowDeletePrompt(pokemon.id);
-                                                            }}
-                                                            className="absolute bottom-2 left-2 w-8 h-8 bg-red-500 hover:bg-red-600 text-white rounded-lg text-lg font-bold shadow-lg z-10"
-                                                        >
-                                                            ×
-                                                        </button>
-                                                    )}
-                                                    
-                                                    <div className="text-center text-xs font-semibold capitalize">
-                                                        {pokemon.pokemonName}
-                                                    </div>
-                                                    <div className="flex justify-around text-xs text-gray-600 font-medium my-1">
-                                                        <span>{pokemon.pace || '--'}</span>
-                                                        <span>{pokemon.distance || '--'}mi</span>
-                                                        <span>{pokemon.duration || '--'}</span>
-                                                    </div>
-                                                    <img 
-                                                        src={pokemon.spriteUrl} 
-                                                        alt={pokemon.pokemonName}
-                                                        className="w-20 h-20 mx-auto"
+                                                <div key={pokemon.id} className="relative">
+                                                    <PokemonCard
+                                                        pokemon={pokemon}
+                                                        className="bg-gray-50 rounded-lg border-2 border-gray-200"
+                                                        onClick={() => {
+                                                            if (selectingForSlot !== null && !deleteMode) {
+                                                                addToStarters(selectingForSlot, pokemon);
+                                                            }
+                                                        }}
+                                                        showDelete={deleteMode}
+                                                        onDelete={() => setShowDeletePrompt(pokemon.id)}
                                                     />
-                                                    <div className="flex gap-1 justify-center mt-1">
-                                                        <span className={`px-2 py-0.5 rounded text-xs font-bold ${
-                                                            pokemon.rarity === 'legendary' ? 'bg-yellow-400' :
-                                                            pokemon.rarity === 'epic' ? 'bg-purple-500 text-white' :
-                                                            pokemon.rarity === 'rare' ? 'bg-blue-500 text-white' :
-                                                            pokemon.rarity === 'uncommon' ? 'bg-green-500 text-white' :
-                                                            'bg-gray-400 text-white'
-                                                        }`}>
-                                                            {pokemon.rarity.toUpperCase()}
-                                                        </span>
-                                                        {pokemon.isShiny && (
-                                                            <span className="px-2 py-0.5 bg-yellow-300 rounded text-xs font-bold">
-                                                                ✨
-                                                            </span>
-                                                        )}
-                                                    </div>
-
+                                                    
                                                     {showDeletePrompt === pokemon.id && (
-                                                        <div className="absolute inset-0 bg-black bg-opacity-90 rounded-lg flex flex-col items-center justify-center gap-2">
+                                                        <div className="absolute inset-0 bg-black bg-opacity-90 rounded-lg flex flex-col items-center justify-center gap-2 z-20">
                                                             <div className="text-white text-sm font-bold">Delete?</div>
                                                             <div className="flex gap-2">
                                                                 <button
@@ -4069,53 +5247,28 @@
                                     {(Array.isArray(starterTeam) ? starterTeam : [null, null, null, null, null, null]).map((starter, index) => (
                                         <div
                                             key={index}
-                                            className="relative bg-gray-50 rounded-lg p-3 border-2 border-gray-200"
+                                            className="relative bg-gray-50 rounded-lg border-2 border-gray-200"
                                         >
                                             {starter ? (
-                                                <>
-                                                    <div className="text-center text-xs font-semibold capitalize">
-                                                        {starter.pokemonName}
-                                                    </div>
-                                                    <div className="flex justify-around text-xs text-gray-600 font-medium my-1">
-                                                        <span>{starter.pace || '--'}</span>
-                                                        <span>{starter.distance || '--'}mi</span>
-                                                        <span>{starter.duration || '--'}</span>
-                                                    </div>
-                                                    <img 
-                                                        src={starter.spriteUrl} 
-                                                        alt={starter.pokemonName}
-                                                        className="w-20 h-20 mx-auto"
+                                                <div className="relative">
+                                                    <PokemonCard
+                                                        pokemon={starter}
+                                                        className="p-0"
                                                     />
-                                                    <div className="flex gap-1 justify-center mt-1">
-                                                        <span className={`px-2 py-0.5 rounded text-xs font-bold ${
-                                                            starter.rarity === 'legendary' ? 'bg-yellow-400' :
-                                                            starter.rarity === 'epic' ? 'bg-purple-500 text-white' :
-                                                            starter.rarity === 'rare' ? 'bg-blue-500 text-white' :
-                                                            starter.rarity === 'uncommon' ? 'bg-green-500 text-white' :
-                                                            'bg-gray-400 text-white'
-                                                        }`}>
-                                                            {starter.rarity.toUpperCase()}
-                                                        </span>
-                                                        {starter.isShiny && (
-                                                            <span className="px-2 py-0.5 bg-yellow-300 rounded text-xs font-bold">
-                                                                ✨
-                                                            </span>
-                                                        )}
-                                                    </div>
                                                     <button
                                                         onClick={() => removeFromStarters(index)}
-                                                        className="absolute top-1 right-1 w-6 h-6 bg-red-500 hover:bg-red-600 text-white rounded-full text-xs font-bold"
+                                                        className="absolute top-2 right-2 w-7 h-7 bg-red-500 hover:bg-red-600 text-white rounded-full text-sm font-bold shadow-lg z-10"
                                                     >
                                                         ×
                                                     </button>
-                                                </>
+                                                </div>
                                             ) : (
                                                 <button
                                                     onClick={() => {
                                                         setSelectingForSlot(index);
                                                         setCurrentView('pc');
                                                     }}
-                                                    className="w-full h-full flex flex-col items-center justify-center hover:bg-gray-100 transition py-4"
+                                                    className="w-full h-full flex flex-col items-center justify-center hover:bg-gray-100 transition py-8"
                                                 >
                                                     <div className="text-3xl opacity-30 mb-1">⚪</div>
                                                     <div className="text-xl font-bold text-gray-400">+</div>
