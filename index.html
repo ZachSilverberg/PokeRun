@@ -129,7 +129,56 @@
         }
         
         .pokeball-shake {
-            animation: pokeballShake 0.6s ease-in-out infinite;
+            animation: pokeballShake 0.75s ease-in-out infinite;
+        }
+        
+        @keyframes pokeballSuccessGlow {
+            0% { filter: none; }
+            100% { filter: drop-shadow(0 0 20px #3b82f6) drop-shadow(0 0 40px #60a5fa) drop-shadow(0 0 60px #93c5fd); }
+        }
+        
+        .pokeball-success {
+            animation: pokeballSuccessGlow 0.5s ease-out forwards;
+            transform: rotate(0deg);
+        }
+        
+        @keyframes pokeballFail {
+            0% { 
+                filter: grayscale(0%) brightness(100%);
+                opacity: 1;
+                transform: rotate(0deg);
+            }
+            50% { 
+                filter: grayscale(100%) brightness(70%);
+                opacity: 0.8;
+                transform: rotate(0deg);
+            }
+            100% { 
+                filter: grayscale(100%) brightness(50%);
+                opacity: 0;
+                transform: rotate(0deg);
+            }
+        }
+        
+        @keyframes pokeballTopPop {
+            0% { 
+                transform: scaleY(1) translateY(0);
+            }
+            30% { 
+                transform: scaleY(0.3) translateY(-8px);
+            }
+            100% { 
+                transform: scaleY(0.1) translateY(-10px);
+            }
+        }
+        
+        .pokeball-fail {
+            animation: pokeballFail 1.5s ease-out forwards;
+        }
+        
+        .pokeball-top-failed {
+            animation: pokeballTopPop 0.4s ease-out forwards;
+            transform-origin: center bottom;
         }
     </style>
 </head>
@@ -1389,6 +1438,58 @@
         };
 
         // ========================================
+        // 🎴 POKEBALL IMAGE (Inline SVG for reliability)
+        // ========================================
+        const PokeballIcon = ({ size = 20, className = "", failed = false }) => (
+            <svg 
+                width={size} 
+                height={size} 
+                viewBox="0 0 24 24" 
+                className={className}
+                style={{ imageRendering: 'pixelated' }}
+            >
+                {/* Bottom half (white) - always visible */}
+                <defs>
+                    <clipPath id="bottomHalf">
+                        <rect x="0" y="12" width="24" height="12"/>
+                    </clipPath>
+                </defs>
+                
+                {/* Bottom white half */}
+                <g clipPath="url(#bottomHalf)">
+                    <circle cx="12" cy="12" r="11" fill="#fff" stroke="#000" strokeWidth="1"/>
+                    <circle cx="12" cy="12" r="10" fill="#fff"/>
+                </g>
+                
+                {/* Black center line */}
+                <path d="M 2 12 L 22 12" stroke="#000" strokeWidth="2"/>
+                
+                {/* Center button (always visible) */}
+                <circle cx="12" cy="12" r="3" fill="#fff" stroke="#000" strokeWidth="1.5"/>
+                <circle cx="12" cy="12" r="2" fill="#fff"/>
+                
+                {/* Top half (red) - animatable */}
+                <g 
+                    className={failed ? "pokeball-top-failed" : ""}
+                    style={{ transformOrigin: '12px 12px' }}
+                >
+                    <defs>
+                        <clipPath id="topHalf">
+                            <rect x="0" y="0" width="24" height="12"/>
+                        </clipPath>
+                    </defs>
+                    <g clipPath="url(#topHalf)">
+                        <circle cx="12" cy="12" r="11" fill="#f00" stroke="#000" strokeWidth="1"/>
+                        <circle cx="12" cy="12" r="10" fill="#f00"/>
+                        <circle cx="12" cy="12" r="6" fill="#c00"/>
+                        {/* Top highlight */}
+                        <rect x="11" y="1" width="2" height="3" fill="#fff"/>
+                    </g>
+                </g>
+            </svg>
+        );
+
+        // ========================================
         // 📸 ACTIVITY CARD STACK COMPONENT
         // ========================================
         const ActivityCardStack = ({ activities, onGiveCandy, currentUserId }) => {
@@ -1807,7 +1908,7 @@
                         ctx.textAlign = 'center';
                         ctx.fillText(trainerName, 540, trainerBadgeY + 30);
 
-                        // Workout data below trainer badge - NEW POSITION
+                        // Workout data below trainer badge - with units
                         const workoutDataY = trainerBadgeY + trainerBadgeHeight + 35;
                         ctx.fillStyle = '#4B5563';
                         ctx.font = '36px sans-serif';
@@ -1816,8 +1917,8 @@
                         // Check if lift or cardio
                         const isLift = activity.pace === '--' || !activity.pace || activity.pace === 'undefined';
                         const statsText = isLift
-                            ? `${activity.duration || '--'}`
-                            : `${activity.pace}    ${activity.distance}mi    ${activity.duration}`;
+                            ? `${activity.duration || '--'} min    ${activity.caloriesBurned || '--'} kcal    ${activity.avgHR || '--'} bpm`
+                            : `${activity.pace} min/mi    ${activity.distance} mi    ${activity.duration}`;
                         
                         ctx.fillText(statsText, 540, workoutDataY);
                         ctx.textAlign = 'left';
@@ -2067,25 +2168,34 @@
                     ctx.textAlign = 'center';
                     ctx.fillText(pokemon.rarity.toUpperCase(), 200, badgeY + 21);
 
-                    // Workout data below badge - single row, no labels
+                    // Workout data below badge - single row with units
                     ctx.fillStyle = '#4B5563';
                     ctx.font = '14px Arial';
                     ctx.textAlign = 'center';
                     
                     const isLift = pokemon.pace === '--' || !pokemon.pace || pokemon.pace === 'undefined';
                     
+                    console.log('🎴 Rendering card for:', pokemon.pokemonName, {
+                        isLift,
+                        pace: pokemon.pace,
+                        distance: pokemon.distance,
+                        duration: pokemon.duration,
+                        caloriesBurned: pokemon.caloriesBurned,
+                        avgHR: pokemon.avgHR
+                    });
+                    
                     if (isLift) {
-                        // Lift: duration | calories | HR (one row, no labels)
+                        // Lift: duration min | calories kcal | HR bpm
                         const duration = pokemon.duration || '--';
                         const calories = pokemon.caloriesBurned || '--';
                         const hr = pokemon.avgHR || '--';
-                        ctx.fillText(`${duration}  ${calories}  ${hr}`, 200, 330);
+                        ctx.fillText(`${duration} min  ${calories} kcal  ${hr} bpm`, 200, 330);
                     } else {
-                        // Cardio: pace | distance | duration (one row)
+                        // Cardio: pace min/mi | distance mi | duration
                         const pace = pokemon.pace || '--';
                         const distance = pokemon.distance || '--';
                         const duration = pokemon.duration || '--';
-                        ctx.fillText(`${pace}  ${distance}mi  ${duration}`, 200, 330);
+                        ctx.fillText(`${pace} min/mi  ${distance} mi  ${duration}`, 200, 330);
                     }
 
                     setCardImage(canvas.toDataURL());
@@ -2431,26 +2541,19 @@
                     )}
                     
                     {/* Pokéball Animation Overlay */}
-                    {isCatchAnimating && (
-                        <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center">
-                            <div className="pokeball-shake text-8xl">
-                                ⚪
-                            </div>
-                        </div>
-                    )}
-                    
-                    {/* Result Overlay */}
-                    {catchResult && !isCatchAnimating && (
-                        <div className={`absolute inset-0 flex items-center justify-center transition-opacity ${
-                            catchResult === 'success' ? 'bg-green-500 bg-opacity-80' : 'bg-red-500 bg-opacity-80'
-                        }`}>
-                            <div className="text-center text-white">
-                                <div className="text-6xl mb-2">
-                                    {catchResult === 'success' ? '✓' : '✗'}
-                                </div>
-                                <div className="text-2xl font-bold">
-                                    {catchResult === 'success' ? 'Caught!' : 'Failed!'}
-                                </div>
+                    {(isCatchAnimating || (catchResult && !isCatchAnimating)) && (
+                        <div className="absolute inset-0 bg-black bg-opacity-50 rounded-2xl flex items-center justify-center">
+                            <div className={
+                                isCatchAnimating 
+                                    ? "pokeball-shake" 
+                                    : catchResult === 'success' 
+                                        ? "pokeball-success" 
+                                        : "pokeball-fail"
+                            }>
+                                <PokeballIcon 
+                                    size={128} 
+                                    failed={catchResult === 'fail' && !isCatchAnimating}
+                                />
                             </div>
                         </div>
                     )}
@@ -3427,8 +3530,13 @@
                     spriteUrl: pokemonData.spriteUrl,
                     pace: pokemonData.pace,
                     distance: pokemonData.distance,
-                    duration: pokemonData.duration
+                    duration: pokemonData.duration,
+                    // Lift workout fields
+                    caloriesBurned: pokemonData.caloriesBurned,
+                    avgHR: pokemonData.avgHR
                 };
+                
+                console.log('💾 PC Entry created:', pcEntry);
                 
                 const updatedPC = [pcEntry, ...pokemonPC]; // Add to beginning (newest first)
                 setPokemonPC(updatedPC);
@@ -3806,6 +3914,12 @@
                         legendary: { chance: 0.01 }
                     };
                     
+                    console.log('🏋️ Storing lift data:', {
+                        liftDuration,
+                        caloriesBurned,
+                        avgHR
+                    });
+                    
                     setLastWorkoutIntensity({
                         chances,
                         newPRs: {},
@@ -3823,11 +3937,11 @@
             
             const CATCH_CONFIG = {
                 BASE_PROBABILITY: {
-                    legendary: 0.20,
-                    epic: 0.50,
-                    rare: 0.50,
-                    uncommon: 0.70,
-                    common: 0.90
+                    legendary: 0.20,  // 2/10 - unchanged
+                    epic: 0.40,       // 4/10 (was 0.50)
+                    rare: 0.50,       // 5/10 (restored)
+                    uncommon: 0.65,   // 6.5/10 (adjusted)
+                    common: 0.80      // 8/10 (was 0.90)
                 },
                 SHINY_BONUS: {
                     legendary: 0.50,
@@ -4004,6 +4118,13 @@
                         pcData.duration = captureSession.workoutData.liftDuration || '--';
                         pcData.caloriesBurned = captureSession.workoutData.caloriesBurned || '--';
                         pcData.avgHR = captureSession.workoutData.avgHR || '--';
+                        
+                        console.log('💾 Adding lift Pokemon to PC:', {
+                            duration: pcData.duration,
+                            calories: pcData.caloriesBurned,
+                            hr: pcData.avgHR,
+                            fullData: pcData
+                        });
                     }
                     
                     await addPokemonToPC(pcData);
@@ -4547,53 +4668,50 @@
                         {currentView === 'main' && (
                         <>
                         <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl shadow-2xl p-6 mb-6 border border-slate-700">
-                            <div className="flex justify-between items-center mb-4">
-                                <h2 className="text-xl font-bold text-white">Your Workout</h2>
+                            {/* Badges at top in a horizontal line */}
+                            <div className="flex justify-center gap-2 mb-3">
+                                {/* Pokéball Inventory - using SVG Pokéball */}
+                                <div className="flex items-center gap-2 px-3 py-2 rounded-lg font-bold text-xs text-white shadow-md bg-gradient-to-br from-red-600 to-red-700">
+                                    <PokeballIcon size={20} />
+                                    <span>{storedPokeballs}</span>
+                                </div>
                                 
-                                {/* All Badges + Pokéball Inventory */}
-                                <div className="flex gap-2">
-                                    {/* Pokéball Inventory */}
-                                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg font-bold text-xs text-white shadow-md bg-gradient-to-br from-red-600 to-red-700">
-                                        <span>⚪</span>
-                                        <span>{storedPokeballs}</span>
-                                    </div>
-                                    
-                                    {/* Streak Badge */}
-                                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg font-bold text-xs text-white shadow-md bg-gradient-to-br from-gray-800 to-gray-900">
-                                        <span>🔥</span>
-                                        <span>{currentStreak.days}d</span>
-                                    </div>
-                                    
-                                    {/* Runs Badge */}
-                                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg font-bold text-xs text-white shadow-md bg-gradient-to-br from-gray-800 to-gray-900">
-                                        <span>🏃</span>
-                                        <span>{runHistory.length}</span>
-                                    </div>
-                                    
-                                    {/* Profile Badge */}
-                                    <div className="relative" ref={profileMenuRef}>
-                                    <button 
-                                        onClick={handleTrainerBadgeClick}
-                                        disabled={isCreatingProfile || isLoadingProfile}
-                                        className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm text-white shadow-md hover:shadow-lg transition-all ${
-                                            hasNotifications ? 'notification-glow' : ''
-                                        } ${isCreatingProfile || isLoadingProfile ? 'opacity-50 cursor-wait badge-loading' : ''} ${
-                                            !isLoadingProfile && firebaseProfile ? 'badge-illuminate' : ''
-                                        }`}
-                                        style={{ 
-                                            backgroundColor: isLoadingProfile ? '#6b7280' : profileColor
-                                        }}
-                                    >
-                                        <span>{isLoadingProfile ? '⏳' : '⚡'}</span>
-                                        <span>
-                                            {isLoadingProfile 
-                                                ? 'Loading...' 
-                                                : isCreatingProfile 
-                                                    ? 'Creating...' 
-                                                    : (firebaseProfile ? firebaseProfile.displayName : trainerName)
-                                            }
-                                        </span>
-                                    </button>
+                                {/* Streak Badge */}
+                                <div className="flex items-center gap-2 px-3 py-2 rounded-lg font-bold text-xs text-white shadow-md bg-gradient-to-br from-gray-800 to-gray-900">
+                                    <span>🔥</span>
+                                    <span>{currentStreak.days}d</span>
+                                </div>
+                                
+                                {/* Runs Badge */}
+                                <div className="flex items-center gap-2 px-3 py-2 rounded-lg font-bold text-xs text-white shadow-md bg-gradient-to-br from-gray-800 to-gray-900">
+                                    <span>🏃</span>
+                                    <span>{runHistory.length}</span>
+                                </div>
+                                
+                                {/* Profile Badge */}
+                                <div className="relative" ref={profileMenuRef}>
+                                <button 
+                                    onClick={handleTrainerBadgeClick}
+                                    disabled={isCreatingProfile || isLoadingProfile}
+                                    className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm text-white shadow-md hover:shadow-lg transition-all ${
+                                        hasNotifications ? 'notification-glow' : ''
+                                    } ${isCreatingProfile || isLoadingProfile ? 'opacity-50 cursor-wait badge-loading' : ''} ${
+                                        !isLoadingProfile && firebaseProfile ? 'badge-illuminate' : ''
+                                    }`}
+                                    style={{ 
+                                        backgroundColor: isLoadingProfile ? '#6b7280' : profileColor
+                                    }}
+                                >
+                                    <span>{isLoadingProfile ? '⏳' : '⚡'}</span>
+                                    <span>
+                                        {isLoadingProfile 
+                                            ? 'Loading...' 
+                                            : isCreatingProfile 
+                                                ? 'Creating...' 
+                                                : (firebaseProfile ? firebaseProfile.displayName : trainerName)
+                                        }
+                                    </span>
+                                </button>
                                     
                                     {/* Profile Dropdown Menu */}
                                     {showProfileMenu && (
@@ -4916,8 +5034,10 @@
                                         </div>
                                     )}
                                 </div>
-                                </div>
                             </div>
+                            
+                            {/* Your Workout title - now below badges */}
+                            <h2 className="text-xl font-bold text-white text-center mb-4">Your Workout</h2>
                             
                             {/* Workout Type Tabs */}
                             <div className="flex gap-2 mb-4">
