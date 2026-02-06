@@ -84,6 +84,37 @@
         .notification-glow {
             animation: shinyGlow 2s ease-in-out infinite;
         }
+
+        /* ✨ Badge illuminate animation */
+        @keyframes badgeIlluminate {
+            0% {
+                opacity: 0;
+                transform: scale(0.8);
+                box-shadow: 0 0 0 rgba(255, 255, 255, 0);
+            }
+            50% {
+                box-shadow: 0 0 20px rgba(255, 255, 255, 0.6);
+            }
+            100% {
+                opacity: 1;
+                transform: scale(1);
+                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            }
+        }
+        
+        .badge-illuminate {
+            animation: badgeIlluminate 0.6s ease-out forwards;
+        }
+
+        /* 🔄 Badge loading pulse */
+        @keyframes badgePulse {
+            0%, 100% { opacity: 0.4; }
+            50% { opacity: 0.7; }
+        }
+        
+        .badge-loading {
+            animation: badgePulse 1.5s ease-in-out infinite;
+        }
     </style>
 </head>
 <body>
@@ -1341,6 +1372,535 @@
             legendary: { name: 'Legendary', color: 'orange', chance: 0.01 }
         };
 
+        // ========================================
+        // 📸 ACTIVITY CARD STACK COMPONENT
+        // ========================================
+        const ActivityCardStack = ({ activities, onGiveCandy, currentUserId }) => {
+            const [currentIndex, setCurrentIndex] = useState(0);
+            const [dragState, setDragState] = useState({ x: 0, y: 0, rotation: 0, isDragging: false });
+            const [touchStart, setTouchStart] = useState(null);
+            const cardRef = React.useRef(null);
+
+            const currentActivity = activities[currentIndex];
+            const progress = `${currentIndex + 1} / ${activities.length}`;
+
+            // Handle touch start
+            const handleTouchStart = (e) => {
+                const touch = e.touches[0];
+                setTouchStart({ x: touch.clientX, y: touch.clientY });
+                setDragState(prev => ({ ...prev, isDragging: true }));
+            };
+
+            // Handle touch move
+            const handleTouchMove = (e) => {
+                if (!touchStart) return;
+                const touch = e.touches[0];
+                const deltaX = touch.clientX - touchStart.x;
+                const deltaY = touch.clientY - touchStart.y;
+                const rotation = deltaX * 0.1; // Rotation based on horizontal drag
+
+                setDragState({
+                    x: deltaX,
+                    y: deltaY,
+                    rotation: rotation,
+                    isDragging: true
+                });
+            };
+
+            // Handle touch end
+            const handleTouchEnd = () => {
+                const threshold = 100;
+                const fastSwipeThreshold = 50;
+                const velocity = Math.abs(dragState.x);
+
+                // Fast swipe or threshold reached
+                if (velocity > fastSwipeThreshold || Math.abs(dragState.x) > threshold) {
+                    if (dragState.x > 0) {
+                        // Swiped right - go to previous
+                        goToPrevious();
+                    } else {
+                        // Swiped left - go to next
+                        goToNext();
+                    }
+                } else {
+                    // Spring back to center
+                    setDragState({ x: 0, y: 0, rotation: 0, isDragging: false });
+                }
+                setTouchStart(null);
+            };
+
+            // Navigation functions
+            const goToNext = () => {
+                if (currentIndex < activities.length - 1) {
+                    // Animate out to left
+                    setDragState({ x: -500, y: 0, rotation: -30, isDragging: false });
+                    setTimeout(() => {
+                        setCurrentIndex(prev => prev + 1);
+                        setDragState({ x: 0, y: 0, rotation: 0, isDragging: false });
+                    }, 300);
+                } else {
+                    // Bounce at the end
+                    setDragState({ x: 0, y: 0, rotation: 0, isDragging: false });
+                }
+            };
+
+            const goToPrevious = () => {
+                if (currentIndex > 0) {
+                    // Animate out to right
+                    setDragState({ x: 500, y: 0, rotation: 30, isDragging: false });
+                    setTimeout(() => {
+                        setCurrentIndex(prev => prev - 1);
+                        setDragState({ x: 0, y: 0, rotation: 0, isDragging: false });
+                    }, 300);
+                } else {
+                    // Bounce at the start
+                    setDragState({ x: 0, y: 0, rotation: 0, isDragging: false });
+                }
+            };
+
+            // Keyboard controls
+            React.useEffect(() => {
+                const handleKeyDown = (e) => {
+                    if (e.key === 'ArrowLeft') goToPrevious();
+                    if (e.key === 'ArrowRight') goToNext();
+                };
+                window.addEventListener('keydown', handleKeyDown);
+                return () => window.removeEventListener('keydown', handleKeyDown);
+            }, [currentIndex]);
+
+            if (!currentActivity) return null;
+
+            return (
+                <div className="flex-1 flex flex-col items-center justify-center p-4 relative">
+                    {/* Progress Dots */}
+                    <div className="absolute top-4 left-0 right-0 flex justify-center gap-2 z-20">
+                        {activities.map((_, index) => (
+                            <div
+                                key={index}
+                                className={`w-2 h-2 rounded-full transition-all ${
+                                    index === currentIndex 
+                                        ? 'bg-white w-8' 
+                                        : index < currentIndex 
+                                        ? 'bg-white bg-opacity-50' 
+                                        : 'bg-white bg-opacity-20'
+                                }`}
+                            />
+                        ))}
+                    </div>
+
+                    {/* Card Counter */}
+                    <div className="absolute top-12 left-0 right-0 text-center z-20">
+                        <div className="text-white text-sm font-medium opacity-75">{progress}</div>
+                    </div>
+
+                    {/* Background Cards (for depth effect) */}
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                        {[2, 1].map(offset => {
+                            const index = currentIndex + offset;
+                            if (index >= activities.length) return null;
+                            const activity = activities[index];
+                            return (
+                                <div
+                                    key={index}
+                                    className="absolute"
+                                    style={{
+                                        transform: `scale(${1 - offset * 0.05}) translateY(${offset * 10}px)`,
+                                        opacity: 0.3 - offset * 0.1,
+                                        zIndex: -offset
+                                    }}
+                                >
+                                    <ActivityCard 
+                                        activity={activity}
+                                        onGiveCandy={onGiveCandy}
+                                        currentUserId={currentUserId}
+                                        isInteractive={false}
+                                    />
+                                </div>
+                            );
+                        })}
+                    </div>
+
+                    {/* Main Card */}
+                    <div
+                        ref={cardRef}
+                        className="relative z-10 cursor-grab active:cursor-grabbing"
+                        style={{
+                            transform: `translateX(${dragState.x}px) translateY(${dragState.y}px) rotate(${dragState.rotation}deg)`,
+                            transition: dragState.isDragging ? 'none' : 'transform 0.3s ease-out'
+                        }}
+                        onTouchStart={handleTouchStart}
+                        onTouchMove={handleTouchMove}
+                        onTouchEnd={handleTouchEnd}
+                    >
+                        <ActivityCard 
+                            activity={currentActivity}
+                            onGiveCandy={onGiveCandy}
+                            currentUserId={currentUserId}
+                            isInteractive={true}
+                        />
+                    </div>
+
+                    {/* Navigation Buttons */}
+                    <div className="absolute bottom-8 left-0 right-0 flex justify-center gap-4 z-20">
+                        <button
+                            onClick={goToPrevious}
+                            disabled={currentIndex === 0}
+                            className={`w-16 h-16 rounded-full flex items-center justify-center text-2xl font-bold shadow-lg transition ${
+                                currentIndex === 0 
+                                    ? 'bg-gray-400 text-gray-600 opacity-50 cursor-not-allowed' 
+                                    : 'bg-white text-purple-600 hover:bg-gray-100'
+                            }`}
+                        >
+                            ←
+                        </button>
+                        <button
+                            onClick={goToNext}
+                            disabled={currentIndex === activities.length - 1}
+                            className={`w-16 h-16 rounded-full flex items-center justify-center text-2xl font-bold shadow-lg transition ${
+                                currentIndex === activities.length - 1 
+                                    ? 'bg-gray-400 text-gray-600 opacity-50 cursor-not-allowed' 
+                                    : 'bg-white text-purple-600 hover:bg-gray-100'
+                            }`}
+                        >
+                            →
+                        </button>
+                    </div>
+
+                    {/* Swipe Hint (show on first card) */}
+                    {currentIndex === 0 && (
+                        <div className="absolute bottom-32 left-0 right-0 text-center z-20 animate-pulse">
+                            <div className="text-white text-sm font-medium">
+                                ← Swipe or tap arrows →
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        // ========================================
+        // 📸 ACTIVITY CARD COMPONENT
+        // ========================================
+        const ActivityCard = ({ activity, onGiveCandy, currentUserId, isInteractive }) => {
+            const [cardImageUrl, setCardImageUrl] = useState(null);
+            const [isLoadingCard, setIsLoadingCard] = useState(true);
+            const [hasGivenCandy, setHasGivenCandy] = useState(false);
+            const [candyCount, setCandyCount] = useState(0);
+            const canvasRef = React.useRef(null);
+
+            // Check if current user has already given candy - USE ACTIVITY ID AS KEY
+            React.useEffect(() => {
+                if (activity.candyGivers && currentUserId) {
+                    const userGaveCandy = activity.candyGivers[currentUserId] === true;
+                    setHasGivenCandy(userGaveCandy);
+                }
+                setCandyCount(activity.candyCount || 0);
+            }, [activity, activity.id, currentUserId]); // Added activity.id to dependencies
+
+            // Generate card image
+            React.useEffect(() => {
+                const generateCard = async () => {
+                    setIsLoadingCard(true);
+                    try {
+                        const canvas = document.createElement('canvas');
+                        canvas.width = 1080;
+                        canvas.height = 1080;
+                        const ctx = canvas.getContext('2d');
+
+                        // Helper function to draw stars (reusing existing logic)
+                        const drawStar = (ctx, cx, cy, spikes, outerRadius, innerRadius) => {
+                            let rot = Math.PI / 2 * 3;
+                            let x = cx;
+                            let y = cy;
+                            const step = Math.PI / spikes;
+
+                            ctx.beginPath();
+                            ctx.moveTo(cx, cy - outerRadius);
+                            
+                            for (let i = 0; i < spikes; i++) {
+                                x = cx + Math.cos(rot) * outerRadius;
+                                y = cy + Math.sin(rot) * outerRadius;
+                                ctx.lineTo(x, y);
+                                rot += step;
+
+                                x = cx + Math.cos(rot) * innerRadius;
+                                y = cy + Math.sin(rot) * innerRadius;
+                                ctx.lineTo(x, y);
+                                rot += step;
+                            }
+                            
+                            ctx.lineTo(cx, cy - outerRadius);
+                            ctx.closePath();
+                            ctx.fill();
+                        };
+
+                        // Helper function to draw rarity icons (reusing existing logic)
+                        const drawRarityIcon = (ctx, x, y, size, tier) => {
+                            ctx.save();
+                            
+                            switch(tier) {
+                                case 'common':
+                                    ctx.fillStyle = '#6B7280';
+                                    ctx.beginPath();
+                                    ctx.arc(x + size/2, y + size/2, size/2, 0, Math.PI * 2);
+                                    ctx.fill();
+                                    ctx.strokeStyle = '#FFFFFF';
+                                    ctx.lineWidth = 3;
+                                    ctx.stroke();
+                                    break;
+                                case 'uncommon':
+                                    ctx.fillStyle = '#10B981';
+                                    ctx.beginPath();
+                                    ctx.moveTo(x + size/2, y);
+                                    ctx.lineTo(x + size, y + size/2);
+                                    ctx.lineTo(x + size/2, y + size);
+                                    ctx.lineTo(x, y + size/2);
+                                    ctx.closePath();
+                                    ctx.fill();
+                                    ctx.strokeStyle = '#FFFFFF';
+                                    ctx.lineWidth = 3;
+                                    ctx.stroke();
+                                    break;
+                                case 'rare':
+                                    ctx.fillStyle = '#3B82F6';
+                                    drawStar(ctx, x + size/2, y + size/2, 5, size/2, size/4);
+                                    ctx.strokeStyle = '#FFFFFF';
+                                    ctx.lineWidth = 3;
+                                    ctx.stroke();
+                                    break;
+                                case 'epic':
+                                    ctx.fillStyle = '#8B5CF6';
+                                    ctx.globalAlpha = 0.7;
+                                    drawStar(ctx, x + size/2 - 8, y + size/2, 5, size/2.2, size/4.4);
+                                    ctx.globalAlpha = 1;
+                                    drawStar(ctx, x + size/2 + 8, y + size/2, 5, size/2.2, size/4.4);
+                                    ctx.strokeStyle = '#FFFFFF';
+                                    ctx.lineWidth = 2;
+                                    ctx.stroke();
+                                    break;
+                                case 'legendary':
+                                    ctx.fillStyle = '#F59E0B';
+                                    drawStar(ctx, x + size/2, y + size/3, 5, size/2.5, size/5);
+                                    drawStar(ctx, x + size/4, y + size*2/3, 5, size/3, size/6);
+                                    drawStar(ctx, x + size*3/4, y + size*2/3, 5, size/3, size/6);
+                                    ctx.strokeStyle = '#FFFFFF';
+                                    ctx.lineWidth = 2;
+                                    ctx.stroke();
+                                    break;
+                            }
+                            
+                            ctx.restore();
+                        };
+
+                        // Light gray background (like starter cards)
+                        ctx.fillStyle = '#F3F4F6'; // gray-100
+                        ctx.fillRect(0, 0, 1080, 1080);
+
+                        // Pokemon name at top (bold, centered) - SAME SIZE
+                        ctx.fillStyle = '#1F2937'; // gray-800 for text
+                        ctx.font = 'bold 56px sans-serif';
+                        ctx.textAlign = 'center';
+                        ctx.fillText(activity.pokemonName.toUpperCase(), 540, 80);
+                        ctx.textAlign = 'left';
+
+                        // Stats row below name (pace, distance, duration) - SCALED UP
+                        ctx.fillStyle = '#4B5563'; // gray-600
+                        ctx.font = '42px sans-serif';
+                        ctx.textAlign = 'center';
+                        const statsY = 160;
+                        const statsText = `${activity.pace}    ${activity.distance}mi    ${activity.duration}`;
+                        ctx.fillText(statsText, 540, statsY);
+                        ctx.textAlign = 'left';
+
+                        // Load and draw Pokemon sprite (centered) - SCALED UP
+                        const img = new Image();
+                        img.crossOrigin = 'anonymous';
+                        img.src = activity.spriteUrl;
+                        await new Promise((resolve, reject) => {
+                            img.onload = resolve;
+                            img.onerror = reject;
+                        });
+
+                        // Draw sprite (centered, larger to fill space)
+                        const spriteSize = 550;
+                        const spriteY = 220;
+                        ctx.drawImage(img, (1080 - spriteSize) / 2, spriteY, spriteSize, spriteSize);
+
+                        // Draw rarity icon above sprite (using existing function)
+                        const iconSize = 80;
+                        const iconX = 540 - iconSize / 2; // Center X (adjusted for icon width)
+                        const iconY = spriteY - 40 - iconSize / 2; // Above sprite (adjusted for icon height)
+                        drawRarityIcon(ctx, iconX, iconY, iconSize, activity.rarity);
+
+                        // Rarity badge colors (matching the current scheme)
+                        const rarityColors = {
+                            legendary: '#F59E0B', // Orange (matches icon)
+                            epic: '#A855F7',      // Purple-500
+                            rare: '#3B82F6',      // Blue-500
+                            uncommon: '#10B981',  // Green-500
+                            common: '#9CA3AF'     // Gray-400
+                        };
+
+                        // Rarity badge (centered below sprite) - SCALED UP
+                        const rarityBadgeY = spriteY + spriteSize + 50;
+                        const rarityBadgeWidth = 380;
+                        const rarityBadgeHeight = 90;
+                        const rarityBadgeX = (1080 - rarityBadgeWidth) / 2;
+                        
+                        // Rounded rectangle for rarity badge
+                        const radius = 16;
+                        ctx.fillStyle = rarityColors[activity.rarity] || rarityColors.common;
+                        ctx.beginPath();
+                        ctx.moveTo(rarityBadgeX + radius, rarityBadgeY);
+                        ctx.lineTo(rarityBadgeX + rarityBadgeWidth - radius, rarityBadgeY);
+                        ctx.quadraticCurveTo(rarityBadgeX + rarityBadgeWidth, rarityBadgeY, rarityBadgeX + rarityBadgeWidth, rarityBadgeY + radius);
+                        ctx.lineTo(rarityBadgeX + rarityBadgeWidth, rarityBadgeY + rarityBadgeHeight - radius);
+                        ctx.quadraticCurveTo(rarityBadgeX + rarityBadgeWidth, rarityBadgeY + rarityBadgeHeight, rarityBadgeX + rarityBadgeWidth - radius, rarityBadgeY + rarityBadgeHeight);
+                        ctx.lineTo(rarityBadgeX + radius, rarityBadgeY + rarityBadgeHeight);
+                        ctx.quadraticCurveTo(rarityBadgeX, rarityBadgeY + rarityBadgeHeight, rarityBadgeX, rarityBadgeY + rarityBadgeHeight - radius);
+                        ctx.lineTo(rarityBadgeX, rarityBadgeY + radius);
+                        ctx.quadraticCurveTo(rarityBadgeX, rarityBadgeY, rarityBadgeX + radius, rarityBadgeY);
+                        ctx.closePath();
+                        ctx.fill();
+                        
+                        ctx.fillStyle = 'white';
+                        ctx.font = 'bold 52px sans-serif';
+                        ctx.textAlign = 'center';
+                        ctx.fillText(activity.rarity.toUpperCase(), 540, rarityBadgeY + 62);
+                        ctx.textAlign = 'left';
+
+                        // Trainer badge (50% scale, BLACK with WHITE text, centered below rarity badge) - SCALED UP
+                        const trainerName = activity.trainerName || 'Trainer';
+                        const trainerBadgeHeight = 45;
+                        const trainerBadgeWidth = Math.max(190, trainerName.length * 13 + 40);
+                        const trainerBadgeY = rarityBadgeY + rarityBadgeHeight + 25;
+                        const trainerBadgeX = (1080 - trainerBadgeWidth) / 2;
+                        
+                        // Rounded rectangle for trainer badge - BLACK
+                        ctx.fillStyle = '#000000'; // Black
+                        ctx.beginPath();
+                        ctx.moveTo(trainerBadgeX + radius, trainerBadgeY);
+                        ctx.lineTo(trainerBadgeX + trainerBadgeWidth - radius, trainerBadgeY);
+                        ctx.quadraticCurveTo(trainerBadgeX + trainerBadgeWidth, trainerBadgeY, trainerBadgeX + trainerBadgeWidth, trainerBadgeY + radius);
+                        ctx.lineTo(trainerBadgeX + trainerBadgeWidth, trainerBadgeY + trainerBadgeHeight - radius);
+                        ctx.quadraticCurveTo(trainerBadgeX + trainerBadgeWidth, trainerBadgeY + trainerBadgeHeight, trainerBadgeX + trainerBadgeWidth - radius, trainerBadgeY + trainerBadgeHeight);
+                        ctx.lineTo(trainerBadgeX + radius, trainerBadgeY + trainerBadgeHeight);
+                        ctx.quadraticCurveTo(trainerBadgeX, trainerBadgeY + trainerBadgeHeight, trainerBadgeX, trainerBadgeY + trainerBadgeHeight - radius);
+                        ctx.lineTo(trainerBadgeX, trainerBadgeY + radius);
+                        ctx.quadraticCurveTo(trainerBadgeX, trainerBadgeY, trainerBadgeX + radius, trainerBadgeY);
+                        ctx.closePath();
+                        ctx.fill();
+                        
+                        ctx.fillStyle = 'white';
+                        ctx.font = 'bold 26px sans-serif';
+                        ctx.textAlign = 'center';
+                        ctx.fillText(trainerName, 540, trainerBadgeY + 30);
+                        ctx.textAlign = 'left';
+
+                        // Shiny badge (if shiny) - small badge in top right corner
+                        if (activity.isShiny) {
+                            const shinySize = 70;
+                            ctx.fillStyle = '#FCD34D'; // Yellow-300
+                            ctx.beginPath();
+                            ctx.arc(1000, 80, shinySize / 2, 0, Math.PI * 2);
+                            ctx.fill();
+                            ctx.font = 'bold 42px sans-serif';
+                            ctx.textAlign = 'center';
+                            ctx.fillText('✨', 1000, 92);
+                            ctx.textAlign = 'left';
+                        }
+
+                        setCardImageUrl(canvas.toDataURL());
+                        setIsLoadingCard(false);
+                    } catch (error) {
+                        console.error('Error generating card:', error);
+                        setIsLoadingCard(false);
+                    }
+                };
+
+                generateCard();
+            }, [activity]);
+
+            // Handle candy click - NOW WITH TOGGLE FUNCTIONALITY
+            const handleCandyClick = async () => {
+                if (!isInteractive || !activity.trainerId) return;
+                
+                try {
+                    if (hasGivenCandy) {
+                        // Remove candy (toggle off)
+                        await onGiveCandy(activity.id, activity.trainerId, true); // Pass true for removal
+                        setHasGivenCandy(false);
+                        setCandyCount(prev => Math.max(0, prev - 1));
+                    } else {
+                        // Give candy
+                        await onGiveCandy(activity.id, activity.trainerId, false);
+                        setHasGivenCandy(true);
+                        setCandyCount(prev => prev + 1);
+                    }
+                } catch (error) {
+                    console.error('Error toggling candy:', error);
+                }
+            };
+
+            return (
+                <div className="relative w-full max-w-md aspect-square">
+                    {/* Loading State */}
+                    {isLoadingCard && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-gray-100 rounded-2xl border-4 border-purple-600">
+                            <div className="loader"></div>
+                        </div>
+                    )}
+
+                    {/* Card Image */}
+                    {cardImageUrl && (
+                        <div className="relative">
+                            <img
+                                src={cardImageUrl}
+                                alt={activity.pokemonName}
+                                className="w-full h-full object-cover rounded-2xl shadow-2xl"
+                                style={{
+                                    border: activity.isOwnCard 
+                                        ? `4px solid ${activity.trainerBadgeColor}` 
+                                        : '4px solid white'
+                                }}
+                            />
+
+                            {/* Rare Candy Button (top-left) - Embossed/chiseled style with accumulated counter */}
+                            {isInteractive && (
+                                <button
+                                    onClick={handleCandyClick}
+                                    className={`absolute top-4 left-4 w-16 h-16 rounded-lg flex flex-col items-center justify-center transition-all ${
+                                        hasGivenCandy 
+                                            ? 'bg-gradient-to-br from-yellow-300 to-yellow-500 shadow-lg active:scale-95' 
+                                            : 'bg-gray-300 shadow-inner active:scale-95'
+                                    }`}
+                                    style={{
+                                        boxShadow: hasGivenCandy 
+                                            ? '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)'
+                                            : 'inset 0 2px 4px 0 rgba(0, 0, 0, 0.2)'
+                                    }}
+                                >
+                                    <div 
+                                        className="text-3xl transition-all"
+                                        style={{
+                                            filter: hasGivenCandy ? 'none' : 'grayscale(100%) opacity(0.4)',
+                                            textShadow: hasGivenCandy ? 'none' : 'inset 0 2px 4px rgba(0,0,0,0.3)'
+                                        }}
+                                    >
+                                        🍬
+                                    </div>
+                                    {/* Show accumulated candy count */}
+                                    <div className={`text-xs font-bold mt-0.5 ${hasGivenCandy ? 'text-gray-800' : 'text-gray-600'}`}>
+                                        {candyCount}
+                                    </div>
+                                </button>
+                            )}
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
         const PokemonRunTracker = () => {
             const [pace, setPace] = useState('');
             const [distance, setDistance] = useState('');
@@ -1358,6 +1918,7 @@
             const [hasNotifications, setHasNotifications] = useState(false); // For future friend requests
             const [showWipeConfirmation, setShowWipeConfirmation] = useState(false);
             const [isWiping, setIsWiping] = useState(false);
+            const [isLoadingProfile, setIsLoadingProfile] = useState(true); // Loading state for badge
             
             // 👥 Friend System State
             const [showFriendSearch, setShowFriendSearch] = useState(false);
@@ -1537,6 +2098,7 @@
             const [isLoading, setIsLoading] = useState(false);
             
             const canvasRef = useRef(null);
+            const imageGenerationRef = useRef(0); // Track generation to prevent stale draws
             const journeyCanvasRef = useRef(null);
             const profileMenuRef = useRef(null);
 
@@ -1667,6 +2229,9 @@
                     }
                 } catch (error) {
                     console.error('❌ Error checking Firebase auth:', error);
+                } finally {
+                    // Always set loading to false, even if no profile
+                    setIsLoadingProfile(false);
                 }
             };
 
@@ -2141,26 +2706,36 @@
             };
 
             // Give rare candy to a card (hook for Phase 2)
-            const giveRareCandy = async (activityId, activityOwnerId) => {
+            const giveRareCandy = async (activityId, activityOwnerId, isRemoval = false) => {
                 if (!firebaseManager.user) return;
 
                 try {
                     const myUid = firebaseManager.user.uid;
 
-                    // Check if already gave candy
-                    const candySnapshot = await database.ref(`users/${activityOwnerId}/activity/${activityId}/candyGivers/${myUid}`).once('value');
-                    if (candySnapshot.exists()) {
-                        console.log('Already gave candy to this card');
-                        return;
+                    if (isRemoval) {
+                        // Remove candy
+                        const candySnapshot = await database.ref(`users/${activityOwnerId}/activity/${activityId}/candyGivers/${myUid}`).once('value');
+                        if (candySnapshot.exists()) {
+                            await database.ref(`users/${activityOwnerId}/activity/${activityId}/candyGivers/${myUid}`).remove();
+                            await database.ref(`users/${activityOwnerId}/activity/${activityId}/candyCount`).set(firebase.database.ServerValue.increment(-1));
+                            console.log('🍬 Rare candy removed!');
+                        }
+                    } else {
+                        // Check if already gave candy
+                        const candySnapshot = await database.ref(`users/${activityOwnerId}/activity/${activityId}/candyGivers/${myUid}`).once('value');
+                        if (candySnapshot.exists()) {
+                            console.log('Already gave candy to this card');
+                            return;
+                        }
+
+                        // Add candy
+                        await database.ref(`users/${activityOwnerId}/activity/${activityId}/candyGivers/${myUid}`).set(true);
+                        await database.ref(`users/${activityOwnerId}/activity/${activityId}/candyCount`).set(firebase.database.ServerValue.increment(1));
+
+                        console.log('🍬 Rare candy given!');
                     }
-
-                    // Add candy
-                    await database.ref(`users/${activityOwnerId}/activity/${activityId}/candyGivers/${myUid}`).set(true);
-                    await database.ref(`users/${activityOwnerId}/activity/${activityId}/candyCount`).set(firebase.database.ServerValue.increment(1));
-
-                    console.log('🍬 Rare candy given!');
                 } catch (error) {
-                    console.error('❌ Error giving candy:', error);
+                    console.error('❌ Error toggling candy:', error);
                 }
             };
 
@@ -2503,12 +3078,15 @@
 
                     // Tier roll still uses your chance system...
                     const rarity = rollRarity(chances);
+                    console.log('🎲 Rolled tier:', rarity.tier);
 
                     // ...but Pokémon selection uses your rarity map.
                     const { pokemonId, isShiny, shinyChance } = await getPokemonByRarity(rarity);
+                    console.log('🎯 Selected Pokemon ID:', pokemonId);
 
                     // ✅ Actual rarity is always derived from the map (prevents mismatches forever)
                     const actualRarity = getPokemonRarity(pokemonId);
+                    console.log('✅ Actual rarity from map:', actualRarity);
                     const rarityColor = (RARITY_TIERS[actualRarity]?.color) || 'gray';
 
                     const fetchedPokemonData = await fetchPokemonData(pokemonId);
@@ -2598,8 +3176,8 @@
             };
 
             useEffect(() => {
-                if (pokemonData) generateImage();
-            }, [pokemonData, spriteVariant]);
+                if (pokemonData && rarityRoll) generateImage();
+            }, [pokemonData, spriteVariant, rarityRoll]);
 
             const getCurrentSpriteUrl = () => {
                 if (!pokemonData) return null;
@@ -2610,6 +3188,10 @@
             const generateImage = () => {
                 const canvas = canvasRef.current;
                 if (!canvas || !pokemonData) return;
+
+                // Increment generation counter
+                imageGenerationRef.current += 1;
+                const currentGeneration = imageGenerationRef.current;
 
                 const ctx = canvas.getContext('2d');
                 const width = 1080;
@@ -2625,6 +3207,12 @@
                     const img = new Image();
                     img.crossOrigin = "anonymous";
                     img.onload = () => {
+                        // Ignore stale callbacks
+                        if (currentGeneration !== imageGenerationRef.current) {
+                            console.log('🚫 Ignoring stale image callback');
+                            return;
+                        }
+
                         const scale = 6;
                         const spriteWidth = img.width * scale;
                         const spriteHeight = img.height * scale;
@@ -2658,6 +3246,13 @@
                             const iconSize = 60;
                             const iconX = width / 2 - iconSize / 2;
                             const iconY = spriteY - 180;
+                            
+                            // Clear the icon area first to prevent overlays
+                            ctx.clearRect(iconX - 5, iconY - 5, iconSize + 10, iconSize + 10);
+                            // Redraw background in that area
+                            ctx.fillStyle = '#C5C9B8';
+                            ctx.fillRect(iconX - 5, iconY - 5, iconSize + 10, iconSize + 10);
+                            
                             drawRarityIcon(ctx, iconX, iconY, iconSize, rarityRoll.tier);
                         }
                         
@@ -2912,14 +3507,25 @@
                                     <div className="relative" ref={profileMenuRef}>
                                     <button 
                                         onClick={handleTrainerBadgeClick}
-                                        disabled={isCreatingProfile}
+                                        disabled={isCreatingProfile || isLoadingProfile}
                                         className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm text-white shadow-md hover:shadow-lg transition-all ${
                                             hasNotifications ? 'notification-glow' : ''
-                                        } ${isCreatingProfile ? 'opacity-50 cursor-wait' : ''}`}
-                                        style={{ backgroundColor: profileColor }}
+                                        } ${isCreatingProfile || isLoadingProfile ? 'opacity-50 cursor-wait badge-loading' : ''} ${
+                                            !isLoadingProfile && firebaseProfile ? 'badge-illuminate' : ''
+                                        }`}
+                                        style={{ 
+                                            backgroundColor: isLoadingProfile ? '#6b7280' : profileColor
+                                        }}
                                     >
-                                        <span>⚡</span>
-                                        <span>{isCreatingProfile ? 'Creating...' : (firebaseProfile ? firebaseProfile.displayName : trainerName)}</span>
+                                        <span>{isLoadingProfile ? '⏳' : '⚡'}</span>
+                                        <span>
+                                            {isLoadingProfile 
+                                                ? 'Loading...' 
+                                                : isCreatingProfile 
+                                                    ? 'Creating...' 
+                                                    : (firebaseProfile ? firebaseProfile.displayName : trainerName)
+                                            }
+                                        </span>
                                     </button>
                                     
                                     {/* Profile Dropdown Menu */}
@@ -3727,11 +4333,12 @@
                             </div>
                         )}
 
-                        {/* 📸 Activity Feed View - Simplified Vertical Scroll */}
+                        {/* 📸 Activity Feed View - Tinder-Style Swipeable Cards */}
                         {currentView === 'feed' && firebaseProfile && (
-                            <div className="fixed inset-0 bg-gradient-to-br from-purple-600 to-pink-600 z-50 overflow-y-auto">
-                                <div className="min-h-screen p-6">
-                                    <div className="flex justify-between items-center mb-6">
+                            <div className="fixed inset-0 bg-gradient-to-br from-purple-600 to-pink-600 z-50 overflow-hidden">
+                                <div className="h-full flex flex-col">
+                                    {/* Header */}
+                                    <div className="flex justify-between items-center p-6 pb-4">
                                         <h2 className="text-2xl font-bold text-white">📸 Activity Feed</h2>
                                         <button
                                             onClick={() => setCurrentView('main')}
@@ -3741,24 +4348,37 @@
                                         </button>
                                     </div>
 
-                                    {/* Coming Soon Placeholder */}
-                                    <div className="text-center py-12">
-                                        <div className="text-6xl mb-4">🚧</div>
-                                        <div className="text-white text-lg font-medium mb-2">Activity Feed Coming Soon!</div>
-                                        <div className="text-purple-100 text-sm mb-6">
-                                            Your catches are being saved to Firebase.<br/>
-                                            The swipeable card feed will be added next.
-                                        </div>
-                                        <div className="bg-white bg-opacity-20 backdrop-blur rounded-xl p-4 max-w-md mx-auto">
-                                            <div className="text-white text-sm font-medium mb-2">✅ Backend Ready:</div>
-                                            <div className="text-purple-100 text-xs text-left space-y-1">
-                                                <div>• Activity entries created on catch</div>
-                                                <div>• Last 7 days stored</div>
-                                                <div>• Rare candy hooks in place</div>
-                                                <div>• Friend activity tracking active</div>
+                                    {/* Loading State */}
+                                    {isLoadingFeed && activityFeed.length === 0 && (
+                                        <div className="flex-1 flex items-center justify-center">
+                                            <div className="text-center">
+                                                <div className="loader mb-4"></div>
+                                                <div className="text-white text-lg">Loading activity...</div>
                                             </div>
                                         </div>
-                                    </div>
+                                    )}
+
+                                    {/* Card Stack Container */}
+                                    {!isLoadingFeed && activityFeed.length > 0 && (
+                                        <ActivityCardStack 
+                                            activities={activityFeed}
+                                            onGiveCandy={giveRareCandy}
+                                            currentUserId={firebaseManager.user?.uid}
+                                        />
+                                    )}
+
+                                    {/* Empty State */}
+                                    {!isLoadingFeed && activityFeed.length === 0 && (
+                                        <div className="flex-1 flex items-center justify-center p-6">
+                                            <div className="text-center">
+                                                <div className="text-6xl mb-4">📭</div>
+                                                <div className="text-white text-xl font-bold mb-2">No Activity Yet</div>
+                                                <div className="text-purple-100 text-sm">
+                                                    Catch some Pokémon or add friends to see activity!
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         )}
