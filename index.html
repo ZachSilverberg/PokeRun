@@ -28,6 +28,12 @@
         body {
             overscroll-behavior: none;
             -webkit-font-smoothing: antialiased;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #0a0a15 0%, #1a1a2e 50%, #16213e 100%);
+            background-attachment: fixed;
+            min-height: 100vh;
         }
         
         input {
@@ -1609,6 +1615,31 @@
                 }
             };
 
+            // 📝 Auto-save trainer name with debounce
+            const [nameEditTimeout, setNameEditTimeout] = useState(null);
+            const [originalTrainerName, setOriginalTrainerName] = useState('');
+
+            const handleNameInputChange = (newValue) => {
+                setTrainerName(newValue);
+                
+                // Clear existing timeout
+                if (nameEditTimeout) {
+                    clearTimeout(nameEditTimeout);
+                }
+                
+                // Set new timeout to save after 1 second of no typing
+                const timeout = setTimeout(() => {
+                    const trimmedName = newValue.trim();
+                    if (trimmedName && trimmedName !== originalTrainerName && trimmedName !== firebaseProfile?.displayName) {
+                        console.log('💾 Auto-saving name after typing stopped:', trimmedName);
+                        handleNameChange(trimmedName);
+                        setOriginalTrainerName(trimmedName);
+                    }
+                }, 1000);
+                
+                setNameEditTimeout(timeout);
+            };
+
             // 🔥 Check Firebase Auth State
             const checkFirebaseAuth = async () => {
                 try {
@@ -1641,9 +1672,15 @@
 
             // 🔥 Handle Trainer Badge Click - Create Profile if First Time
             const handleTrainerBadgeClick = async () => {
+                console.log('👆 Trainer badge clicked', { 
+                    hasProfile: !!firebaseProfile, 
+                    currentMenuState: showProfileMenu 
+                });
+                
                 // If already has Firebase profile, just toggle menu
                 if (firebaseProfile) {
                     setShowProfileMenu(!showProfileMenu);
+                    console.log('📋 Toggling profile menu to:', !showProfileMenu);
                     return;
                 }
 
@@ -2815,7 +2852,7 @@
             };
 
             return (
-                <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 p-4 pb-20">
+                <div className="min-h-screen p-4 pb-20">
                     <div className="max-w-2xl mx-auto">
                         <div className="text-center mb-6">
                             <h1 className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-transparent mb-2">
@@ -2828,14 +2865,14 @@
                         <div className="grid grid-cols-2 gap-3 mb-6">
                             <button
                                 onClick={() => setCurrentView('pc')}
-                                className="bg-gradient-to-br from-slate-400 to-slate-500 hover:from-slate-500 hover:to-slate-600 rounded-xl p-3 text-white shadow-md hover:shadow-lg transition-all"
+                                className="bg-gradient-to-br from-slate-700 to-slate-800 hover:from-slate-600 hover:to-slate-700 rounded-xl p-3 text-white shadow-lg hover:shadow-2xl transition-all border border-slate-600"
                             >
                                 <div className="text-xs font-semibold mb-1">💾 Bill's PC</div>
                                 <div className="text-lg font-bold">{(Array.isArray(pokemonPC) ? pokemonPC : []).length}</div>
                             </button>
                             <button
                                 onClick={() => setCurrentView('starters')}
-                                className="bg-gradient-to-br from-slate-400 to-slate-500 hover:from-slate-500 hover:to-slate-600 rounded-xl p-3 text-white shadow-md hover:shadow-lg transition-all"
+                                className="bg-gradient-to-br from-slate-700 to-slate-800 hover:from-slate-600 hover:to-slate-700 rounded-xl p-3 text-white shadow-lg hover:shadow-2xl transition-all border border-slate-600"
                             >
                                 <div className="text-xs font-semibold mb-1">⭐ Starters</div>
                                 <div className="text-lg font-bold">{(Array.isArray(starterTeam) ? starterTeam : []).filter(s => s !== null).length}/6</div>
@@ -2843,7 +2880,7 @@
                             {firebaseProfile && (
                                 <button
                                     onClick={() => setCurrentView('feed')}
-                                    className="col-span-2 bg-gradient-to-br from-purple-400 to-purple-500 hover:from-purple-500 hover:to-purple-600 rounded-xl p-3 text-white shadow-md hover:shadow-lg transition-all"
+                                    className="col-span-2 bg-gradient-to-br from-purple-600 to-indigo-700 hover:from-purple-500 hover:to-indigo-600 rounded-xl p-3 text-white shadow-lg hover:shadow-2xl transition-all border border-purple-500"
                                 >
                                     <div className="text-xs font-semibold mb-1">📸 Activity Feed</div>
                                     <div className="text-lg font-bold">View Recent Catches</div>
@@ -2853,9 +2890,9 @@
 
                         {currentView === 'main' && (
                         <>
-                        <div className="bg-white rounded-2xl shadow-lg p-6 mb-6">
+                        <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl shadow-2xl p-6 mb-6 border border-slate-700">
                             <div className="flex justify-between items-center mb-4">
-                                <h2 className="text-xl font-bold text-gray-800">Your Run</h2>
+                                <h2 className="text-xl font-bold text-white">Your Run</h2>
                                 
                                 {/* All 3 Badges */}
                                 <div className="flex gap-2">
@@ -2904,15 +2941,29 @@
                                                             <input 
                                                                 type="text" 
                                                                 value={trainerName}
-                                                                onChange={(e) => setTrainerName(e.target.value)}
+                                                                onChange={(e) => handleNameInputChange(e.target.value)}
+                                                                onFocus={() => {
+                                                                    setOriginalTrainerName(trainerName);
+                                                                    console.log('📝 Started editing name:', trainerName);
+                                                                }}
                                                                 onBlur={() => {
+                                                                    console.log('👋 Name input blur - closing editor');
                                                                     setIsEditingName(false);
-                                                                    handleNameChange(trainerName);
+                                                                    // Name already saved by debounce or will save on next typing pause
                                                                 }}
                                                                 onKeyPress={(e) => {
                                                                     if (e.key === 'Enter') {
+                                                                        console.log('⏎ Enter pressed');
+                                                                        // Clear timeout and save immediately
+                                                                        if (nameEditTimeout) {
+                                                                            clearTimeout(nameEditTimeout);
+                                                                        }
+                                                                        const trimmedName = e.target.value.trim();
+                                                                        if (trimmedName && trimmedName !== originalTrainerName) {
+                                                                            console.log('💾 Saving name on Enter:', trimmedName);
+                                                                            handleNameChange(trimmedName);
+                                                                        }
                                                                         setIsEditingName(false);
-                                                                        handleNameChange(trainerName);
                                                                     }
                                                                 }}
                                                                 autoFocus
@@ -3197,40 +3248,40 @@
                             
                             <div className="space-y-4">
                                 <div>
-                                    <label className="block text-sm font-semibold text-gray-700 mb-2">Pace (min/mi)</label>
+                                    <label className="block text-sm font-semibold text-gray-300 mb-2">Pace (min/mi)</label>
                                     <input type="text" value={pace} 
                                            onChange={(e) => handlePaceChange(e.target.value)}
                                            onBlur={handlePaceBlur}
-                                           className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg text-lg" placeholder="8:53" />
+                                           className="w-full px-4 py-3 bg-slate-700 border-2 border-slate-600 rounded-lg text-lg text-white placeholder-gray-400 focus:border-purple-500 focus:outline-none transition" placeholder="8:53" />
                                 </div>
 
                                 <div>
-                                    <label className="block text-sm font-semibold text-gray-700 mb-2">Distance (miles)</label>
+                                    <label className="block text-sm font-semibold text-gray-300 mb-2">Distance (miles)</label>
                                     <input type="text" value={distance} 
                                            onChange={(e) => handleDistanceChange(e.target.value)}
                                            onBlur={handleDistanceBlur}
-                                           className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg text-lg" placeholder="1.82" />
+                                           className="w-full px-4 py-3 bg-slate-700 border-2 border-slate-600 rounded-lg text-lg text-white placeholder-gray-400 focus:border-purple-500 focus:outline-none transition" placeholder="1.82" />
                                 </div>
 
                                 <div>
-                                    <label className="block text-sm font-semibold text-gray-700 mb-2">Duration (mm:ss)</label>
+                                    <label className="block text-sm font-semibold text-gray-300 mb-2">Duration (mm:ss)</label>
                                     <input type="text" value={duration} 
                                            onChange={(e) => handleDurationChange(e.target.value)}
                                            onBlur={handleDurationBlur}
-                                           className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg text-lg" placeholder="16:27" />
+                                           className="w-full px-4 py-3 bg-slate-700 border-2 border-slate-600 rounded-lg text-lg text-white placeholder-gray-400 focus:border-purple-500 focus:outline-none transition" placeholder="16:27" />
                                 </div>
 
                                 <button onClick={generatePokemon} disabled={isLoading}
-                                    className="w-full py-4 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-lg font-bold text-lg transition shadow-lg disabled:opacity-50">
+                                    className="w-full py-4 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-lg font-bold text-lg transition shadow-lg hover:shadow-purple-500/50 disabled:opacity-50">
                                     {isLoading ? '⏳ Rolling...' : '✨ Roll for Pokémon!'}
                                 </button>
                             </div>
                         </div>
 
                         {pokemonData && (
-                            <div className="bg-white rounded-2xl shadow-lg p-6">
+                            <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl shadow-2xl p-6 border border-slate-700">
                                 <div className="flex justify-between items-center mb-4">
-                                    <h2 className="text-xl font-bold capitalize">{pokemonData.name}</h2>
+                                    <h2 className="text-xl font-bold capitalize text-white">{pokemonData.name}</h2>
                                     <div className="flex gap-2">
                                         {rarityRoll && (
                                             <span className={`px-3 py-1 rounded-lg font-bold text-sm ${
@@ -3247,7 +3298,7 @@
                                     </div>
                                 </div>
                                 
-                                <div className="bg-gray-100 rounded-lg p-4 mb-4">
+                                <div className="bg-slate-700 rounded-lg p-4 mb-4 border border-slate-600">
                                     <canvas ref={canvasRef} className="w-full h-auto rounded-lg" style={{ maxHeight: '400px' }} />
                                 </div>
 
@@ -3262,19 +3313,19 @@
 
                         {/* Bill's PC View */}
                         {currentView === 'pc' && (
-                            <div className="bg-white rounded-2xl shadow-lg p-6 mb-6">
+                            <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl shadow-2xl p-6 mb-6 border border-slate-700">
                                 <div className="flex justify-between items-center mb-4">
-                                    <h2 className="text-xl font-bold text-gray-800">💾 Bill's PC</h2>
+                                    <h2 className="text-xl font-bold text-white">💾 Bill's PC</h2>
                                     <div className="flex gap-2">
                                         <button
                                             onClick={() => {
                                                 setDeleteMode(!deleteMode);
                                                 setShowDeletePrompt(null);
                                             }}
-                                            className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+                                            className={`px-4 py-2 rounded-lg text-sm font-medium transition shadow-lg ${
                                                 deleteMode 
                                                     ? 'bg-red-500 hover:bg-red-600 text-white' 
-                                                    : 'bg-gray-200 hover:bg-gray-300 text-gray-800'
+                                                    : 'bg-slate-700 hover:bg-slate-600 text-white border border-slate-600'
                                             }`}
                                         >
                                             🗑️
