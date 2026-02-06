@@ -2620,6 +2620,16 @@
             // 👤 Friend Profile View State
             const [viewingFriendId, setViewingFriendId] = useState(null);
             const [viewingFriendStarters, setViewingFriendStarters] = useState([]);
+            const [viewingFriendPC, setViewingFriendPC] = useState([]);
+            const [friendProfileTab, setFriendProfileTab] = useState('starters'); // 'starters' or 'pc'
+            
+            // 🤝 Trading System State
+            const [tradingWithFriend, setTradingWithFriend] = useState(null); // Friend ID when trade initiated
+            const [tradeView, setTradeView] = useState('their'); // 'their' or 'my' PC view
+            const [selectedTheirPokemon, setSelectedTheirPokemon] = useState([]); // Up to 3 from friend's PC
+            const [selectedMyPokemon, setSelectedMyPokemon] = useState([]); // Up to 3 from my PC
+            const [pendingTrades, setPendingTrades] = useState({}); // { friendId: tradeData }
+            const [viewingTradeRequest, setViewingTradeRequest] = useState(null); // Trade request being reviewed
             
             // Profile customization
             const [trainerName, setTrainerName] = useState('Trainer');
@@ -3441,15 +3451,173 @@
             // 👤 View friend's starters
             const viewFriendStarters = async (friendId) => {
                 try {
+                    // Load friend's starters
                     const startersSnapshot = await database.ref(`users/${friendId}/starters`).once('value');
                     const starters = startersSnapshot.val() || [null, null, null, null, null, null];
                     setViewingFriendStarters(Array.isArray(starters) ? starters : [null, null, null, null, null, null]);
+                    
+                    // Load friend's PC
+                    const pcSnapshot = await database.ref(`users/${friendId}/pc`).once('value');
+                    const pc = pcSnapshot.val() || [];
+                    setViewingFriendPC(Array.isArray(pc) ? pc : []);
+                    
                     setViewingFriendId(friendId);
-                    console.log(`✅ Loaded ${friendId}'s starters`);
+                    setFriendProfileTab('starters'); // Default to starters tab
+                    setCurrentView('friendProfile');
+                    
+                    console.log(`✅ Loaded ${friendId}'s starters and PC`);
                 } catch (error) {
-                    console.error('❌ Error loading friend starters:', error);
+                    console.error('❌ Error loading friend data:', error);
                 }
             };
+
+            // =========================
+            // 🤝 TRADING SYSTEM
+            // =========================
+            
+            const initiateTrade = () => {
+                setTradingWithFriend(viewingFriendId);
+                setTradeView('their');
+                setSelectedTheirPokemon([]);
+                setSelectedMyPokemon([]);
+            };
+
+            const toggleTheirPokemon = (pokemon) => {
+                setSelectedTheirPokemon(prev => {
+                    const isSelected = prev.find(p => p.id === pokemon.id);
+                    if (isSelected) {
+                        return prev.filter(p => p.id !== pokemon.id);
+                    } else if (prev.length < 3) {
+                        return [...prev, pokemon];
+                    }
+                    return prev;
+                });
+            };
+
+            const toggleMyPokemon = (pokemon) => {
+                setSelectedMyPokemon(prev => {
+                    const isSelected = prev.find(p => p.id === pokemon.id);
+                    if (isSelected) {
+                        return prev.filter(p => p.id !== pokemon.id);
+                    } else if (prev.length < 3) {
+                        return [...prev, pokemon];
+                    }
+                    return prev;
+                });
+            };
+
+            const sendTradeRequest = async () => {
+                if (!firebaseManager.user || !tradingWithFriend) return;
+                if (selectedTheirPokemon.length === 0 || selectedMyPokemon.length === 0) {
+                    alert('Please select at least 1 Pokémon from each side');
+                    return;
+                }
+
+                try {
+                    const myUid = firebaseManager.user.uid;
+                    const tradeData = {
+                        from: myUid,
+                        to: tradingWithFriend,
+                        fromPokemon: selectedMyPokemon,
+                        toPokemon: selectedTheirPokemon,
+                        timestamp: Date.now(),
+                        status: 'pending'
+                    };
+
+                    // Store trade request in recipient's pending trades
+                    await database.ref(`users/${tradingWithFriend}/tradeRequests/${myUid}`).set(tradeData);
+
+                    console.log('✅ Trade request sent');
+                    alert('Trade request sent!');
+                    
+                    // Reset trade state
+                    setTradingWithFriend(null);
+                    setSelectedTheirPokemon([]);
+                    setSelectedMyPokemon([]);
+                    setCurrentView('friends');
+                } catch (error) {
+                    console.error('❌ Error sending trade request:', error);
+                    alert('Failed to send trade request');
+                }
+            };
+
+            const acceptTrade = async (tradeRequest) => {
+                if (!firebaseManager.user) return;
+
+                try {
+                    const myUid = firebaseManager.user.uid;
+                    const theirUid = tradeRequest.from;
+
+                    // Swap Pokemon in both PCs
+                    // Remove from my PC, add to theirs
+                    const myPC = [...pokemonPC];
+                    const pokemonToGive = tradeRequest.toPokemon;
+                    const updatedMyPC = myPC.filter(p => !pokemonToGive.find(tp => tp.id === p.id));
+                    
+                    // Add their Pokemon to my PC
+                    const pokemonToReceive = tradeRequest.fromPokemon;
+                    updatedMyPC.unshift(...pokemonToReceive);
+                    
+                    // Update my PC
+                    setPokemonPC(updatedMyPC);
+                    await database.ref(`users/${myUid}/pc`).set(updatedMyPC);
+
+                    // Update their PC
+                    const theirPCSnapshot = await database.ref(`users/${theirUid}/pc`).once('value');
+                    const theirPC = theirPCSnapshot.val() || [];
+                    const updatedTheirPC = theirPC.filter(p => !pokemonToReceive.find(pr => pr.id === p.id));
+                    updatedTheirPC.unshift(...pokemonToGive);
+                    await database.ref(`users/${theirUid}/pc`).set(updatedTheirPC);
+
+                    // Delete trade request
+                    await database.ref(`users/${myUid}/tradeRequests/${theirUid}`).remove();
+
+                    console.log('✅ Trade completed');
+                    alert('Trade completed!');
+                    setViewingTradeRequest(null);
+                    setCurrentView('friends');
+                } catch (error) {
+                    console.error('❌ Error completing trade:', error);
+                    alert('Trade failed');
+                }
+            };
+
+            const denyTrade = async (tradeRequest) => {
+                if (!firebaseManager.user) return;
+
+                try {
+                    const myUid = firebaseManager.user.uid;
+                    await database.ref(`users/${myUid}/tradeRequests/${tradeRequest.from}`).remove();
+                    
+                    console.log('✅ Trade denied');
+                    setViewingTradeRequest(null);
+                    setCurrentView('friends');
+                } catch (error) {
+                    console.error('❌ Error denying trade:', error);
+                }
+            };
+
+            // Load pending trade requests
+            const loadPendingTrades = async () => {
+                if (!firebaseManager.user) return;
+
+                try {
+                    const myUid = firebaseManager.user.uid;
+                    const snapshot = await database.ref(`users/${myUid}/tradeRequests`).once('value');
+                    const trades = snapshot.val() || {};
+                    setPendingTrades(trades);
+                    console.log('✅ Loaded pending trades:', Object.keys(trades).length);
+                } catch (error) {
+                    console.error('❌ Error loading trades:', error);
+                }
+            };
+
+            // Load trades when firebase profile loads
+            useEffect(() => {
+                if (firebaseProfile) {
+                    loadPendingTrades();
+                }
+            }, [firebaseProfile]);
 
             const loadRunHistory = async () => {
                 try {
@@ -5492,24 +5660,38 @@
                                                     }))
                                                     .filter(f => f.profile)
                                                     .sort((a, b) => a.profile.displayName.localeCompare(b.profile.displayName))
-                                                    .map(friend => (
-                                                        <button
-                                                            key={friend.id}
-                                                            onClick={() => viewFriendStarters(friend.id)}
-                                                            className="w-full bg-white rounded-xl p-4 flex items-center gap-3 shadow-lg hover:shadow-xl hover:bg-gray-50 transition cursor-pointer text-left"
-                                                        >
-                                                            <div
-                                                                className="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-lg shadow-lg"
-                                                                style={{ backgroundColor: friend.profile.badgeColor }}
-                                                            >
-                                                                ⚡
+                                                    .map(friend => {
+                                                        const hasTrade = pendingTrades[friend.id];
+                                                        return (
+                                                            <div key={friend.id} className="flex gap-2">
+                                                                <button
+                                                                    onClick={() => viewFriendStarters(friend.id)}
+                                                                    className="flex-1 bg-white rounded-xl p-4 flex items-center gap-3 shadow-lg hover:shadow-xl hover:bg-gray-50 transition cursor-pointer text-left"
+                                                                >
+                                                                    <div
+                                                                        className="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-lg shadow-lg"
+                                                                        style={{ backgroundColor: friend.profile.badgeColor }}
+                                                                    >
+                                                                        ⚡
+                                                                    </div>
+                                                                    <div className="flex-1">
+                                                                        <div className="font-bold text-gray-800">{friend.profile.displayName}</div>
+                                                                        <div className="text-xs text-gray-500">Tap to view profile →</div>
+                                                                    </div>
+                                                                </button>
+                                                                
+                                                                {/* Trade Notification Tile */}
+                                                                {hasTrade && (
+                                                                    <button
+                                                                        onClick={() => setViewingTradeRequest(hasTrade)}
+                                                                        className="w-16 bg-gradient-to-br from-yellow-500 to-orange-500 hover:from-yellow-600 hover:to-orange-600 rounded-xl flex items-center justify-center text-white text-2xl shadow-lg transition"
+                                                                    >
+                                                                        🤝
+                                                                    </button>
+                                                                )}
                                                             </div>
-                                                            <div className="flex-1">
-                                                                <div className="font-bold text-gray-800">{friend.profile.displayName}</div>
-                                                                <div className="text-xs text-gray-500">Tap to view starters →</div>
-                                                            </div>
-                                                        </button>
-                                                    ))}
+                                                        );
+                                                    })}
                                             </div>
                                         </div>
                                     ) : (
@@ -5523,8 +5705,65 @@
                             </div>
                         )}
 
-                        {/* 👤 Friend's Starters View Modal */}
-                        {viewingFriendId && friendProfiles[viewingFriendId] && (
+                        {/* 🤝 Trade Review Window */}
+                        {viewingTradeRequest && (
+                            <div className="fixed inset-0 bg-black bg-opacity-70 z-[80] flex items-center justify-center p-4">
+                                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl p-6">
+                                    <h3 className="text-2xl font-bold mb-6 text-center">Trade Request</h3>
+                                    
+                                    {/* Trade Diagram */}
+                                    <div className="flex items-center gap-4 mb-6">
+                                        {/* Their offer */}
+                                        <div className="flex-1">
+                                            <div className="text-center mb-2 font-bold text-gray-700">
+                                                {friendProfiles[viewingTradeRequest.from]?.displayName} offers:
+                                            </div>
+                                            <div className="grid grid-cols-3 gap-2">
+                                                {viewingTradeRequest.fromPokemon.map((pokemon, i) => (
+                                                    <div key={i} className="bg-gray-50 rounded-lg border-2 border-gray-200">
+                                                        <PokemonCard pokemon={pokemon} />
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                        
+                                        {/* Arrow */}
+                                        <div className="text-4xl text-gray-400">⇄</div>
+                                        
+                                        {/* Your offer */}
+                                        <div className="flex-1">
+                                            <div className="text-center mb-2 font-bold text-gray-700">You give:</div>
+                                            <div className="grid grid-cols-3 gap-2">
+                                                {viewingTradeRequest.toPokemon.map((pokemon, i) => (
+                                                    <div key={i} className="bg-gray-50 rounded-lg border-2 border-gray-200">
+                                                        <PokemonCard pokemon={pokemon} />
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    {/* Actions */}
+                                    <div className="flex gap-3">
+                                        <button
+                                            onClick={() => denyTrade(viewingTradeRequest)}
+                                            className="flex-1 py-3 bg-gray-500 hover:bg-gray-600 text-white rounded-lg font-bold transition"
+                                        >
+                                            ✕ Deny
+                                        </button>
+                                        <button
+                                            onClick={() => acceptTrade(viewingTradeRequest)}
+                                            className="flex-1 py-3 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white rounded-lg font-bold transition"
+                                        >
+                                            ✓ Accept Trade
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* 👤 Friend's Starters View Modal - REMOVED (using friendProfile view instead) */}
+                        {false && viewingFriendId && friendProfiles[viewingFriendId] && (
                             <div className="fixed inset-0 bg-black bg-opacity-50 z-[70] flex items-center justify-center p-4">
                                 <div className="bg-gradient-to-br from-purple-600 to-pink-600 rounded-2xl shadow-2xl w-full max-w-md max-h-[80vh] overflow-y-auto">
                                     <div className="p-6">
@@ -5602,6 +5841,190 @@
                                             ))}
                                         </div>
                                     </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* 👤 Friend Profile View */}
+                        {currentView === 'friendProfile' && viewingFriendId && (
+                            <div className="fixed inset-0 bg-gradient-to-br from-indigo-600 to-purple-600 z-50 overflow-y-auto">
+                                <div className="min-h-screen p-6">
+                                    {/* Header */}
+                                    <div className="flex justify-between items-center mb-6">
+                                        <h2 className="text-2xl font-bold text-white">
+                                            {friendProfiles[viewingFriendId]?.displayName || 'Friend'}'s Profile
+                                        </h2>
+                                        <button
+                                            onClick={() => {
+                                                setCurrentView('friends');
+                                                setTradingWithFriend(null);
+                                                setSelectedTheirPokemon([]);
+                                                setSelectedMyPokemon([]);
+                                            }}
+                                            className="px-4 py-2 bg-white hover:bg-gray-100 text-gray-800 rounded-lg text-sm font-medium transition shadow-lg"
+                                        >
+                                            Back
+                                        </button>
+                                    </div>
+
+                                    {/* Tabs */}
+                                    <div className="flex gap-2 mb-6">
+                                        <button
+                                            onClick={() => setFriendProfileTab('starters')}
+                                            className={`flex-1 py-3 rounded-lg font-bold transition ${
+                                                friendProfileTab === 'starters'
+                                                    ? 'bg-white text-indigo-600'
+                                                    : 'bg-white bg-opacity-30 text-white hover:bg-opacity-40'
+                                            }`}
+                                        >
+                                            ⭐ Starters
+                                        </button>
+                                        <button
+                                            onClick={() => setFriendProfileTab('pc')}
+                                            className={`flex-1 py-3 rounded-lg font-bold transition ${
+                                                friendProfileTab === 'pc'
+                                                    ? 'bg-white text-indigo-600'
+                                                    : 'bg-white bg-opacity-30 text-white hover:bg-opacity-40'
+                                            }`}
+                                        >
+                                            💾 Bill's PC
+                                        </button>
+                                    </div>
+
+                                    {/* Starters Tab */}
+                                    {friendProfileTab === 'starters' && (
+                                        <div className="bg-white rounded-2xl p-6 shadow-2xl">
+                                            <div className="grid grid-cols-2 gap-4">
+                                                {viewingFriendStarters.map((starter, index) => (
+                                                    <div
+                                                        key={index}
+                                                        className="bg-gray-50 rounded-lg border-2 border-gray-200 min-h-[200px] flex items-center justify-center"
+                                                    >
+                                                        {starter ? (
+                                                            <PokemonCard pokemon={starter} />
+                                                        ) : (
+                                                            <div className="text-gray-400 text-center">
+                                                                <div className="text-3xl mb-2">⚪</div>
+                                                                <div className="text-sm">Empty</div>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* PC Tab */}
+                                    {friendProfileTab === 'pc' && (
+                                        <div className="bg-white rounded-2xl p-6 shadow-2xl">
+                                            {/* Trade Controls */}
+                                            {!tradingWithFriend && (
+                                                <button
+                                                    onClick={initiateTrade}
+                                                    className="w-full mb-4 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-lg font-bold transition shadow-lg"
+                                                >
+                                                    🤝 Initiate Trade
+                                                </button>
+                                            )}
+
+                                            {tradingWithFriend && (
+                                                <div className="mb-4 space-y-2">
+                                                    <div className="flex gap-2">
+                                                        <button
+                                                            onClick={() => setTradeView('their')}
+                                                            className={`flex-1 py-2 rounded-lg font-bold ${
+                                                                tradeView === 'their'
+                                                                    ? 'bg-indigo-600 text-white'
+                                                                    : 'bg-gray-200 text-gray-700'
+                                                            }`}
+                                                        >
+                                                            Their PC ({selectedTheirPokemon.length}/3)
+                                                        </button>
+                                                        <button
+                                                            onClick={() => setTradeView('my')}
+                                                            className={`flex-1 py-2 rounded-lg font-bold ${
+                                                                tradeView === 'my'
+                                                                    ? 'bg-indigo-600 text-white'
+                                                                    : 'bg-gray-200 text-gray-700'
+                                                            }`}
+                                                        >
+                                                            My PC ({selectedMyPokemon.length}/3)
+                                                        </button>
+                                                    </div>
+                                                    <button
+                                                        onClick={sendTradeRequest}
+                                                        disabled={selectedTheirPokemon.length === 0 || selectedMyPokemon.length === 0}
+                                                        className="w-full py-3 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white rounded-lg font-bold transition shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                                                    >
+                                                        📤 Send Trade Request
+                                                    </button>
+                                                </div>
+                                            )}
+
+                                            {/* Pokemon Grid */}
+                                            <div className="grid grid-cols-2 gap-3 max-h-96 overflow-y-auto">
+                                                {tradeView === 'their' ? (
+                                                    viewingFriendPC.length === 0 ? (
+                                                        <div className="col-span-2 text-center py-8 text-gray-500">
+                                                            <div className="text-4xl mb-2">📭</div>
+                                                            <div>Friend's PC is empty</div>
+                                                        </div>
+                                                    ) : (
+                                                        viewingFriendPC.map((pokemon) => {
+                                                            const isSelected = tradingWithFriend && selectedTheirPokemon.find(p => p.id === pokemon.id);
+                                                            return (
+                                                                <div
+                                                                    key={pokemon.id}
+                                                                    onClick={() => tradingWithFriend && toggleTheirPokemon(pokemon)}
+                                                                    className={`relative rounded-lg border-4 transition cursor-pointer ${
+                                                                        isSelected
+                                                                            ? 'border-blue-500 bg-blue-50'
+                                                                            : 'border-gray-200 bg-gray-50 hover:border-blue-300'
+                                                                    }`}
+                                                                >
+                                                                    {isSelected && (
+                                                                        <div className="absolute top-2 right-2 w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center text-white text-xs font-bold z-10">
+                                                                            ✓
+                                                                        </div>
+                                                                    )}
+                                                                    <PokemonCard pokemon={pokemon} />
+                                                                </div>
+                                                            );
+                                                        })
+                                                    )
+                                                ) : (
+                                                    pokemonPC.length === 0 ? (
+                                                        <div className="col-span-2 text-center py-8 text-gray-500">
+                                                            <div className="text-4xl mb-2">📭</div>
+                                                            <div>Your PC is empty</div>
+                                                        </div>
+                                                    ) : (
+                                                        pokemonPC.map((pokemon) => {
+                                                            const isSelected = selectedMyPokemon.find(p => p.id === pokemon.id);
+                                                            return (
+                                                                <div
+                                                                    key={pokemon.id}
+                                                                    onClick={() => toggleMyPokemon(pokemon)}
+                                                                    className={`relative rounded-lg border-4 transition cursor-pointer ${
+                                                                        isSelected
+                                                                            ? 'border-green-500 bg-green-50'
+                                                                            : 'border-gray-200 bg-gray-50 hover:border-green-300'
+                                                                    }`}
+                                                                >
+                                                                    {isSelected && (
+                                                                        <div className="absolute top-2 right-2 w-6 h-6 bg-green-500 rounded-full flex items-center justify-center text-white text-xs font-bold z-10">
+                                                                            ✓
+                                                                        </div>
+                                                                    )}
+                                                                    <PokemonCard pokemon={pokemon} />
+                                                                </div>
+                                                            );
+                                                        })
+                                                    )
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         )}
