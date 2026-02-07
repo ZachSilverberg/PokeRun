@@ -3450,22 +3450,25 @@
 
             // 👤 View friend's starters
             const viewFriendStarters = async (friendId) => {
+                console.log('🔍 Clicking friend:', friendId);
                 try {
                     // Load friend's starters
                     const startersSnapshot = await database.ref(`users/${friendId}/starters`).once('value');
                     const starters = startersSnapshot.val() || [null, null, null, null, null, null];
                     setViewingFriendStarters(Array.isArray(starters) ? starters : [null, null, null, null, null, null]);
+                    console.log('✅ Loaded starters:', starters);
                     
                     // Load friend's PC
                     const pcSnapshot = await database.ref(`users/${friendId}/pc`).once('value');
                     const pc = pcSnapshot.val() || [];
                     setViewingFriendPC(Array.isArray(pc) ? pc : []);
+                    console.log('✅ Loaded PC:', pc.length, 'pokemon');
                     
                     setViewingFriendId(friendId);
                     setFriendProfileTab('starters'); // Default to starters tab
                     setCurrentView('friendProfile');
+                    console.log('✅ Set view to friendProfile');
                     
-                    console.log(`✅ Loaded ${friendId}'s starters and PC`);
                 } catch (error) {
                     console.error('❌ Error loading friend data:', error);
                 }
@@ -5173,9 +5176,14 @@
                                                                     .filter(f => f.profile)
                                                                     .sort((a, b) => a.profile.displayName.localeCompare(b.profile.displayName))
                                                                     .map(friend => (
-                                                                        <div
+                                                                        <button
                                                                             key={friend.id}
-                                                                            className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg"
+                                                                            onClick={() => {
+                                                                                console.log('🖱️ FRIEND CLICKED FROM SEARCH MODAL:', friend.id);
+                                                                                setShowFriendSearch(false);
+                                                                                viewFriendStarters(friend.id);
+                                                                            }}
+                                                                            className="w-full flex items-center gap-2 p-3 bg-gray-50 hover:bg-gray-100 rounded-lg transition cursor-pointer text-left"
                                                                         >
                                                                             <div
                                                                                 className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-sm"
@@ -5184,7 +5192,7 @@
                                                                                 ⚡
                                                                             </div>
                                                                             <span className="font-medium text-sm">{friend.profile.displayName}</span>
-                                                                        </div>
+                                                                        </button>
                                                                     ))}
                                                             </div>
                                                         </div>
@@ -5665,7 +5673,10 @@
                                                         return (
                                                             <div key={friend.id} className="flex gap-2">
                                                                 <button
-                                                                    onClick={() => viewFriendStarters(friend.id)}
+                                                                    onClick={() => {
+                                                                        console.log('🖱️ FRIEND TILE CLICKED:', friend.id);
+                                                                        viewFriendStarters(friend.id);
+                                                                    }}
                                                                     className="flex-1 bg-white rounded-xl p-4 flex items-center gap-3 shadow-lg hover:shadow-xl hover:bg-gray-50 transition cursor-pointer text-left"
                                                                 >
                                                                     <div
