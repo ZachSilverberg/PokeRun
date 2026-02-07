@@ -5110,7 +5110,7 @@
                                                                 <button
                                                                     onClick={() => {
                                                                         setShowProfileMenu(false);
-                                                                        setShowFriendSearch(true);
+                                                                        setCurrentView('friends');
                                                                     }}
                                                                     className="flex-1 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium transition relative"
                                                                 >
@@ -5165,249 +5165,7 @@
                                             )}
                                         </div>
                                     )}
-                                    
-                                    {/* 👥 Friends Search & List Modal */}
-                                    {showFriendSearch && firebaseProfile && (
-                                        <div className="fixed inset-0 bg-black bg-opacity-50 z-[60] flex items-center justify-center p-4">
-                                            <div className="bg-white rounded-xl shadow-2xl w-full max-w-md max-h-[80vh] overflow-hidden flex flex-col">
-                                                {/* Header */}
-                                                <div className="p-4 border-b border-gray-200">
-                                                    <div className="flex justify-between items-center mb-3">
-                                                        <h3 className="text-lg font-bold text-gray-800">👥 Friends</h3>
-                                                        <button
-                                                            onClick={() => setShowFriendSearch(false)}
-                                                            className="w-8 h-8 bg-gray-200 hover:bg-gray-300 rounded-full flex items-center justify-center transition"
-                                                        >
-                                                            ✕
-                                                        </button>
-                                                    </div>
-                                                    
-                                                    {/* Search Bar */}
-                                                    <div className="relative">
-                                                        <input
-                                                            type="text"
-                                                            value={friendSearchQuery}
-                                                            onChange={(e) => setFriendSearchQuery(e.target.value)}
-                                                            placeholder="Type trainer name (3+ chars)..."
-                                                            className="w-full px-3 py-2 pr-10 border-2 border-gray-300 rounded-lg text-sm"
-                                                            maxLength={30}
-                                                        />
-                                                        <div className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">
-                                                            {isSearching ? '⏳' : friendSearchQuery.length >= 3 ? '🔍' : `${friendSearchQuery.length}/3`}
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                                
-                                                {/* Content Area - Scrollable */}
-                                                <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                                                    {/* Search Results */}
-                                                    {friendSearchResults.length > 0 && (
-                                                        <div>
-                                                            <h4 className="text-xs font-semibold text-gray-600 mb-2">
-                                                                {friendSearchResults.some(r => r.matchType === 'exact') ? 'RESULTS' : 'SUGGESTIONS'}
-                                                            </h4>
-                                                            <div className="space-y-2">
-                                                                {friendSearchResults.map(result => (
-                                                                    <div
-                                                                        key={result.uid}
-                                                                        className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition"
-                                                                    >
-                                                                        <div className="flex items-center gap-2 flex-1 min-w-0">
-                                                                            <div
-                                                                                className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0"
-                                                                                style={{ backgroundColor: result.badgeColor }}
-                                                                            >
-                                                                                ⚡
-                                                                            </div>
-                                                                            <div className="min-w-0 flex-1">
-                                                                                <div className="font-medium text-sm truncate">{result.displayName}</div>
-                                                                                {result.matchType !== 'exact' && (
-                                                                                    <div className="text-xs text-gray-500">Suggested match</div>
-                                                                                )}
-                                                                            </div>
-                                                                        </div>
-                                                                        {result.isFriend ? (
-                                                                            <span className="text-xs text-green-600 font-medium flex-shrink-0">✓ Friends</span>
-                                                                        ) : (
-                                                                            <button
-                                                                                onClick={() => sendFriendRequest(result.uid)}
-                                                                                className={`w-8 h-8 rounded-full flex items-center justify-center text-white font-bold transition flex-shrink-0 ${
-                                                                                    result.hasPendingRequest 
-                                                                                        ? 'bg-yellow-500 hover:bg-yellow-600 ring-2 ring-yellow-300' 
-                                                                                        : 'bg-green-500 hover:bg-green-600'
-                                                                                }`}
-                                                                            >
-                                                                                {result.hasPendingRequest ? '−' : '+'}
-                                                                            </button>
-                                                                        )}
-                                                                    </div>
-                                                                ))}
-                                                            </div>
-                                                        </div>
-                                                    )}
-                                                    
-                                                    {/* Incoming Friend Requests */}
-                                                    {incomingRequests.length > 0 && (
-                                                        <div>
-                                                            <h4 className="text-xs font-semibold text-gray-600 mb-2">FRIEND REQUESTS</h4>
-                                                            <div className="space-y-2">
-                                                                {incomingRequests.map(senderId => {
-                                                                    const senderProfile = friendProfiles[senderId];
-                                                                    if (!senderProfile) {
-                                                                        // Load profile if not cached
-                                                                        database.ref(`users/${senderId}/profile`).once('value').then(snap => {
-                                                                            if (snap.exists()) {
-                                                                                setFriendProfiles(prev => ({
-                                                                                    ...prev,
-                                                                                    [senderId]: snap.val()
-                                                                                }));
-                                                                            }
-                                                                        });
-                                                                        return null;
-                                                                    }
-                                                                    return (
-                                                                        <div
-                                                                            key={senderId}
-                                                                            className="flex items-center justify-between p-3 bg-gray-100 bg-opacity-50 rounded-lg relative"
-                                                                        >
-                                                                            <div className="flex items-center gap-2">
-                                                                                <div
-                                                                                    className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-sm"
-                                                                                    style={{ backgroundColor: senderProfile.badgeColor }}
-                                                                                >
-                                                                                    ⚡
-                                                                                </div>
-                                                                                <span className="font-medium text-sm">{senderProfile.displayName}</span>
-                                                                            </div>
-                                                                            <div className="flex gap-1">
-                                                                                <button
-                                                                                    onClick={() => acceptFriendRequest(senderId)}
-                                                                                    className="w-8 h-8 bg-green-500 hover:bg-green-600 rounded-full flex items-center justify-center text-white font-bold transition"
-                                                                                >
-                                                                                    ✓
-                                                                                </button>
-                                                                                <button
-                                                                                    onClick={() => declineFriendRequest(senderId)}
-                                                                                    className="w-8 h-8 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center text-white font-bold transition"
-                                                                                >
-                                                                                    ✕
-                                                                                </button>
-                                                                            </div>
-                                                                            {/* Question mark indicator */}
-                                                                            <div className="absolute right-2 top-2 w-4 h-4 bg-gray-400 rounded-full flex items-center justify-center text-white text-xs">
-                                                                                ?
-                                                                            </div>
-                                                                        </div>
-                                                                    );
-                                                                })}
-                                                            </div>
-                                                        </div>
-                                                    )}
-                                                    
-                                                    {/* Friends List */}
-                                                    {friends.length > 0 && (
-                                                        <div>
-                                                            <h4 className="text-xs font-semibold text-gray-600 mb-2">MY FRIENDS ({friends.length})</h4>
-                                                            <div className="space-y-2">
-                                                                {friends
-                                                                    .map(friendId => ({
-                                                                        id: friendId,
-                                                                        profile: friendProfiles[friendId]
-                                                                    }))
-                                                                    .filter(f => f.profile)
-                                                                    .sort((a, b) => a.profile.displayName.localeCompare(b.profile.displayName))
-                                                                    .map(friend => (
-                                                                        <button
-                                                                            key={friend.id}
-                                                                            onClick={() => {
-                                                                                console.log('🖱️ FRIEND CLICKED FROM SEARCH MODAL:', friend.id);
-                                                                                setShowFriendSearch(false);
-                                                                                viewFriendStarters(friend.id);
-                                                                            }}
-                                                                            className="w-full flex items-center gap-2 p-3 bg-gray-50 hover:bg-gray-100 rounded-lg transition cursor-pointer text-left"
-                                                                        >
-                                                                            <div
-                                                                                className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-sm"
-                                                                                style={{ backgroundColor: friend.profile.badgeColor }}
-                                                                            >
-                                                                                ⚡
-                                                                            </div>
-                                                                            <span className="font-medium text-sm">{friend.profile.displayName}</span>
-                                                                        </button>
-                                                                    ))}
-                                                            </div>
-                                                        </div>
-                                                    )}
-                                                    
-                                                    {/* Empty States */}
-                                                    {friends.length === 0 && incomingRequests.length === 0 && friendSearchResults.length === 0 && (
-                                                        <div className="text-center py-8 text-gray-500">
-                                                            <div className="text-4xl mb-2">👥</div>
-                                                            <div className="text-sm">Search for trainers to add friends!</div>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
                             
-                            {/* Your Workout title - now below badges */}
-                            <h2 className="text-xl font-bold text-white text-center mb-4">Your Workout</h2>
-                            
-                            {/* Workout Type Tabs */}
-                            <div className="flex gap-2 mb-4">
-                                <button
-                                    onClick={() => setWorkoutTab('cardio')}
-                                    className={`flex-1 py-2 px-4 rounded-lg font-bold text-sm transition ${
-                                        workoutTab === 'cardio'
-                                            ? 'bg-purple-600 text-white'
-                                            : 'bg-slate-700 text-gray-300 hover:bg-slate-600'
-                                    }`}
-                                >
-                                    🏃 Cardio
-                                </button>
-                                <button
-                                    onClick={() => setWorkoutTab('lift')}
-                                    className={`flex-1 py-2 px-4 rounded-lg font-bold text-sm transition ${
-                                        workoutTab === 'lift'
-                                            ? 'bg-purple-600 text-white'
-                                            : 'bg-slate-700 text-gray-300 hover:bg-slate-600'
-                                    }`}
-                                >
-                                    🏋️ Lift
-                                </button>
-                            </div>
-                            
-                            {/* Cardio Inputs */}
-                            {workoutTab === 'cardio' && (
-                            <div className="space-y-4">
-                                <div>
-                                    <label className="block text-sm font-semibold text-gray-300 mb-2">Pace (min/mi)</label>
-                                    <input type="text" value={pace} 
-                                           onChange={(e) => handlePaceChange(e.target.value)}
-                                           onBlur={handlePaceBlur}
-                                           className="w-full px-4 py-3 bg-slate-700 border-2 border-slate-600 rounded-lg text-lg text-white placeholder-gray-400 focus:border-purple-500 focus:outline-none transition" placeholder="8:53" />
-                                </div>
-
-                                <div>
-                                    <label className="block text-sm font-semibold text-gray-300 mb-2">Distance (miles)</label>
-                                    <input type="text" value={distance} 
-                                           onChange={(e) => handleDistanceChange(e.target.value)}
-                                           onBlur={handleDistanceBlur}
-                                           className="w-full px-4 py-3 bg-slate-700 border-2 border-slate-600 rounded-lg text-lg text-white placeholder-gray-400 focus:border-purple-500 focus:outline-none transition" placeholder="1.82" />
-                                </div>
-
-                                <div>
-                                    <label className="block text-sm font-semibold text-gray-300 mb-2">Duration (mm:ss)</label>
-                                    <input type="text" value={duration} 
-                                           onChange={(e) => handleDurationChange(e.target.value)}
-                                           onBlur={handleDurationBlur}
-                                           className="w-full px-4 py-3 bg-slate-700 border-2 border-slate-600 rounded-lg text-lg text-white placeholder-gray-400 focus:border-purple-500 focus:outline-none transition" placeholder="16:27" />
-                                </div>
-                            </div>
-                            )}
                             
                             {/* Lift Inputs */}
                             {workoutTab === 'lift' && (
@@ -5734,7 +5492,10 @@
 
                                     {/* Search Button */}
                                     <button
-                                        onClick={() => setShowFriendSearch(true)}
+                                        onClick={() => {
+                                            console.log('🔍 Search button clicked!');
+                                            setShowFriendSearch(true);
+                                        }}
                                         className="w-full mb-6 px-4 py-3 bg-white hover:bg-gray-50 text-gray-800 rounded-xl font-medium transition shadow-lg flex items-center justify-center gap-2"
                                     >
                                         <span>🔍</span>
@@ -6292,6 +6053,190 @@
                                 </div>
                             </div>
                         )}
+
+                        {/* 👥 Friends Search Modal - AFTER ALL VIEWS */}
+                        {showFriendSearch && firebaseProfile && (
+                            <div className="fixed inset-0 bg-black bg-opacity-50 z-[70] flex items-center justify-center p-4">
+                                <div className="bg-white rounded-xl shadow-2xl w-full max-w-md max-h-[80vh] overflow-hidden flex flex-col">
+                                    {/* Header */}
+                                    <div className="p-4 border-b border-gray-200">
+                                        <div className="flex justify-between items-center mb-3">
+                                            <h3 className="text-lg font-bold text-gray-800">👥 Friends</h3>
+                                            <button
+                                                onClick={() => setShowFriendSearch(false)}
+                                                className="w-8 h-8 bg-gray-200 hover:bg-gray-300 rounded-full flex items-center justify-center transition"
+                                            >
+                                                ✕
+                                            </button>
+                                        </div>
+                                        
+                                        {/* Search Bar */}
+                                        <div className="relative">
+                                            <input
+                                                type="text"
+                                                value={friendSearchQuery}
+                                                onChange={(e) => setFriendSearchQuery(e.target.value)}
+                                                placeholder="Type trainer name (3+ chars)..."
+                                                className="w-full px-3 py-2 pr-10 border-2 border-gray-300 rounded-lg text-sm"
+                                                maxLength={30}
+                                            />
+                                            <div className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">
+                                                {isSearching ? '⏳' : friendSearchQuery.length >= 3 ? '🔍' : `${friendSearchQuery.length}/3`}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    {/* Content Area - Scrollable */}
+                                    <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                                        {/* Search Results */}
+                                        {friendSearchResults.length > 0 && (
+                                            <div>
+                                                <h4 className="text-xs font-semibold text-gray-600 mb-2">
+                                                    {friendSearchResults.some(r => r.matchType === 'exact') ? 'RESULTS' : 'SUGGESTIONS'}
+                                                </h4>
+                                                <div className="space-y-2">
+                                                    {friendSearchResults.map(result => (
+                                                        <div
+                                                            key={result.uid}
+                                                            className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition"
+                                                        >
+                                                            <div className="flex items-center gap-2 flex-1 min-w-0">
+                                                                <div
+                                                                    className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0"
+                                                                    style={{ backgroundColor: result.badgeColor }}
+                                                                >
+                                                                    ⚡
+                                                                </div>
+                                                                <div className="min-w-0 flex-1">
+                                                                    <div className="font-medium text-sm truncate">{result.displayName}</div>
+                                                                    {result.matchType !== 'exact' && (
+                                                                        <div className="text-xs text-gray-500">Suggested match</div>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                            {result.isFriend ? (
+                                                                <span className="text-xs text-green-600 font-medium flex-shrink-0">✓ Friends</span>
+                                                            ) : (
+                                                                <button
+                                                                    onClick={() => sendFriendRequest(result.uid)}
+                                                                    className={`w-8 h-8 rounded-full flex items-center justify-center text-white font-bold transition flex-shrink-0 ${
+                                                                        result.hasPendingRequest 
+                                                                            ? 'bg-yellow-500 hover:bg-yellow-600 ring-2 ring-yellow-300' 
+                                                                            : 'bg-green-500 hover:bg-green-600'
+                                                                    }`}
+                                                                >
+                                                                    {result.hasPendingRequest ? '−' : '+'}
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                        
+                                        {/* Incoming Friend Requests */}
+                                        {incomingRequests.length > 0 && (
+                                            <div>
+                                                <h4 className="text-xs font-semibold text-gray-600 mb-2">FRIEND REQUESTS</h4>
+                                                <div className="space-y-2">
+                                                    {incomingRequests.map(senderId => {
+                                                        const senderProfile = friendProfiles[senderId];
+                                                        if (!senderProfile) {
+                                                            database.ref(`users/${senderId}/profile`).once('value').then(snap => {
+                                                                if (snap.exists()) {
+                                                                    setFriendProfiles(prev => ({
+                                                                        ...prev,
+                                                                        [senderId]: snap.val()
+                                                                    }));
+                                                                }
+                                                            });
+                                                            return null;
+                                                        }
+                                                        return (
+                                                            <div
+                                                                key={senderId}
+                                                                className="flex items-center justify-between p-3 bg-gray-100 bg-opacity-50 rounded-lg relative"
+                                                            >
+                                                                <div className="flex items-center gap-2">
+                                                                    <div
+                                                                        className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-sm"
+                                                                        style={{ backgroundColor: senderProfile.badgeColor }}
+                                                                    >
+                                                                        ⚡
+                                                                    </div>
+                                                                    <span className="font-medium text-sm">{senderProfile.displayName}</span>
+                                                                </div>
+                                                                <div className="flex gap-1">
+                                                                    <button
+                                                                        onClick={() => acceptFriendRequest(senderId)}
+                                                                        className="w-8 h-8 bg-green-500 hover:bg-green-600 rounded-full flex items-center justify-center text-white font-bold transition"
+                                                                    >
+                                                                        ✓
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => declineFriendRequest(senderId)}
+                                                                        className="w-8 h-8 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center text-white font-bold transition"
+                                                                    >
+                                                                        ✕
+                                                                    </button>
+                                                                </div>
+                                                                <div className="absolute right-2 top-2 w-4 h-4 bg-gray-400 rounded-full flex items-center justify-center text-white text-xs">
+                                                                    ?
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        )}
+                                        
+                                        {/* Friends List */}
+                                        {friends.length > 0 && (
+                                            <div>
+                                                <h4 className="text-xs font-semibold text-gray-600 mb-2">MY FRIENDS ({friends.length})</h4>
+                                                <div className="space-y-2">
+                                                    {friends
+                                                        .map(friendId => ({
+                                                            id: friendId,
+                                                            profile: friendProfiles[friendId]
+                                                        }))
+                                                        .filter(f => f.profile)
+                                                        .sort((a, b) => a.profile.displayName.localeCompare(b.profile.displayName))
+                                                        .map(friend => (
+                                                            <button
+                                                                key={friend.id}
+                                                                onClick={() => {
+                                                                    console.log('🖱️ FRIEND CLICKED FROM SEARCH MODAL:', friend.id);
+                                                                    setShowFriendSearch(false);
+                                                                    viewFriendStarters(friend.id);
+                                                                }}
+                                                                className="w-full flex items-center gap-2 p-3 bg-gray-50 hover:bg-gray-100 rounded-lg transition cursor-pointer text-left"
+                                                            >
+                                                                <div
+                                                                    className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-sm"
+                                                                    style={{ backgroundColor: friend.profile.badgeColor }}
+                                                                >
+                                                                    ⚡
+                                                                </div>
+                                                                <span className="font-medium text-sm">{friend.profile.displayName}</span>
+                                                            </button>
+                                                        ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                        
+                                        {/* Empty States */}
+                                        {friends.length === 0 && incomingRequests.length === 0 && friendSearchResults.length === 0 && (
+                                            <div className="text-center py-8 text-gray-500">
+                                                <div className="text-4xl mb-2">👥</div>
+                                                <div className="text-sm">Search for trainers to add friends!</div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
                     </div>
                 </div>
             );
