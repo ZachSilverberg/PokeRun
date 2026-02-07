@@ -3518,7 +3518,9 @@
 
                 try {
                     const myUid = firebaseManager.user.uid;
+                    const tradeId = `trade_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
                     const tradeData = {
+                        id: tradeId,
                         from: myUid,
                         to: tradingWithFriend,
                         fromPokemon: selectedMyPokemon,
@@ -3527,8 +3529,8 @@
                         status: 'pending'
                     };
 
-                    // Store trade request in recipient's pending trades
-                    await database.ref(`users/${tradingWithFriend}/tradeRequests/${myUid}`).set(tradeData);
+                    // Store in global trades node (accessible by both users)
+                    await database.ref(`trades/${tradeId}`).set(tradeData);
 
                     console.log('✅ Trade request sent');
                     alert('Trade request sent!');
@@ -3561,27 +3563,29 @@
                     const pokemonToReceive = tradeRequest.fromPokemon;
                     updatedMyPC.unshift(...pokemonToReceive);
                     
-                    // Update my PC
+                    // Update my PC locally and in Firebase
                     setPokemonPC(updatedMyPC);
+                    await window.storage.set('pokemon-pc', JSON.stringify(updatedMyPC));
                     await database.ref(`users/${myUid}/pc`).set(updatedMyPC);
 
-                    // Update their PC
+                    // Update their PC (they'll have to reload to see changes)
                     const theirPCSnapshot = await database.ref(`users/${theirUid}/pc`).once('value');
                     const theirPC = theirPCSnapshot.val() || [];
                     const updatedTheirPC = theirPC.filter(p => !pokemonToReceive.find(pr => pr.id === p.id));
                     updatedTheirPC.unshift(...pokemonToGive);
                     await database.ref(`users/${theirUid}/pc`).set(updatedTheirPC);
 
-                    // Delete trade request
-                    await database.ref(`users/${myUid}/tradeRequests/${theirUid}`).remove();
+                    // Mark trade as completed in global trades node
+                    await database.ref(`trades/${tradeRequest.id}`).update({ status: 'completed' });
 
                     console.log('✅ Trade completed');
                     alert('Trade completed!');
                     setViewingTradeRequest(null);
+                    loadPendingTrades(); // Reload trades
                     setCurrentView('friends');
                 } catch (error) {
                     console.error('❌ Error completing trade:', error);
-                    alert('Trade failed');
+                    alert('Trade failed: ' + error.message);
                 }
             };
 
@@ -3589,11 +3593,12 @@
                 if (!firebaseManager.user) return;
 
                 try {
-                    const myUid = firebaseManager.user.uid;
-                    await database.ref(`users/${myUid}/tradeRequests/${tradeRequest.from}`).remove();
+                    // Mark trade as rejected in global trades node
+                    await database.ref(`trades/${tradeRequest.id}`).update({ status: 'rejected' });
                     
                     console.log('✅ Trade denied');
                     setViewingTradeRequest(null);
+                    loadPendingTrades(); // Reload trades
                     setCurrentView('friends');
                 } catch (error) {
                     console.error('❌ Error denying trade:', error);
@@ -3606,10 +3611,24 @@
 
                 try {
                     const myUid = firebaseManager.user.uid;
-                    const snapshot = await database.ref(`users/${myUid}/tradeRequests`).once('value');
-                    const trades = snapshot.val() || {};
-                    setPendingTrades(trades);
-                    console.log('✅ Loaded pending trades:', Object.keys(trades).length);
+                    // Query all trades where I'm the recipient
+                    const snapshot = await database.ref('trades')
+                        .orderByChild('to')
+                        .equalTo(myUid)
+                        .once('value');
+                    
+                    const allTrades = snapshot.val() || {};
+                    
+                    // Filter only pending trades and organize by sender
+                    const pendingByFriend = {};
+                    Object.values(allTrades).forEach(trade => {
+                        if (trade.status === 'pending') {
+                            pendingByFriend[trade.from] = trade;
+                        }
+                    });
+                    
+                    setPendingTrades(pendingByFriend);
+                    console.log('✅ Loaded pending trades:', Object.keys(pendingByFriend).length);
                 } catch (error) {
                     console.error('❌ Error loading trades:', error);
                 }
@@ -3780,6 +3799,15 @@
 
             const addToStarters = async (slotIndex, pcEntry) => {
                 const updatedStarters = [...(Array.isArray(starterTeam) ? starterTeam : [null, null, null, null, null, null])];
+                
+                // Check if this Pokemon is already in another slot
+                const existingSlotIndex = updatedStarters.findIndex(starter => starter?.id === pcEntry.id);
+                if (existingSlotIndex !== -1 && existingSlotIndex !== slotIndex) {
+                    alert(`${pcEntry.pokemonName} is already in slot ${existingSlotIndex + 1}!`);
+                    setSelectingForSlot(null);
+                    return;
+                }
+                
                 updatedStarters[slotIndex] = pcEntry;
                 setStarterTeam(updatedStarters);
                 await window.storage.set('starter-team', JSON.stringify(updatedStarters));
