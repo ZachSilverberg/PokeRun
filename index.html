@@ -3553,8 +3553,7 @@
                     const myUid = firebaseManager.user.uid;
                     const theirUid = tradeRequest.from;
 
-                    // Swap Pokemon in both PCs
-                    // Remove from my PC, add to theirs
+                    // Update MY PC - remove what I'm giving, add what I'm receiving
                     const myPC = [...pokemonPC];
                     const pokemonToGive = tradeRequest.toPokemon;
                     const updatedMyPC = myPC.filter(p => !pokemonToGive.find(tp => tp.id === p.id));
@@ -3568,23 +3567,24 @@
                     await window.storage.set('pokemon-pc', JSON.stringify(updatedMyPC));
                     await database.ref(`users/${myUid}/pc`).set(updatedMyPC);
 
-                    // Update their PC (they'll have to reload to see changes)
-                    const theirPCSnapshot = await database.ref(`users/${theirUid}/pc`).once('value');
-                    const theirPC = theirPCSnapshot.val() || [];
-                    const updatedTheirPC = theirPC.filter(p => !pokemonToReceive.find(pr => pr.id === p.id));
-                    updatedTheirPC.unshift(...pokemonToGive);
-                    await database.ref(`users/${theirUid}/pc`).set(updatedTheirPC);
+                    // Mark trade as accepted (friend will process on their end when they reload)
+                    await database.ref(`trades/${tradeRequest.id}`).update({ 
+                        status: 'accepted',
+                        acceptedAt: Date.now(),
+                        // Store what needs to be done on friend's side
+                        friendUpdate: {
+                            pokemonToRemove: tradeRequest.fromPokemon.map(p => p.id),
+                            pokemonToAdd: tradeRequest.toPokemon
+                        }
+                    });
 
-                    // Mark trade as completed in global trades node
-                    await database.ref(`trades/${tradeRequest.id}`).update({ status: 'completed' });
-
-                    console.log('✅ Trade completed');
-                    alert('Trade completed!');
+                    console.log('✅ Trade accepted - friend will receive updates on next reload');
+                    alert('Trade accepted! Your friend will receive their Pokémon when they reload.');
                     setViewingTradeRequest(null);
                     loadPendingTrades(); // Reload trades
                     setCurrentView('friends');
                 } catch (error) {
-                    console.error('❌ Error completing trade:', error);
+                    console.error('❌ Error accepting trade:', error);
                     alert('Trade failed: ' + error.message);
                 }
             };
@@ -3611,17 +3611,18 @@
 
                 try {
                     const myUid = firebaseManager.user.uid;
-                    // Query all trades where I'm the recipient
-                    const snapshot = await database.ref('trades')
+                    
+                    // Load trades where I'm the recipient (pending)
+                    const receivedSnapshot = await database.ref('trades')
                         .orderByChild('to')
                         .equalTo(myUid)
                         .once('value');
                     
-                    const allTrades = snapshot.val() || {};
+                    const receivedTrades = receivedSnapshot.val() || {};
                     
                     // Filter only pending trades and organize by sender
                     const pendingByFriend = {};
-                    Object.values(allTrades).forEach(trade => {
+                    Object.values(receivedTrades).forEach(trade => {
                         if (trade.status === 'pending') {
                             pendingByFriend[trade.from] = trade;
                         }
@@ -3629,6 +3630,48 @@
                     
                     setPendingTrades(pendingByFriend);
                     console.log('✅ Loaded pending trades:', Object.keys(pendingByFriend).length);
+                    
+                    // Check for accepted trades where I'm the sender (need to process my side)
+                    const sentSnapshot = await database.ref('trades')
+                        .orderByChild('from')
+                        .equalTo(myUid)
+                        .once('value');
+                    
+                    const sentTrades = sentSnapshot.val() || {};
+                    
+                    // Process any accepted trades
+                    for (const tradeId in sentTrades) {
+                        const trade = sentTrades[tradeId];
+                        if (trade.status === 'accepted' && trade.friendUpdate) {
+                            console.log('🔄 Processing accepted trade:', tradeId);
+                            
+                            // Apply the friend's update to my PC
+                            const myPC = [...pokemonPC];
+                            const pokemonToRemove = trade.friendUpdate.pokemonToRemove || [];
+                            const pokemonToAdd = trade.friendUpdate.pokemonToAdd || [];
+                            
+                            // Remove Pokemon I sent
+                            const updatedMyPC = myPC.filter(p => !pokemonToRemove.includes(p.id));
+                            
+                            // Add Pokemon I received
+                            updatedMyPC.unshift(...pokemonToAdd);
+                            
+                            // Update my PC
+                            setPokemonPC(updatedMyPC);
+                            await window.storage.set('pokemon-pc', JSON.stringify(updatedMyPC));
+                            await database.ref(`users/${myUid}/pc`).set(updatedMyPC);
+                            
+                            // Mark trade as fully completed
+                            await database.ref(`trades/${tradeId}`).update({ 
+                                status: 'completed',
+                                completedAt: Date.now()
+                            });
+                            
+                            console.log('✅ Trade fully processed');
+                            alert('Trade completed! Check your PC for new Pokémon.');
+                        }
+                    }
+                    
                 } catch (error) {
                     console.error('❌ Error loading trades:', error);
                 }
@@ -5814,55 +5857,114 @@
                             </div>
                         )}
 
-                        {/* 🤝 Trade Review Window */}
+                        {/* 🤝 Trade Review Window - Fullscreen Card Trading View */}
                         {viewingTradeRequest && (
-                            <div className="fixed inset-0 bg-black bg-opacity-70 z-[80] flex items-center justify-center p-4">
-                                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl p-6">
-                                    <h3 className="text-2xl font-bold mb-6 text-center">Trade Request</h3>
+                            <div className="fixed inset-0 bg-gradient-to-br from-teal-300 via-green-300 to-emerald-300 z-[80] overflow-y-auto">
+                                <div className="min-h-screen p-8 flex flex-col">
+                                    {/* Header */}
+                                    <div className="text-center mb-12">
+                                        <h3 className="text-5xl font-bold text-white mb-3" style={{ textShadow: '0 2px 10px rgba(0,0,0,0.2)' }}>
+                                            Trade Request
+                                        </h3>
+                                        <p className="text-2xl text-white opacity-90">
+                                            {friendProfiles[viewingTradeRequest.from]?.displayName} wants to trade!
+                                        </p>
+                                    </div>
                                     
-                                    {/* Trade Diagram */}
-                                    <div className="flex items-center gap-4 mb-6">
-                                        {/* Their offer */}
-                                        <div className="flex-1">
-                                            <div className="text-center mb-2 font-bold text-gray-700">
-                                                {friendProfiles[viewingTradeRequest.from]?.displayName} offers:
-                                            </div>
-                                            <div className="grid grid-cols-3 gap-2">
-                                                {viewingTradeRequest.fromPokemon.map((pokemon, i) => (
-                                                    <div key={i} className="bg-gray-50 rounded-lg border-2 border-gray-200">
-                                                        <PokemonCard pokemon={pokemon} />
+                                    {/* Trade Cards Display */}
+                                    <div className="flex-1 flex items-center justify-center mb-12">
+                                        <div className="max-w-7xl w-full">
+                                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+                                                {/* Their Offer - Left Side */}
+                                                <div className="space-y-6">
+                                                    <div className="text-center">
+                                                        <div className="inline-block px-8 py-3 bg-white rounded-full shadow-xl">
+                                                            <span className="text-xl font-bold text-gray-800">
+                                                                {friendProfiles[viewingTradeRequest.from]?.displayName} offers
+                                                            </span>
+                                                        </div>
                                                     </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                        
-                                        {/* Arrow */}
-                                        <div className="text-4xl text-gray-400">⇄</div>
-                                        
-                                        {/* Your offer */}
-                                        <div className="flex-1">
-                                            <div className="text-center mb-2 font-bold text-gray-700">You give:</div>
-                                            <div className="grid grid-cols-3 gap-2">
-                                                {viewingTradeRequest.toPokemon.map((pokemon, i) => (
-                                                    <div key={i} className="bg-gray-50 rounded-lg border-2 border-gray-200">
-                                                        <PokemonCard pokemon={pokemon} />
+                                                    <div className={`grid gap-6 ${
+                                                        viewingTradeRequest.fromPokemon.length === 1 ? 'grid-cols-1 max-w-sm mx-auto' :
+                                                        viewingTradeRequest.fromPokemon.length === 2 ? 'grid-cols-2' :
+                                                        'grid-cols-2 md:grid-cols-3'
+                                                    }`}>
+                                                        {viewingTradeRequest.fromPokemon.map((pokemon, i) => (
+                                                            <div 
+                                                                key={i} 
+                                                                className="bg-white rounded-2xl p-6 shadow-2xl transform hover:scale-105 transition-all duration-200"
+                                                                style={{ 
+                                                                    boxShadow: '0 10px 30px rgba(0,0,0,0.3), 0 1px 8px rgba(0,0,0,0.2)'
+                                                                }}
+                                                            >
+                                                                <PokemonCard pokemon={pokemon} />
+                                                            </div>
+                                                        ))}
                                                     </div>
-                                                ))}
+                                                </div>
+                                                
+                                                {/* Exchange Arrows - Center */}
+                                                <div className="hidden lg:flex absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-4 z-10">
+                                                    {/* Right Arrow */}
+                                                    <svg width="80" height="80" viewBox="0 0 100 100" className="drop-shadow-xl">
+                                                        <path 
+                                                            d="M 20 30 L 60 30 L 60 20 L 80 40 L 60 60 L 60 50 L 20 50 Z" 
+                                                            fill="white" 
+                                                            stroke="#10b981" 
+                                                            strokeWidth="3"
+                                                        />
+                                                    </svg>
+                                                    {/* Left Arrow */}
+                                                    <svg width="80" height="80" viewBox="0 0 100 100" className="drop-shadow-xl">
+                                                        <path 
+                                                            d="M 80 50 L 40 50 L 40 60 L 20 40 L 40 20 L 40 30 L 80 30 Z" 
+                                                            fill="white" 
+                                                            stroke="#10b981" 
+                                                            strokeWidth="3"
+                                                        />
+                                                    </svg>
+                                                </div>
+                                                
+                                                {/* Your Offer - Right Side */}
+                                                <div className="space-y-6">
+                                                    <div className="text-center">
+                                                        <div className="inline-block px-8 py-3 bg-white rounded-full shadow-xl">
+                                                            <span className="text-xl font-bold text-gray-800">You give</span>
+                                                        </div>
+                                                    </div>
+                                                    <div className={`grid gap-6 ${
+                                                        viewingTradeRequest.toPokemon.length === 1 ? 'grid-cols-1 max-w-sm mx-auto' :
+                                                        viewingTradeRequest.toPokemon.length === 2 ? 'grid-cols-2' :
+                                                        'grid-cols-2 md:grid-cols-3'
+                                                    }`}>
+                                                        {viewingTradeRequest.toPokemon.map((pokemon, i) => (
+                                                            <div 
+                                                                key={i} 
+                                                                className="bg-white rounded-2xl p-6 shadow-2xl transform hover:scale-105 transition-all duration-200"
+                                                                style={{ 
+                                                                    boxShadow: '0 10px 30px rgba(0,0,0,0.3), 0 1px 8px rgba(0,0,0,0.2)'
+                                                                }}
+                                                            >
+                                                                <PokemonCard pokemon={pokemon} />
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
                                     
-                                    {/* Actions */}
-                                    <div className="flex gap-3">
+                                    {/* Action Buttons */}
+                                    <div className="flex gap-6 max-w-2xl mx-auto w-full">
                                         <button
                                             onClick={() => denyTrade(viewingTradeRequest)}
-                                            className="flex-1 py-3 bg-gray-500 hover:bg-gray-600 text-white rounded-lg font-bold transition"
+                                            className="flex-1 py-5 px-8 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white rounded-2xl font-bold text-xl shadow-2xl transition-all transform hover:scale-105"
                                         >
-                                            ✕ Deny
+                                            ✕ Decline Trade
                                         </button>
                                         <button
                                             onClick={() => acceptTrade(viewingTradeRequest)}
-                                            className="flex-1 py-3 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white rounded-lg font-bold transition"
+                                            className="flex-1 py-5 px-8 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white rounded-2xl font-bold text-xl shadow-2xl transition-all transform hover:scale-105"
                                         >
                                             ✓ Accept Trade
                                         </button>
