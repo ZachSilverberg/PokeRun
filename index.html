@@ -3619,8 +3619,35 @@
             useEffect(() => {
                 if (firebaseProfile) {
                     loadPendingTrades();
+                    
+                    // Sync PC to Firebase if user has local data
+                    const syncPCToFirebase = async () => {
+                        if (pokemonPC.length > 0 && firebaseManager.user) {
+                            try {
+                                await database.ref(`users/${firebaseManager.user.uid}/pc`).set(pokemonPC);
+                                console.log(`✅ Synced ${pokemonPC.length} Pokémon to Firebase PC`);
+                            } catch (error) {
+                                console.error('❌ Error syncing PC to Firebase:', error);
+                            }
+                        }
+                    };
+                    
+                    // Sync Starters to Firebase
+                    const syncStartersToFirebase = async () => {
+                        if (starterTeam.some(s => s !== null) && firebaseManager.user) {
+                            try {
+                                await database.ref(`users/${firebaseManager.user.uid}/starters`).set(starterTeam);
+                                console.log('✅ Synced starters to Firebase');
+                            } catch (error) {
+                                console.error('❌ Error syncing starters to Firebase:', error);
+                            }
+                        }
+                    };
+                    
+                    syncPCToFirebase();
+                    syncStartersToFirebase();
                 }
-            }, [firebaseProfile]);
+            }, [firebaseProfile, pokemonPC, starterTeam]);
 
             const loadRunHistory = async () => {
                 try {
@@ -3711,13 +3738,35 @@
                 
                 const updatedPC = [pcEntry, ...pokemonPC]; // Add to beginning (newest first)
                 setPokemonPC(updatedPC);
+                
+                // Save to local storage
                 await window.storage.set('pokemon-pc', JSON.stringify(updatedPC));
+                
+                // Sync to Firebase if user is authenticated
+                if (firebaseManager.user) {
+                    try {
+                        await database.ref(`users/${firebaseManager.user.uid}/pc`).set(updatedPC);
+                        console.log('✅ PC synced to Firebase');
+                    } catch (error) {
+                        console.error('❌ Error syncing PC to Firebase:', error);
+                    }
+                }
             };
 
             const deletePokemonFromPC = async (entryId) => {
                 const updatedPC = (Array.isArray(pokemonPC) ? pokemonPC : []).filter(p => p.id !== entryId);
                 setPokemonPC(updatedPC);
                 await window.storage.set('pokemon-pc', JSON.stringify(updatedPC));
+                
+                // Sync to Firebase
+                if (firebaseManager.user) {
+                    try {
+                        await database.ref(`users/${firebaseManager.user.uid}/pc`).set(updatedPC);
+                        console.log('✅ PC deletion synced to Firebase');
+                    } catch (error) {
+                        console.error('❌ Error syncing PC deletion to Firebase:', error);
+                    }
+                }
                 
                 // Also remove from starters if it's there
                 const updatedStarters = (Array.isArray(starterTeam) ? starterTeam : [null, null, null, null, null, null]).map(starter => 
@@ -3734,6 +3783,17 @@
                 updatedStarters[slotIndex] = pcEntry;
                 setStarterTeam(updatedStarters);
                 await window.storage.set('starter-team', JSON.stringify(updatedStarters));
+                
+                // Sync to Firebase
+                if (firebaseManager.user) {
+                    try {
+                        await database.ref(`users/${firebaseManager.user.uid}/starters`).set(updatedStarters);
+                        console.log('✅ Starters synced to Firebase');
+                    } catch (error) {
+                        console.error('❌ Error syncing starters to Firebase:', error);
+                    }
+                }
+                
                 setSelectingForSlot(null);
                 setCurrentView('starters');
             };
@@ -3743,6 +3803,16 @@
                 updatedStarters[slotIndex] = null;
                 setStarterTeam(updatedStarters);
                 await window.storage.set('starter-team', JSON.stringify(updatedStarters));
+                
+                // Sync to Firebase
+                if (firebaseManager.user) {
+                    try {
+                        await database.ref(`users/${firebaseManager.user.uid}/starters`).set(updatedStarters);
+                        console.log('✅ Starter removal synced to Firebase');
+                    } catch (error) {
+                        console.error('❌ Error syncing starter removal to Firebase:', error);
+                    }
+                }
             };
 
             const saveRunHistory = async (newRun) => {
@@ -5978,7 +6048,10 @@
                                                     viewingFriendPC.length === 0 ? (
                                                         <div className="col-span-2 text-center py-8 text-gray-500">
                                                             <div className="text-4xl mb-2">📭</div>
-                                                            <div>Friend's PC is empty</div>
+                                                            <div className="font-bold mb-2">Friend's PC is empty</div>
+                                                            <div className="text-sm text-gray-400">
+                                                                {friendProfiles[viewingFriendId]?.displayName} needs to reload their app to sync their Pokémon to the cloud
+                                                            </div>
                                                         </div>
                                                     ) : (
                                                         viewingFriendPC.map((pokemon) => {
