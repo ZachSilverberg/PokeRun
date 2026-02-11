@@ -2021,6 +2021,21 @@
                                     </div>
                                 </button>
                             )}
+
+                            {/* 🔄 Trade Badge (top-right) */}
+                            {activity.isTrade && (
+                                <div className="absolute top-4 right-4 flex flex-col items-center">
+                                    <div className="bg-black bg-opacity-70 rounded-lg px-2 py-1 flex items-center gap-1">
+                                        <span className="text-lg">🔄</span>
+                                        <span className="text-white text-xs font-bold">TRADE</span>
+                                    </div>
+                                    <div className="bg-black bg-opacity-60 rounded-lg px-2 py-1 mt-1 text-center">
+                                        <span className="text-gray-300 text-xs">
+                                            {activity.tradedTo ? `→ ${activity.tradePartnerName}` : `← ${activity.tradePartnerName}`}
+                                        </span>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>
@@ -2217,6 +2232,13 @@
                     )}
                     {cardImage && (
                         <img src={cardImage} alt={pokemon.pokemonName} className="w-full h-auto rounded-lg" />
+                    )}
+                    {/* 🔄 Trade Badge */}
+                    {pokemon.isTrade && (
+                        <div className="absolute top-2 right-2 bg-black bg-opacity-70 rounded-md px-1.5 py-0.5 flex items-center gap-0.5 z-10">
+                            <span className="text-sm">🔄</span>
+                            <span className="text-white text-xs font-bold">TRADE</span>
+                        </div>
                     )}
                 </div>
             );
@@ -2866,6 +2888,15 @@
             const isCardioOnCooldown = () => getCooldownRemaining(cardioCooldown, MAX_RUNS) > 0;
             const isLiftOnCooldown = () => getCooldownRemaining(liftCooldown, MAX_LIFTS) > 0;
 
+            // Auto-switch tab when current tab just hit cooldown
+            useEffect(() => {
+                if (workoutTab === 'cardio' && isCardioOnCooldown() && !isLiftOnCooldown()) {
+                    setWorkoutTab('lift');
+                } else if (workoutTab === 'lift' && isLiftOnCooldown() && !isCardioOnCooldown()) {
+                    setWorkoutTab('cardio');
+                }
+            }, [cardioCooldown, liftCooldown]);
+
             // 🔍 Live search with debouncing
             useEffect(() => {
                 if (friendSearchQuery.length >= 3 && firebaseProfile) {
@@ -3426,19 +3457,19 @@
                 }
             };
 
-            // Load activity feed (self + friends, last 7 days)
+            // Load activity feed (self + friends, last 48 hours)
             const loadActivityFeed = async () => {
                 if (!firebaseManager.user) return [];
 
                 try {
                     const myUid = firebaseManager.user.uid;
-                    const sevenDaysAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
+                    const fortyEightHoursAgo = Date.now() - (48 * 60 * 60 * 1000);
                     const allActivities = [];
 
                     // Load my activity
                     const myActivitySnapshot = await database.ref(`users/${myUid}/activity`)
                         .orderByChild('timestamp')
-                        .startAt(sevenDaysAgo)
+                        .startAt(fortyEightHoursAgo)
                         .once('value');
                     
                     myActivitySnapshot.forEach(child => {
@@ -3453,7 +3484,7 @@
                     for (const friendId of friends) {
                         const friendActivitySnapshot = await database.ref(`users/${friendId}/activity`)
                             .orderByChild('timestamp')
-                            .startAt(sevenDaysAgo)
+                            .startAt(fortyEightHoursAgo)
                             .once('value');
                         
                         friendActivitySnapshot.forEach(child => {
@@ -3468,7 +3499,93 @@
                     // Sort by timestamp (newest first)
                     allActivities.sort((a, b) => b.timestamp - a.timestamp);
 
-                    console.log(`📸 Loaded ${allActivities.length} activity entries (last 7 days)`);
+                    // Load completed trades (within 48hrs) involving me or friends
+                    const tradesSnapshot = await database.ref('trades').once('value');
+                    const allTrades = tradesSnapshot.val() || {};
+                    const friendSet = new Set(friends);
+
+                    Object.values(allTrades).forEach(trade => {
+                        if (!trade || trade.status !== 'completed') return;
+                        if (!trade.completedAt || trade.completedAt < fortyEightHoursAgo) return;
+
+                        const iAmSender = trade.from === myUid;
+                        const iAmRecipient = trade.to === myUid;
+                        const senderIsFriend = friendSet.has(trade.from);
+                        const recipientIsFriend = friendSet.has(trade.to);
+
+                        // Show if I'm involved, or if both parties are friends
+                        const isVisible = iAmSender || iAmRecipient || (senderIsFriend && recipientIsFriend);
+                        if (!isVisible) return;
+
+                        // Only show one side if only one party is a friend (and I'm not involved)
+                        const showSenderSide = iAmSender || iAmRecipient || senderIsFriend;
+                        const showRecipientSide = iAmSender || iAmRecipient || recipientIsFriend;
+
+                        // Build cards: requester's pokemon first, then recipient's pokemon
+                        const senderPokemon = trade.fromPokemon || [];
+                        const recipientPokemon = trade.toPokemon || [];
+
+                        if (showSenderSide) {
+                            senderPokemon.forEach((poke, i) => {
+                                allActivities.push({
+                                    id: `trade_${trade.id || trade.completedAt}_from_${i}`,
+                                    type: 'trade',
+                                    trainerId: trade.from,
+                                    trainerName: trade.fromName || 'Trainer',
+                                    trainerBadgeColor: trade.fromBadgeColor || '#8B5CF6',
+                                    pokemonName: poke.pokemonName || poke.name,
+                                    spriteUrl: poke.spriteUrl,
+                                    isShiny: poke.isShiny,
+                                    rarity: poke.rarity,
+                                    pace: poke.pace,
+                                    distance: poke.distance,
+                                    duration: poke.duration,
+                                    caloriesBurned: poke.caloriesBurned,
+                                    avgHR: poke.avgHR,
+                                    timestamp: trade.completedAt - (senderPokemon.length - i), // slight offset for ordering
+                                    candyCount: 0,
+                                    candyGivers: {},
+                                    isOwnCard: trade.from === myUid,
+                                    isTrade: true,
+                                    tradePartnerName: trade.toName || 'Trainer',
+                                    tradedTo: true // this pokemon was sent by sender
+                                });
+                            });
+                        }
+
+                        if (showRecipientSide) {
+                            recipientPokemon.forEach((poke, i) => {
+                                allActivities.push({
+                                    id: `trade_${trade.id || trade.completedAt}_to_${i}`,
+                                    type: 'trade',
+                                    trainerId: trade.to,
+                                    trainerName: trade.toName || 'Trainer',
+                                    trainerBadgeColor: trade.toBadgeColor || '#8B5CF6',
+                                    pokemonName: poke.pokemonName || poke.name,
+                                    spriteUrl: poke.spriteUrl,
+                                    isShiny: poke.isShiny,
+                                    rarity: poke.rarity,
+                                    pace: poke.pace,
+                                    distance: poke.distance,
+                                    duration: poke.duration,
+                                    caloriesBurned: poke.caloriesBurned,
+                                    avgHR: poke.avgHR,
+                                    timestamp: trade.completedAt - (recipientPokemon.length - i) + 0.5,
+                                    candyCount: 0,
+                                    candyGivers: {},
+                                    isOwnCard: trade.to === myUid,
+                                    isTrade: true,
+                                    tradePartnerName: trade.fromName || 'Trainer',
+                                    tradedTo: false // this pokemon was sent by recipient
+                                });
+                            });
+                        }
+                    });
+
+                    // Re-sort after adding trades
+                    allActivities.sort((a, b) => b.timestamp - a.timestamp);
+
+                    console.log(`📸 Loaded ${allActivities.length} activity entries (last 48hrs)`);
                     return allActivities;
                 } catch (error) {
                     console.error('❌ Error loading activity feed:', error);
@@ -3587,6 +3704,10 @@
                         to: tradingWithFriend,
                         fromPokemon: selectedMyPokemon,
                         toPokemon: selectedTheirPokemon,
+                        fromName: firebaseProfile?.displayName || 'Trainer',
+                        fromBadgeColor: firebaseProfile?.badgeColor || '#8B5CF6',
+                        toName: friendProfiles[tradingWithFriend]?.displayName || 'Trainer',
+                        toBadgeColor: friendProfiles[tradingWithFriend]?.badgeColor || '#8B5CF6',
                         timestamp: Date.now(),
                         status: 'pending'
                     };
@@ -3620,8 +3741,8 @@
                     const pokemonToGive = tradeRequest.toPokemon;
                     const updatedMyPC = myPC.filter(p => !pokemonToGive.find(tp => tp.id === p.id));
                     
-                    // Add their Pokemon to my PC
-                    const pokemonToReceive = tradeRequest.fromPokemon;
+                    // Add their Pokemon to my PC — mark as traded
+                    const pokemonToReceive = tradeRequest.fromPokemon.map(p => ({ ...p, isTrade: true }));
                     updatedMyPC.unshift(...pokemonToReceive);
                     
                     // Update my PC locally and in Firebase
@@ -3715,8 +3836,9 @@
                             // Remove Pokemon I sent
                             const updatedMyPC = myPC.filter(p => !pokemonToRemove.includes(p.id));
                             
-                            // Add Pokemon I received
-                            updatedMyPC.unshift(...pokemonToAdd);
+                            // Add Pokemon I received — mark as traded
+                            const tradedPokemon = pokemonToAdd.map(p => ({ ...p, isTrade: true }));
+                            updatedMyPC.unshift(...tradedPokemon);
                             
                             // Update my PC
                             setPokemonPC(updatedMyPC);
@@ -4179,11 +4301,13 @@
                 let earned = 0;
                 
                 if (workoutTab === 'cardio') {
-                    // Parse cardio inputs
-                    const [paceMin, paceSec] = pace.split(':').map(Number);
+                    // Parse cardio inputs — safe defaults if empty
+                    const rawPace = pace && pace.includes(':') ? pace : '0:00';
+                    const rawDuration = duration && duration.includes(':') ? duration : '0:00';
+                    const [paceMin, paceSec] = rawPace.split(':').map(Number);
                     const paceSeconds = (paceMin * 60) + (paceSec || 0);
-                    const distanceNum = parseFloat(distance);
-                    const [durMin, durSec] = duration.split(':').map(Number);
+                    const distanceNum = parseFloat(distance) || 0;
+                    const [durMin, durSec] = rawDuration.split(':').map(Number);
                     const durationSeconds = (durMin * 60) + (durSec || 0);
                     const durationMinutes = durationSeconds / 60;
                     
@@ -4231,10 +4355,11 @@
                     window.storage.set('cardio-cooldown', JSON.stringify(newCooldown));
                     
                 } else if (workoutTab === 'lift') {
-                    // Parse lift inputs
-                    const calories = parseFloat(caloriesBurned);
-                    const [durMin, durSec] = liftDuration.split(':').map(Number);
-                    const durationMinutes = (durMin * 60 + (durSec || 0)) / 60;
+                    // Parse lift inputs — safe defaults if empty
+                    const calories = parseFloat(caloriesBurned) || 0;
+                    const rawLiftDuration = liftDuration && liftDuration.includes(':') ? liftDuration : '0:00';
+                    const [durMin, durSec] = rawLiftDuration.split(':').map(Number);
+                    const durationMinutes = ((durMin || 0) * 60 + (durSec || 0)) / 60;
                     
                     // Base balls from calories
                     const baseBalls = Math.max(
@@ -4284,10 +4409,12 @@
                 
                 // Store workout intensity AND workout data for capture session
                 if (workoutTab === 'cardio') {
-                    const [paceMin, paceSec] = pace.split(':').map(Number);
+                    const rawPace2 = pace && pace.includes(':') ? pace : '0:00';
+                    const rawDuration2 = duration && duration.includes(':') ? duration : '0:00';
+                    const [paceMin, paceSec] = rawPace2.split(':').map(Number);
                     const paceSeconds = (paceMin * 60) + (paceSec || 0);
-                    const distanceNum = parseFloat(distance);
-                    const [durMin, durSec] = duration.split(':').map(Number);
+                    const distanceNum = parseFloat(distance) || 0;
+                    const [durMin, durSec] = rawDuration2.split(':').map(Number);
                     const durationSeconds = (durMin * 60) + (durSec || 0);
                     
                     const newPRs = checkForPRs(paceSeconds, distanceNum, durationSeconds);
