@@ -297,6 +297,11 @@
                 this.migrationInProgress = false;
                 this.pendingWrites = [];
 
+                // 🔒 Set auth persistence to LOCAL (survives page reloads)
+                auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL)
+                    .then(() => console.log('✅ Auth persistence set to LOCAL'))
+                    .catch(err => console.error('❌ Failed to set persistence:', err));
+
                 // Listen for online/offline
                 window.addEventListener('online', () => {
                     this.isOnline = true;
@@ -313,6 +318,8 @@
                     if (user) {
                         this.user = user;
                         console.log('✅ Auth state restored:', user.uid);
+                    } else {
+                        console.warn('⚠️ No auth state found');
                     }
                 });
             }
@@ -2633,6 +2640,7 @@
             const [showWipeConfirmation, setShowWipeConfirmation] = useState(false);
             const [isWiping, setIsWiping] = useState(false);
             const [isLoadingProfile, setIsLoadingProfile] = useState(true); // Loading state for badge
+            const [showRecoveryBanner, setShowRecoveryBanner] = useState(false);
             
             // 👥 Friend System State
             const [showFriendSearch, setShowFriendSearch] = useState(false);
@@ -3062,7 +3070,8 @@
             const handleTrainerBadgeClick = async () => {
                 console.log('👆 Trainer badge clicked', { 
                     hasProfile: !!firebaseProfile, 
-                    currentMenuState: showProfileMenu 
+                    currentMenuState: showProfileMenu,
+                    hasUser: !!firebaseManager.user
                 });
                 
                 // If already has Firebase profile, just toggle menu
@@ -3072,10 +3081,48 @@
                     return;
                 }
 
+                // 🆘 PROFILE RECOVERY: Check if there's a profile backup in localStorage
+                const profileBackup = localStorage.getItem('profileBackup');
+                if (profileBackup && !firebaseManager.user) {
+                    try {
+                        const backup = JSON.parse(profileBackup);
+                        const backupAge = Date.now() - backup.timestamp;
+                        const sevenDays = 7 * 24 * 60 * 60 * 1000;
+                        
+                        if (backupAge < sevenDays) {
+                            console.log('🆘 Found profile backup:', backup.displayName);
+                            setShowRecoveryBanner(true);
+                            return;
+                        } else {
+                            console.warn('⚠️ Profile backup expired (>7 days old)');
+                        }
+                    } catch (e) {
+                        console.error('❌ Failed to parse profile backup:', e);
+                    }
+                }
+
+                // If user is authenticated but no profile loaded, try loading it
+                if (firebaseManager.user && !firebaseProfile) {
+                    console.log('🔄 User authenticated but no profile - attempting to load...');
+                    try {
+                        const profile = await firebaseManager.getProfile();
+                        if (profile) {
+                            setFirebaseProfile(profile);
+                            setTrainerName(profile.displayName);
+                            setProfileColor(profile.badgeColor);
+                            setShowProfileMenu(true);
+                            console.log('✅ Profile recovered:', profile.displayName);
+                            return;
+                        }
+                    } catch (e) {
+                        console.error('❌ Failed to recover profile:', e);
+                    }
+                }
+
                 // First time clicking - create Firebase profile
                 setIsCreatingProfile(true);
                 try {
-                    console.log('🎯 First badge click - creating Firebase profile...');
+                    console.log('🎯 First badge click - creating NEW Firebase profile...');
                     
                     // Sign in anonymously
                     await firebaseManager.signInAnonymously();
@@ -5274,6 +5321,46 @@
             return (
                 <div className="min-h-screen p-4 pb-20">
                     <div className="max-w-2xl mx-auto">
+                        {/* 🆘 Recovery Banner */}
+                        {showRecoveryBanner && (
+                            <div className="mb-4 bg-yellow-50 border-2 border-yellow-400 rounded-xl p-4">
+                                <div className="flex items-start gap-3">
+                                    <div className="text-3xl">🆘</div>
+                                    <div className="flex-1">
+                                        <h3 className="font-bold text-yellow-900 mb-1">Profile Recovery Needed</h3>
+                                        <p className="text-sm text-yellow-800 mb-3">
+                                            We found a backup of your profile. Your authentication session expired.
+                                        </p>
+                                        <div className="flex gap-2">
+                                            <button
+                                                onClick={() => window.location.reload()}
+                                                className="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg text-sm font-bold transition"
+                                            >
+                                                🔄 Reload & Recover
+                                            </button>
+                                            <button
+                                                onClick={() => {
+                                                    if (confirm('This will create a NEW profile. Your old data will be lost. Continue?')) {
+                                                        localStorage.removeItem('profileBackup');
+                                                        setShowRecoveryBanner(false);
+                                                    }
+                                                }}
+                                                className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-lg text-sm font-medium transition"
+                                            >
+                                                Start Fresh
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <button
+                                        onClick={() => setShowRecoveryBanner(false)}
+                                        className="text-yellow-700 hover:text-yellow-900 font-bold"
+                                    >
+                                        ✕
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
                         <div className="text-center mb-6">
                             <h1 className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-transparent mb-2">
                                 PokéRun Journey
