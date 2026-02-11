@@ -3782,24 +3782,34 @@
 
             // 👤 View friend's starters
             const viewFriendStarters = async (friendId) => {
-                console.log('🔍 Clicking friend:', friendId);
+                console.log('🔍 Loading friend profile:', friendId);
                 try {
                     // Load friend's starters
                     const startersSnapshot = await database.ref(`users/${friendId}/starters`).once('value');
                     const starters = startersSnapshot.val() || [null, null, null, null, null, null];
                     setViewingFriendStarters(Array.isArray(starters) ? starters : [null, null, null, null, null, null]);
-                    console.log('✅ Loaded starters:', starters);
+                    console.log('✅ Friend starters loaded:', starters.filter(s => s).length, 'filled');
                     
                     // Load friend's PC
                     const pcSnapshot = await database.ref(`users/${friendId}/pc`).once('value');
-                    const pc = pcSnapshot.val() || [];
-                    setViewingFriendPC(Array.isArray(pc) ? pc : []);
-                    console.log('✅ Loaded PC:', pc.length, 'pokemon');
+                    const pc = pcSnapshot.val();
+                    console.log('📦 Raw PC data from Firebase:', pc);
+                    
+                    if (!pc) {
+                        console.warn('⚠️ Friend PC is null/undefined in Firebase');
+                        setViewingFriendPC([]);
+                    } else if (!Array.isArray(pc)) {
+                        console.error('❌ Friend PC is not an array:', typeof pc, pc);
+                        setViewingFriendPC([]);
+                    } else {
+                        setViewingFriendPC(pc);
+                        console.log('✅ Friend PC loaded:', pc.length, 'Pokémon');
+                    }
                     
                     setViewingFriendId(friendId);
                     setFriendProfileTab('starters'); // Default to starters tab
                     setCurrentView('friendProfile');
-                    console.log('✅ Set view to friendProfile');
+                    console.log('✅ Switched to friendProfile view');
                     
                 } catch (error) {
                     console.error('❌ Error loading friend data:', error);
@@ -4144,11 +4154,16 @@
                 // Sync to Firebase if user is authenticated
                 if (firebaseManager.user) {
                     try {
+                        console.log('🔄 Syncing PC to Firebase for user:', firebaseManager.user.uid);
                         await database.ref(`users/${firebaseManager.user.uid}/pc`).set(updatedPC);
-                        console.log('✅ PC synced to Firebase');
+                        console.log('✅ PC synced to Firebase - total Pokemon:', updatedPC.length);
                     } catch (error) {
                         console.error('❌ Error syncing PC to Firebase:', error);
+                        alert('Warning: Failed to sync to cloud. Your Pokémon is saved locally but may not appear on other devices.');
                     }
+                } else {
+                    console.warn('⚠️ No authenticated user - PC not synced to Firebase!');
+                    alert('Warning: Not signed in! Your Pokémon is saved locally but won\'t sync to cloud.');
                 }
             };
 
