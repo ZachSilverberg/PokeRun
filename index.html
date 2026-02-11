@@ -2668,6 +2668,17 @@
             // Profile customization
             const [trainerName, setTrainerName] = useState('Trainer');
             const [profileColor, setProfileColor] = useState('#FF6B6B');
+
+            // 🐛 DEBUG: Log friends state changes
+            useEffect(() => {
+                console.log('🐛 FRIENDS STATE CHANGED:', {
+                    friendCount: friends.length,
+                    friendIds: friends,
+                    profileCount: Object.keys(friendProfiles).length,
+                    profileIds: Object.keys(friendProfiles),
+                    missingProfiles: friends.filter(id => !friendProfiles[id])
+                });
+            }, [friends, friendProfiles]);
             const [showProfileMenu, setShowProfileMenu] = useState(false);
             const [isEditingName, setIsEditingName] = useState(false);
             
@@ -3009,6 +3020,32 @@
                             setProfileColor(profile.badgeColor);
                             console.log('✅ Firebase profile loaded:', profile.displayName);
                             
+                            // 🔥 Load PC and Starters from Firebase
+                            try {
+                                const pcSnap = await database.ref(`users/${user.uid}/pc`).once('value');
+                                const startersSnap = await database.ref(`users/${user.uid}/starters`).once('value');
+
+                                if (pcSnap.exists()) {
+                                    const pc = pcSnap.val();
+                                    if (Array.isArray(pc)) {
+                                        setPokemonPC(pc);
+                                        await window.storage.set('pokemon-pc', JSON.stringify(pc));
+                                        console.log(`✅ Loaded ${pc.length} Pokémon from Firebase PC`);
+                                    }
+                                }
+
+                                if (startersSnap.exists()) {
+                                    const starters = startersSnap.val();
+                                    if (Array.isArray(starters) && starters.length === 6) {
+                                        setStarterTeam(starters);
+                                        await window.storage.set('starter-team', JSON.stringify(starters));
+                                        console.log(`✅ Loaded starters from Firebase`);
+                                    }
+                                }
+                            } catch (error) {
+                                console.error('❌ Error loading PC/Starters from Firebase:', error);
+                            }
+                            
                             // Load friends data
                             await loadFriendsData();
                         }
@@ -3116,10 +3153,28 @@
                 try {
                     console.log('🗑️ Wiping profile data...');
                     
-                    // Delete Firebase data
                     if (firebaseManager.user) {
-                        await database.ref(`users/${firebaseManager.user.uid}`).remove();
-                        console.log('✅ Firebase data deleted');
+                        const uid = firebaseManager.user.uid;
+
+                        // 🧹 Clean up references to this user in other users' friend lists
+                        const myFriendsSnap = await database.ref(`users/${uid}/friends`).once('value');
+                        const myFriends = Object.keys(myFriendsSnap.val() || {});
+                        for (const friendId of myFriends) {
+                            await database.ref(`users/${friendId}/friends/${uid}`).remove();
+                        }
+
+                        // 🧹 Clean up all friendRequests involving this user
+                        const allReqSnap = await database.ref('friendRequests').once('value');
+                        const allReqs = allReqSnap.val() || {};
+                        for (const [key, req] of Object.entries(allReqs)) {
+                            if (req && (req.from === uid || req.to === uid)) {
+                                await database.ref(`friendRequests/${key}`).remove();
+                            }
+                        }
+
+                        // Delete own Firebase data
+                        await database.ref(`users/${uid}`).remove();
+                        console.log('✅ Firebase data deleted + ghost references cleaned up');
                     }
                     
                     // Sign out
@@ -3175,16 +3230,27 @@
                     const friendsData = friendsSnapshot.val() || {};
                     let friendIds = Object.keys(friendsData);
 
-                    // Load friend profiles
+                    // Load friend profiles — skip and clean up ghosts (deleted profiles)
                     const profiles = {};
+                    const ghostFriendIds = [];
                     for (const friendId of friendIds) {
                         try {
                             const profileSnapshot = await database.ref(`users/${friendId}/profile`).once('value');
                             if (profileSnapshot.exists()) {
                                 profiles[friendId] = profileSnapshot.val();
+                            } else {
+                                // Profile gone — mark as ghost
+                                ghostFriendIds.push(friendId);
+                                console.warn(`👻 Ghost friend detected: ${friendId} — removing`);
                             }
                         } catch (e) { console.warn('Could not load profile for', friendId); }
                     }
+
+                    // Remove ghost friends from own node
+                    for (const ghostId of ghostFriendIds) {
+                        await database.ref(`users/${uid}/friends/${ghostId}`).remove();
+                    }
+                    friendIds = friendIds.filter(id => !ghostFriendIds.includes(id));
 
                     // Load incoming requests from shared /friendRequests node
                     const allRequestsSnapshot = await database.ref('friendRequests').once('value');
@@ -3192,19 +3258,46 @@
 
                     const incoming = [];
                     const outgoing = [];
+                    const ghostRequests = []; // Track requests to delete
 
-                    Object.values(allRequests).forEach(req => {
-                        if (!req || !req.status) return;
+                    for (const [reqKey, req] of Object.entries(allRequests)) {
+                        if (!req || !req.status) continue;
+
+                        // Only process requests involving me
+                        const involvesMe = req.to === uid || req.from === uid;
+                        if (!involvesMe) continue;
+
+                        // Verify the OTHER party still has a profile
+                        const otherUid = req.to === uid ? req.from : req.to;
+                        try {
+                            const otherProfileSnap = await database.ref(`users/${otherUid}/profile`).once('value');
+                            if (!otherProfileSnap.exists()) {
+                                // Ghost — mark for cleanup
+                                console.warn(`👻 Ghost request detected: ${reqKey} (${otherUid} deleted) — removing`);
+                                ghostRequests.push(reqKey);
+                                continue;
+                            }
+                        } catch (e) {
+                            console.warn('Could not verify profile for', otherUid);
+                            continue;
+                        }
+
+                        // Request is valid — process normally
                         if (req.to === uid && req.status === 'pending') incoming.push(req.from);
                         if (req.from === uid && req.status === 'pending') outgoing.push(req.to);
                         if (req.from === uid && req.status === 'accepted' && !friendIds.includes(req.to)) {
                             database.ref(`users/${uid}/friends/${req.to}`).set(true);
-                            database.ref(`friendRequests/${uid}_${req.to}`).remove();
+                            database.ref(`friendRequests/${reqKey}`).remove();
                             friendIds = [...friendIds, req.to];
                         }
-                    });
+                    }
 
-                    // Also load profiles for incoming request senders (not yet friends)
+                    // Clean up ghost requests
+                    for (const ghostKey of ghostRequests) {
+                        await database.ref(`friendRequests/${ghostKey}`).remove();
+                    }
+
+                    // Load profiles for incoming request senders
                     for (const senderId of incoming) {
                         if (!profiles[senderId]) {
                             try {
@@ -3217,13 +3310,20 @@
                     }
 
                     setFriendProfiles(profiles);
-
                     setFriends(friendIds);
                     setIncomingRequests(incoming);
                     setOutgoingRequests(outgoing);
                     setHasNotifications(incoming.length > 0);
 
-                    console.log(`✅ Loaded ${friendIds.length} friends, ${incoming.length} incoming requests`);
+                    console.log(`✅ Loaded friends:`, {
+                        totalFriends: friendIds.length,
+                        friendIds: friendIds,
+                        profilesLoaded: Object.keys(profiles).length,
+                        incomingRequests: incoming.length,
+                        outgoingRequests: outgoing.length,
+                        ghostsRemoved: ghostFriendIds.length,
+                        ghostRequestsRemoved: ghostRequests.length
+                    });
                 } catch (error) {
                     console.error('❌ Error loading friends:', error);
                 }
