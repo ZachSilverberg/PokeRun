@@ -1617,9 +1617,9 @@
                         <div className="text-white text-sm font-medium opacity-75">{progress}</div>
                     </div>
 
-                    {/* Background Cards (for depth effect) */}
+                    {/* Background Card (next one only) */}
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                        {[2, 1].map(offset => {
+                        {[1].map(offset => {
                             const index = currentIndex + offset;
                             if (index >= activities.length) return null;
                             const activity = activities[index];
@@ -1629,7 +1629,7 @@
                                     className="absolute"
                                     style={{
                                         transform: `scale(${1 - offset * 0.05}) translateY(${offset * 10}px)`,
-                                        opacity: 0.3 - offset * 0.1,
+                                        opacity: 0.4,
                                         zIndex: -offset
                                     }}
                                 >
@@ -1690,10 +1690,10 @@
                         </button>
                     </div>
 
-                    {/* Swipe Hint (show on first card) */}
+                    {/* Swipe Hint (show on first card, moved lower to avoid overlap) */}
                     {currentIndex === 0 && (
-                        <div className="absolute bottom-32 left-0 right-0 text-center z-20 animate-pulse">
-                            <div className="text-white text-sm font-medium">
+                        <div className="absolute bottom-2 left-0 right-0 text-center z-20 animate-pulse">
+                            <div className="text-white text-sm font-medium drop-shadow-lg">
                                 ← Swipe or tap arrows →
                             </div>
                         </div>
@@ -2609,10 +2609,8 @@
 
             // ⏱️ Cooldown System
             const COOLDOWN_MS = 12 * 60 * 60 * 1000; // 12 hours
-            const MAX_RUNS = 2;
-            const MAX_LIFTS = 1;
-            const [cardioCooldown, setCardioCooldown] = useState({ count: 0, windowStart: null }); // shared 12hr window
-            const [liftCooldown, setLiftCooldown] = useState({ count: 0, windowStart: null });
+            const MAX_SESSIONS = 3; // Total sessions across both cardio and lift
+            const [sessionCooldown, setSessionCooldown] = useState({ count: 0, windowStart: null }); // shared 12hr window, 3 sessions total
             const [cooldownPopup, setCooldownPopup] = useState(null); // { type: 'cardio'|'lift', remaining: ms }
             const [cooldownTick, setCooldownTick] = useState(0); // force re-render for live timer
 
@@ -2861,11 +2859,8 @@
                 }).catch(err => console.error('Error loading pokeballs:', err));
 
                 // ⏱️ Load cooldown state
-                window.storage.get('cardio-cooldown').then(r => {
-                    if (r?.value) setCardioCooldown(JSON.parse(r.value));
-                }).catch(() => {});
-                window.storage.get('lift-cooldown').then(r => {
-                    if (r?.value) setLiftCooldown(JSON.parse(r.value));
+                window.storage.get('session-cooldown').then(r => {
+                    if (r?.value) setSessionCooldown(JSON.parse(r.value));
                 }).catch(() => {});
                 
                 // 🎯 Load active capture session
@@ -2904,17 +2899,9 @@
                 return `${minutes}m remaining`;
             };
 
-            const isCardioOnCooldown = () => getCooldownRemaining(cardioCooldown, MAX_RUNS) > 0;
-            const isLiftOnCooldown = () => getCooldownRemaining(liftCooldown, MAX_LIFTS) > 0;
+            const isOnCooldown = () => getCooldownRemaining(sessionCooldown, MAX_SESSIONS) > 0;
 
-            // Auto-switch tab when current tab just hit cooldown
-            useEffect(() => {
-                if (workoutTab === 'cardio' && isCardioOnCooldown() && !isLiftOnCooldown()) {
-                    setWorkoutTab('lift');
-                } else if (workoutTab === 'lift' && isLiftOnCooldown() && !isCardioOnCooldown()) {
-                    setWorkoutTab('cardio');
-                }
-            }, [cardioCooldown, liftCooldown]);
+            // Remove auto-tab-switching (no longer needed with shared pool)
 
             // 🔍 Live search with debouncing
             useEffect(() => {
@@ -4135,13 +4122,18 @@
                     rarity: pokemonData.rarity,
                     timestamp: new Date().toISOString(),
                     spriteUrl: pokemonData.spriteUrl,
-                    pace: pokemonData.pace,
-                    distance: pokemonData.distance,
-                    duration: pokemonData.duration,
-                    // Lift workout fields
-                    caloriesBurned: pokemonData.caloriesBurned,
-                    avgHR: pokemonData.avgHR
+                    pace: pokemonData.pace || null,
+                    distance: pokemonData.distance || null,
+                    duration: pokemonData.duration || null
                 };
+                
+                // Only add lift fields if they're defined (not undefined)
+                if (pokemonData.caloriesBurned !== undefined) {
+                    pcEntry.caloriesBurned = pokemonData.caloriesBurned;
+                }
+                if (pokemonData.avgHR !== undefined) {
+                    pcEntry.avgHR = pokemonData.avgHR;
+                }
                 
                 console.log('💾 PC Entry created:', pcEntry);
                 
@@ -4159,7 +4151,10 @@
                         console.log('✅ PC synced to Firebase - total Pokemon:', updatedPC.length);
                     } catch (error) {
                         console.error('❌ Error syncing PC to Firebase:', error);
-                        alert('Warning: Failed to sync to cloud. Your Pokémon is saved locally but may not appear on other devices.');
+                        console.error('❌ Error code:', error.code);
+                        console.error('❌ Error message:', error.message);
+                        console.error('❌ Full error object:', JSON.stringify(error, null, 2));
+                        alert(`Warning: Failed to sync to cloud.\n\nError: ${error.message || error.code || 'Unknown'}\n\nYour Pokémon is saved locally but may not appear on other devices.`);
                     }
                 } else {
                     console.warn('⚠️ No authenticated user - PC not synced to Firebase!');
@@ -4456,13 +4451,9 @@
             };
 
             const handlePokeballExchange = () => {
-                // ⏱️ Cooldown check
-                if (workoutTab === 'cardio' && isCardioOnCooldown()) {
-                    setCooldownPopup({ type: 'cardio', remaining: getCooldownRemaining(cardioCooldown, MAX_RUNS) });
-                    return;
-                }
-                if (workoutTab === 'lift' && isLiftOnCooldown()) {
-                    setCooldownPopup({ type: 'lift', remaining: getCooldownRemaining(liftCooldown, MAX_LIFTS) });
+                // ⏱️ Cooldown check (shared across both tabs)
+                if (isOnCooldown()) {
+                    setCooldownPopup({ type: 'session', remaining: getCooldownRemaining(sessionCooldown, MAX_SESSIONS) });
                     return;
                 }
 
@@ -4504,23 +4495,10 @@
                     // Streak bonus
                     const streakBonus = Math.floor((currentStreak.days * 2) / 3);
                     
-                    // Calculate final, then apply 25% reduction
-                    earned = Math.round((Math.round(baseBalls * distanceMultiplier * paceMultiplier) + streakBonus) * 0.75);
+                    // Calculate final earned amount
+                    earned = Math.round(baseBalls * distanceMultiplier * paceMultiplier) + streakBonus;
                     
                     console.log('🏃 Cardio Exchange:', { baseBalls, distanceMultiplier, paceMultiplier, streakBonus, earned });
-                    
-                    // ⏱️ Update cardio cooldown
-                    const now = Date.now();
-                    const elapsed = cardioCooldown.windowStart ? now - cardioCooldown.windowStart : COOLDOWN_MS + 1;
-                    let newCooldown;
-                    if (elapsed >= COOLDOWN_MS) {
-                        // Window expired — start fresh
-                        newCooldown = { count: 1, windowStart: now };
-                    } else {
-                        newCooldown = { count: cardioCooldown.count + 1, windowStart: cardioCooldown.windowStart };
-                    }
-                    setCardioCooldown(newCooldown);
-                    window.storage.set('cardio-cooldown', JSON.stringify(newCooldown));
                     
                 } else if (workoutTab === 'lift') {
                     // Parse lift inputs — safe defaults if empty
@@ -4544,23 +4522,24 @@
                     // Streak bonus
                     const streakBonus = Math.floor((currentStreak.days * 2) / 3);
                     
-                    // Calculate final, then apply 25% reduction
-                    earned = Math.round((Math.round(baseBalls * timeMultiplier) + streakBonus) * 0.75);
+                    // Calculate final earned amount
+                    earned = Math.round(baseBalls * timeMultiplier) + streakBonus;
                     
                     console.log('🏋️ Lift Exchange:', { baseBalls, timeMultiplier, streakBonus, earned });
-
-                    // ⏱️ Update lift cooldown
-                    const now = Date.now();
-                    const elapsed = liftCooldown.windowStart ? now - liftCooldown.windowStart : COOLDOWN_MS + 1;
-                    let newCooldown;
-                    if (elapsed >= COOLDOWN_MS) {
-                        newCooldown = { count: 1, windowStart: now };
-                    } else {
-                        newCooldown = { count: liftCooldown.count + 1, windowStart: liftCooldown.windowStart };
-                    }
-                    setLiftCooldown(newCooldown);
-                    window.storage.set('lift-cooldown', JSON.stringify(newCooldown));
                 }
+                
+                // ⏱️ Update shared session cooldown
+                const now = Date.now();
+                const elapsed = sessionCooldown.windowStart ? now - sessionCooldown.windowStart : COOLDOWN_MS + 1;
+                let newCooldown;
+                if (elapsed >= COOLDOWN_MS) {
+                    // Window expired — start fresh
+                    newCooldown = { count: 1, windowStart: now };
+                } else {
+                    newCooldown = { count: sessionCooldown.count + 1, windowStart: sessionCooldown.windowStart };
+                }
+                setSessionCooldown(newCooldown);
+                window.storage.set('session-cooldown', JSON.stringify(newCooldown));
                 
                 // Clamp to min/max
                 earned = Math.max(POKEBALL_CONFIG.MIN, Math.min(POKEBALL_CONFIG.MAX, earned));
@@ -5861,24 +5840,20 @@
                             <div className="grid grid-cols-2 gap-3 mt-6">
                                 <button 
                                     onClick={handlePokeballExchange}
-                                    disabled={hasExchanged}
+                                    disabled={hasExchanged || isOnCooldown()}
                                     className={`py-4 rounded-lg font-bold text-lg transition shadow-lg ${
                                         hasExchanged
                                             ? 'bg-gray-600 text-gray-400 cursor-not-allowed opacity-50'
-                                            : (workoutTab === 'cardio' && isCardioOnCooldown()) || (workoutTab === 'lift' && isLiftOnCooldown())
+                                            : isOnCooldown()
                                                 ? 'bg-gray-700 text-gray-400 cursor-not-allowed opacity-60 border-2 border-gray-500'
                                                 : 'bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-700 hover:to-orange-700 text-white hover:shadow-red-500/50'
                                     }`}
                                 >
                                     {hasExchanged 
                                         ? '✓ Exchanged' 
-                                        : (workoutTab === 'cardio' && isCardioOnCooldown())
-                                            ? `⏳ ${formatCooldown(getCooldownRemaining(cardioCooldown, MAX_RUNS))}`
-                                            : (workoutTab === 'lift' && isLiftOnCooldown())
-                                                ? `⏳ ${formatCooldown(getCooldownRemaining(liftCooldown, MAX_LIFTS))}`
-                                                : workoutTab === 'cardio'
-                                                    ? `⚪ Exchange (${cardioCooldown.windowStart && Date.now() - cardioCooldown.windowStart < COOLDOWN_MS ? MAX_RUNS - cardioCooldown.count : MAX_RUNS} left)`
-                                                    : `⚪ Exchange (${liftCooldown.windowStart && Date.now() - liftCooldown.windowStart < COOLDOWN_MS ? MAX_LIFTS - liftCooldown.count : MAX_LIFTS} left)`
+                                        : isOnCooldown()
+                                            ? `⏳ ${formatCooldown(getCooldownRemaining(sessionCooldown, MAX_SESSIONS))}`
+                                            : `⚪ Exchange (${sessionCooldown.windowStart && Date.now() - sessionCooldown.windowStart < COOLDOWN_MS ? MAX_SESSIONS - sessionCooldown.count : MAX_SESSIONS} left)`
                                     }
                                 </button>
                                 
@@ -5903,12 +5878,10 @@
                                         <div className="text-center">
                                             <div className="text-5xl mb-3">⏳</div>
                                             <h3 className="text-white font-bold text-lg mb-1">
-                                                {cooldownPopup.type === 'cardio' ? '🏃 Run Limit Reached' : '🏋️ Lift Limit Reached'}
+                                                Session Limit Reached
                                             </h3>
                                             <p className="text-gray-400 text-sm mb-4">
-                                                {cooldownPopup.type === 'cardio'
-                                                    ? `You've logged ${MAX_RUNS} runs this window.`
-                                                    : `You've logged ${MAX_LIFTS} lift this window.`}
+                                                You've used all {MAX_SESSIONS} sessions this window.
                                             </p>
                                             <div className="bg-gray-700 rounded-xl px-4 py-3 mb-5">
                                                 <p className="text-yellow-400 font-bold text-xl">
