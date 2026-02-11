@@ -2577,6 +2577,18 @@
             const [storedPokeballs, setStoredPokeballs] = useState(0);
             const [workoutTab, setWorkoutTab] = useState('cardio');
             const [hasExchanged, setHasExchanged] = useState(false);
+
+            // ⏱️ Cooldown System
+            const COOLDOWN_MS = 12 * 60 * 60 * 1000; // 12 hours
+            const MAX_RUNS = 2;
+            const MAX_LIFTS = 1;
+            const [cardioCooldown, setCardioCooldown] = useState({ count: 0, windowStart: null }); // shared 12hr window
+            const [liftCooldown, setLiftCooldown] = useState({ count: 0, windowStart: null });
+            const [cooldownPopup, setCooldownPopup] = useState(null); // { type: 'cardio'|'lift', remaining: ms }
+            const [cooldownTick, setCooldownTick] = useState(0); // force re-render for live timer
+
+            // 🎯 Missed throw tracker (resets per encounter)
+            const [missedThrows, setMissedThrows] = useState(0);
             
             // 🎯 Capture Session System (Phase 2)
             const [captureSession, setCaptureSession] = useState(null); // { sessionId, encounters[], currentIndex, createdAt }
@@ -2806,6 +2818,14 @@
                         }
                     }
                 }).catch(err => console.error('Error loading pokeballs:', err));
+
+                // ⏱️ Load cooldown state
+                window.storage.get('cardio-cooldown').then(r => {
+                    if (r?.value) setCardioCooldown(JSON.parse(r.value));
+                }).catch(() => {});
+                window.storage.get('lift-cooldown').then(r => {
+                    if (r?.value) setLiftCooldown(JSON.parse(r.value));
+                }).catch(() => {});
                 
                 // 🎯 Load active capture session
                 loadCaptureSession().then(session => {
@@ -2819,6 +2839,32 @@
                     document.getElementById('loading').classList.add('hidden');
                 }, 500);
             }, []);
+
+            // ⏱️ Tick every 30s to keep cooldown timers live
+            useEffect(() => {
+                const interval = setInterval(() => setCooldownTick(t => t + 1), 30000);
+                return () => clearInterval(interval);
+            }, []);
+
+            // ⏱️ Cooldown helpers
+            const getCooldownRemaining = (cooldown, max) => {
+                if (!cooldown.windowStart || cooldown.count < max) return 0;
+                const elapsed = Date.now() - cooldown.windowStart;
+                const remaining = COOLDOWN_MS - elapsed;
+                return remaining > 0 ? remaining : 0;
+            };
+
+            const formatCooldown = (ms) => {
+                const totalMinutes = Math.ceil(ms / 60000);
+                const hours = Math.floor(totalMinutes / 60);
+                const minutes = totalMinutes % 60;
+                if (hours > 0 && minutes > 0) return `${hours}h ${minutes}m remaining`;
+                if (hours > 0) return `${hours}h remaining`;
+                return `${minutes}m remaining`;
+            };
+
+            const isCardioOnCooldown = () => getCooldownRemaining(cardioCooldown, MAX_RUNS) > 0;
+            const isLiftOnCooldown = () => getCooldownRemaining(liftCooldown, MAX_LIFTS) > 0;
 
             // 🔍 Live search with debouncing
             useEffect(() => {
@@ -3093,11 +3139,10 @@
                 try {
                     const uid = firebaseManager.user.uid;
 
-                    // Load friend list
+                    // Load friend list (own node - always allowed)
                     const friendsSnapshot = await database.ref(`users/${uid}/friends`).once('value');
                     const friendsData = friendsSnapshot.val() || {};
-                    const friendIds = Object.keys(friendsData);
-                    setFriends(friendIds);
+                    let friendIds = Object.keys(friendsData);
 
                     // Load friend profiles
                     const profiles = {};
@@ -3109,19 +3154,37 @@
                     }
                     setFriendProfiles(profiles);
 
-                    // Load incoming requests
-                    const incomingSnapshot = await database.ref(`users/${uid}/friendRequests/incoming`).once('value');
-                    const incomingData = incomingSnapshot.val() || {};
-                    const incoming = Object.keys(incomingData);
+                    // Load incoming requests from shared /friendRequests node
+                    const allRequestsSnapshot = await database.ref('friendRequests').once('value');
+                    const allRequests = allRequestsSnapshot.val() || {};
+
+                    const incoming = [];
+                    const outgoing = [];
+
+                    Object.values(allRequests).forEach(req => {
+                        if (!req || !req.status) return;
+
+                        // Requests sent TO me that are pending
+                        if (req.to === uid && req.status === 'pending') {
+                            incoming.push(req.from);
+                        }
+                        // Requests sent BY me that are pending
+                        if (req.from === uid && req.status === 'pending') {
+                            outgoing.push(req.to);
+                        }
+                        // Requests I sent that were accepted - add them as friend
+                        if (req.from === uid && req.status === 'accepted' && !friendIds.includes(req.to)) {
+                            database.ref(`users/${uid}/friends/${req.to}`).set(true);
+                            // Clean up the request
+                            database.ref(`friendRequests/${uid}_${req.to}`).remove();
+                            friendIds = [...friendIds, req.to];
+                        }
+                    });
+
+                    setFriends(friendIds);
                     setIncomingRequests(incoming);
-
-                    // Update notification badge
+                    setOutgoingRequests(outgoing);
                     setHasNotifications(incoming.length > 0);
-
-                    // Load outgoing requests
-                    const outgoingSnapshot = await database.ref(`users/${uid}/friendRequests/outgoing`).once('value');
-                    const outgoingData = outgoingSnapshot.val() || {};
-                    setOutgoingRequests(Object.keys(outgoingData));
 
                     console.log(`✅ Loaded ${friendIds.length} friends, ${incoming.length} incoming requests`);
                 } catch (error) {
@@ -3248,47 +3311,30 @@
 
                     // Check if already has pending request
                     if (outgoingRequests.includes(targetUid)) {
-                        // Cancel the request
-                        await database.ref(`users/${myUid}/friendRequests/outgoing/${targetUid}`).remove();
-                        await database.ref(`users/${targetUid}/friendRequests/incoming/${myUid}`).remove();
-                        
+                        // Cancel - remove from shared node
+                        await database.ref(`friendRequests/${myUid}_${targetUid}`).remove();
                         setOutgoingRequests(prev => prev.filter(id => id !== targetUid));
-                        
-                        // Update search results immediately
                         setFriendSearchResults(prev => 
-                            prev.map(result => 
-                                result.uid === targetUid 
-                                    ? { ...result, hasPendingRequest: false }
-                                    : result
-                            )
+                            prev.map(r => r.uid === targetUid ? { ...r, hasPendingRequest: false } : r)
                         );
-                        
                         console.log('✅ Friend request cancelled');
                         return;
                     }
 
-                    // Send request
-                    const timestamp = firebase.database.ServerValue.TIMESTAMP;
-                    await database.ref(`users/${myUid}/friendRequests/outgoing/${targetUid}`).set(timestamp);
-                    await database.ref(`users/${targetUid}/friendRequests/incoming/${myUid}`).set(timestamp);
+                    // Send request to shared /friendRequests node (no permission issues)
+                    const requestId = `${myUid}_${targetUid}`;
+                    await database.ref(`friendRequests/${requestId}`).set({
+                        from: myUid,
+                        to: targetUid,
+                        timestamp: firebase.database.ServerValue.TIMESTAMP,
+                        status: 'pending'
+                    });
 
-                    // Update request count
-                    setRequestCounts(prev => ({
-                        ...prev,
-                        [targetUid]: currentCount + 1
-                    }));
-
+                    setRequestCounts(prev => ({ ...prev, [targetUid]: currentCount + 1 }));
                     setOutgoingRequests(prev => [...prev, targetUid]);
-                    
-                    // Update search results immediately
                     setFriendSearchResults(prev => 
-                        prev.map(result => 
-                            result.uid === targetUid 
-                                ? { ...result, hasPendingRequest: true }
-                                : result
-                        )
+                        prev.map(r => r.uid === targetUid ? { ...r, hasPendingRequest: true } : r)
                     );
-                    
                     console.log('✅ Friend request sent');
                 } catch (error) {
                     console.error('❌ Error sending friend request:', error);
@@ -3303,17 +3349,17 @@
                 try {
                     const myUid = firebaseManager.user.uid;
 
-                    // Add to both friend lists
+                    // Add both users to each other's friends list (only writing to own node)
                     await database.ref(`users/${myUid}/friends/${senderUid}`).set(true);
-                    await database.ref(`users/${senderUid}/friends/${myUid}`).set(true);
-
-                    // Remove friend requests
-                    await database.ref(`users/${myUid}/friendRequests/incoming/${senderUid}`).remove();
-                    await database.ref(`users/${senderUid}/friendRequests/outgoing/${myUid}`).remove();
+                    
+                    // Mark request as accepted in shared node (sender will process on reload)
+                    const requestId = `${senderUid}_${myUid}`;
+                    await database.ref(`friendRequests/${requestId}`).update({
+                        status: 'accepted',
+                        acceptedAt: firebase.database.ServerValue.TIMESTAMP
+                    });
 
                     console.log('✅ Friend request accepted');
-
-                    // Reload friends data
                     await loadFriendsData();
                 } catch (error) {
                     console.error('❌ Error accepting friend request:', error);
@@ -3328,13 +3374,13 @@
                 try {
                     const myUid = firebaseManager.user.uid;
 
-                    // Remove friend requests
-                    await database.ref(`users/${myUid}/friendRequests/incoming/${senderUid}`).remove();
-                    await database.ref(`users/${senderUid}/friendRequests/outgoing/${myUid}`).remove();
+                    // Mark as declined in shared node
+                    const requestId = `${senderUid}_${myUid}`;
+                    await database.ref(`friendRequests/${requestId}`).update({
+                        status: 'declined'
+                    });
 
                     console.log('✅ Friend request declined');
-
-                    // Reload friends data
                     await loadFriendsData();
                 } catch (error) {
                     console.error('❌ Error declining friend request:', error);
@@ -4120,6 +4166,16 @@
             };
 
             const handlePokeballExchange = () => {
+                // ⏱️ Cooldown check
+                if (workoutTab === 'cardio' && isCardioOnCooldown()) {
+                    setCooldownPopup({ type: 'cardio', remaining: getCooldownRemaining(cardioCooldown, MAX_RUNS) });
+                    return;
+                }
+                if (workoutTab === 'lift' && isLiftOnCooldown()) {
+                    setCooldownPopup({ type: 'lift', remaining: getCooldownRemaining(liftCooldown, MAX_LIFTS) });
+                    return;
+                }
+
                 let earned = 0;
                 
                 if (workoutTab === 'cardio') {
@@ -4156,16 +4212,23 @@
                     // Streak bonus
                     const streakBonus = Math.floor((currentStreak.days * 2) / 3);
                     
-                    // Calculate final
-                    earned = Math.round(baseBalls * distanceMultiplier * paceMultiplier) + streakBonus;
+                    // Calculate final, then apply 25% reduction
+                    earned = Math.round((Math.round(baseBalls * distanceMultiplier * paceMultiplier) + streakBonus) * 0.75);
                     
-                    console.log('🏃 Cardio Exchange:', {
-                        baseBalls,
-                        distanceMultiplier,
-                        paceMultiplier,
-                        streakBonus,
-                        earned
-                    });
+                    console.log('🏃 Cardio Exchange:', { baseBalls, distanceMultiplier, paceMultiplier, streakBonus, earned });
+                    
+                    // ⏱️ Update cardio cooldown
+                    const now = Date.now();
+                    const elapsed = cardioCooldown.windowStart ? now - cardioCooldown.windowStart : COOLDOWN_MS + 1;
+                    let newCooldown;
+                    if (elapsed >= COOLDOWN_MS) {
+                        // Window expired — start fresh
+                        newCooldown = { count: 1, windowStart: now };
+                    } else {
+                        newCooldown = { count: cardioCooldown.count + 1, windowStart: cardioCooldown.windowStart };
+                    }
+                    setCardioCooldown(newCooldown);
+                    window.storage.set('cardio-cooldown', JSON.stringify(newCooldown));
                     
                 } else if (workoutTab === 'lift') {
                     // Parse lift inputs
@@ -4188,15 +4251,22 @@
                     // Streak bonus
                     const streakBonus = Math.floor((currentStreak.days * 2) / 3);
                     
-                    // Calculate final
-                    earned = Math.round(baseBalls * timeMultiplier) + streakBonus;
+                    // Calculate final, then apply 25% reduction
+                    earned = Math.round((Math.round(baseBalls * timeMultiplier) + streakBonus) * 0.75);
                     
-                    console.log('🏋️ Lift Exchange:', {
-                        baseBalls,
-                        timeMultiplier,
-                        streakBonus,
-                        earned
-                    });
+                    console.log('🏋️ Lift Exchange:', { baseBalls, timeMultiplier, streakBonus, earned });
+
+                    // ⏱️ Update lift cooldown
+                    const now = Date.now();
+                    const elapsed = liftCooldown.windowStart ? now - liftCooldown.windowStart : COOLDOWN_MS + 1;
+                    let newCooldown;
+                    if (elapsed >= COOLDOWN_MS) {
+                        newCooldown = { count: 1, windowStart: now };
+                    } else {
+                        newCooldown = { count: liftCooldown.count + 1, windowStart: liftCooldown.windowStart };
+                    }
+                    setLiftCooldown(newCooldown);
+                    window.storage.set('lift-cooldown', JSON.stringify(newCooldown));
                 }
                 
                 // Clamp to min/max
@@ -4361,13 +4431,17 @@
                 return null;
             };
 
-            // Calculate catch probability
-            const getCatchProbability = (rarity, isShiny) => {
+            // Calculate catch probability with mercy boost after 5 misses
+            const getCatchProbability = (rarity, isShiny, currentMisses) => {
                 const base = CATCH_CONFIG.BASE_PROBABILITY[rarity] || CATCH_CONFIG.BASE_PROBABILITY.common;
                 const shinyBonus = isShiny 
                     ? (rarity === 'legendary' ? CATCH_CONFIG.SHINY_BONUS.legendary : CATCH_CONFIG.SHINY_BONUS.default)
                     : 0;
-                return Math.min(1.0, base + shinyBonus);
+                // +40% flat after 5 misses, then +8% per miss beyond 5
+                const mercyBonus = currentMisses >= 5 ? 0.40 + (currentMisses - 5) * 0.08 : 0;
+                const total = Math.min(1.0, base + shinyBonus + mercyBonus);
+                if (mercyBonus > 0) console.log(`🍀 Mercy boost active: +${Math.round(mercyBonus * 100)}% (${currentMisses} misses)`);
+                return total;
             };
 
             // Attempt to catch current encounter
@@ -4380,8 +4454,8 @@
                 setStoredPokeballs(newBallCount);
                 await window.storage.set('stored-pokeballs', newBallCount.toString());
                 
-                // Calculate success
-                const probability = getCatchProbability(currentEncounter.rarity, currentEncounter.isShiny);
+                // Calculate success — pass current miss count for mercy boost
+                const probability = getCatchProbability(currentEncounter.rarity, currentEncounter.isShiny, missedThrows);
                 const roll = Math.random();
                 const success = roll <= probability;
                 
@@ -4409,6 +4483,13 @@
                 setCatchResult(success ? 'success' : 'fail');
                 setIsCatchAnimating(false);
                 
+                // Track missed throws for mercy boost
+                if (!success) {
+                    setMissedThrows(prev => prev + 1);
+                } else {
+                    setMissedThrows(0); // Reset on successful catch
+                }
+
                 // Auto-clear result after 1.5 seconds if failed (allow retry)
                 if (!success) {
                     setTimeout(() => {
@@ -4523,6 +4604,7 @@
                     setCaptureSession(updatedSession);
                     setCurrentEncounter(updatedSession.encounters[nextIndex]);
                     setCatchResult(null);
+                    setMissedThrows(0); // Reset mercy boost for new Pokémon
                     
                     // Save updated session
                     window.storage.set('capture-session', JSON.stringify(updatedSession));
@@ -5459,10 +5541,21 @@
                                     className={`py-4 rounded-lg font-bold text-lg transition shadow-lg ${
                                         hasExchanged
                                             ? 'bg-gray-600 text-gray-400 cursor-not-allowed opacity-50'
-                                            : 'bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-700 hover:to-orange-700 text-white hover:shadow-red-500/50'
+                                            : (workoutTab === 'cardio' && isCardioOnCooldown()) || (workoutTab === 'lift' && isLiftOnCooldown())
+                                                ? 'bg-gray-700 text-gray-400 cursor-not-allowed opacity-60 border-2 border-gray-500'
+                                                : 'bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-700 hover:to-orange-700 text-white hover:shadow-red-500/50'
                                     }`}
                                 >
-                                    {hasExchanged ? '✓ Exchanged' : '⚪ Pokéball Exchange'}
+                                    {hasExchanged 
+                                        ? '✓ Exchanged' 
+                                        : (workoutTab === 'cardio' && isCardioOnCooldown())
+                                            ? `⏳ ${formatCooldown(getCooldownRemaining(cardioCooldown, MAX_RUNS))}`
+                                            : (workoutTab === 'lift' && isLiftOnCooldown())
+                                                ? `⏳ ${formatCooldown(getCooldownRemaining(liftCooldown, MAX_LIFTS))}`
+                                                : workoutTab === 'cardio'
+                                                    ? `⚪ Exchange (${cardioCooldown.windowStart && Date.now() - cardioCooldown.windowStart < COOLDOWN_MS ? MAX_RUNS - cardioCooldown.count : MAX_RUNS} left)`
+                                                    : `⚪ Exchange (${liftCooldown.windowStart && Date.now() - liftCooldown.windowStart < COOLDOWN_MS ? MAX_LIFTS - liftCooldown.count : MAX_LIFTS} left)`
+                                    }
                                 </button>
                                 
                                 <button 
@@ -5477,6 +5570,38 @@
                                     {captureSession ? '🎯 Session Active' : '🎯 Go Capture'}
                                 </button>
                             </div>
+
+                            {/* ⏱️ Cooldown Popup */}
+                            {cooldownPopup && (
+                                <div className="fixed inset-0 z-50 flex items-center justify-center p-6" onClick={() => setCooldownPopup(null)}>
+                                    <div className="absolute inset-0 bg-black bg-opacity-60" />
+                                    <div className="relative bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl p-6 shadow-2xl border border-gray-600 max-w-xs w-full" onClick={e => e.stopPropagation()}>
+                                        <div className="text-center">
+                                            <div className="text-5xl mb-3">⏳</div>
+                                            <h3 className="text-white font-bold text-lg mb-1">
+                                                {cooldownPopup.type === 'cardio' ? '🏃 Run Limit Reached' : '🏋️ Lift Limit Reached'}
+                                            </h3>
+                                            <p className="text-gray-400 text-sm mb-4">
+                                                {cooldownPopup.type === 'cardio'
+                                                    ? `You've logged ${MAX_RUNS} runs this window.`
+                                                    : `You've logged ${MAX_LIFTS} lift this window.`}
+                                            </p>
+                                            <div className="bg-gray-700 rounded-xl px-4 py-3 mb-5">
+                                                <p className="text-yellow-400 font-bold text-xl">
+                                                    {formatCooldown(cooldownPopup.remaining)}
+                                                </p>
+                                                <p className="text-gray-400 text-xs mt-1">until next window opens</p>
+                                            </div>
+                                            <button
+                                                onClick={() => setCooldownPopup(null)}
+                                                className="w-full py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-bold transition"
+                                            >
+                                                Got it
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
                         {/* 🎯 CAPTURE SESSION UI */}
