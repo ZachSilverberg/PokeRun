@@ -3178,12 +3178,13 @@
                     // Load friend profiles
                     const profiles = {};
                     for (const friendId of friendIds) {
-                        const profileSnapshot = await database.ref(`users/${friendId}/profile`).once('value');
-                        if (profileSnapshot.exists()) {
-                            profiles[friendId] = profileSnapshot.val();
-                        }
+                        try {
+                            const profileSnapshot = await database.ref(`users/${friendId}/profile`).once('value');
+                            if (profileSnapshot.exists()) {
+                                profiles[friendId] = profileSnapshot.val();
+                            }
+                        } catch (e) { console.warn('Could not load profile for', friendId); }
                     }
-                    setFriendProfiles(profiles);
 
                     // Load incoming requests from shared /friendRequests node
                     const allRequestsSnapshot = await database.ref('friendRequests').once('value');
@@ -3194,23 +3195,28 @@
 
                     Object.values(allRequests).forEach(req => {
                         if (!req || !req.status) return;
-
-                        // Requests sent TO me that are pending
-                        if (req.to === uid && req.status === 'pending') {
-                            incoming.push(req.from);
-                        }
-                        // Requests sent BY me that are pending
-                        if (req.from === uid && req.status === 'pending') {
-                            outgoing.push(req.to);
-                        }
-                        // Requests I sent that were accepted - add them as friend
+                        if (req.to === uid && req.status === 'pending') incoming.push(req.from);
+                        if (req.from === uid && req.status === 'pending') outgoing.push(req.to);
                         if (req.from === uid && req.status === 'accepted' && !friendIds.includes(req.to)) {
                             database.ref(`users/${uid}/friends/${req.to}`).set(true);
-                            // Clean up the request
                             database.ref(`friendRequests/${uid}_${req.to}`).remove();
                             friendIds = [...friendIds, req.to];
                         }
                     });
+
+                    // Also load profiles for incoming request senders (not yet friends)
+                    for (const senderId of incoming) {
+                        if (!profiles[senderId]) {
+                            try {
+                                const profileSnapshot = await database.ref(`users/${senderId}/profile`).once('value');
+                                if (profileSnapshot.exists()) {
+                                    profiles[senderId] = profileSnapshot.val();
+                                }
+                            } catch (e) { console.warn('Could not load profile for sender', senderId); }
+                        }
+                    }
+
+                    setFriendProfiles(profiles);
 
                     setFriends(friendIds);
                     setIncomingRequests(incoming);
@@ -5478,18 +5484,7 @@
                                                             <div className="space-y-2">
                                                                 {incomingRequests.map(senderId => {
                                                                     const senderProfile = friendProfiles[senderId];
-                                                                    if (!senderProfile) {
-                                                                        // Load profile if not cached
-                                                                        database.ref(`users/${senderId}/profile`).once('value').then(snap => {
-                                                                            if (snap.exists()) {
-                                                                                setFriendProfiles(prev => ({
-                                                                                    ...prev,
-                                                                                    [senderId]: snap.val()
-                                                                                }));
-                                                                            }
-                                                                        });
-                                                                        return null;
-                                                                    }
+                                                                    if (!senderProfile) return null;
                                                                     return (
                                                                         <div
                                                                             key={senderId}
@@ -6019,17 +6014,7 @@
                                             <div className="space-y-3">
                                                 {incomingRequests.map(senderId => {
                                                     const senderProfile = friendProfiles[senderId];
-                                                    if (!senderProfile) {
-                                                        database.ref(`users/${senderId}/profile`).once('value').then(snap => {
-                                                            if (snap.exists()) {
-                                                                setFriendProfiles(prev => ({
-                                                                    ...prev,
-                                                                    [senderId]: snap.val()
-                                                                }));
-                                                            }
-                                                        });
-                                                        return null;
-                                                    }
+                                                    if (!senderProfile) return null;
                                                     return (
                                                         <div
                                                             key={senderId}
@@ -6651,17 +6636,7 @@
                                                 <div className="space-y-2">
                                                     {incomingRequests.map(senderId => {
                                                         const senderProfile = friendProfiles[senderId];
-                                                        if (!senderProfile) {
-                                                            database.ref(`users/${senderId}/profile`).once('value').then(snap => {
-                                                                if (snap.exists()) {
-                                                                    setFriendProfiles(prev => ({
-                                                                        ...prev,
-                                                                        [senderId]: snap.val()
-                                                                    }));
-                                                                }
-                                                            });
-                                                            return null;
-                                                        }
+                                                        if (!senderProfile) return null;
                                                         return (
                                                             <div
                                                                 key={senderId}
