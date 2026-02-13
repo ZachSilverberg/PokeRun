@@ -523,10 +523,12 @@
         
         const InteractiveCardViewer = ({ pokemon, onClose }) => {
             const [position, setPosition] = useState({ x: 0, y: 0 });
+            const [scale, setScale] = useState(1);
             const [isDragging, setIsDragging] = useState(false);
             const [dragStart, setDragStart] = useState(null);
             const animationRef = useRef(null);
             const velocityRef = useRef({ x: 0, y: 0 });
+            const lastTouchDistanceRef = useRef(null);
 
             // Spring physics constants
             const SPRING_STRENGTH = 0.03;  // Reduced from 0.15 (20% speed)
@@ -577,27 +579,58 @@
 
             // Touch handlers
             const handleTouchStart = (e) => {
-                const touch = e.touches[0];
-                setDragStart({ x: touch.clientX - position.x, y: touch.clientY - position.y });
-                setIsDragging(true);
-                velocityRef.current = { x: 0, y: 0 };
+                if (e.touches.length === 2) {
+                    // Two finger touch - start pinch zoom
+                    const touch1 = e.touches[0];
+                    const touch2 = e.touches[1];
+                    const distance = Math.hypot(
+                        touch2.clientX - touch1.clientX,
+                        touch2.clientY - touch1.clientY
+                    );
+                    lastTouchDistanceRef.current = distance;
+                } else if (e.touches.length === 1) {
+                    // Single touch - start drag
+                    const touch = e.touches[0];
+                    setDragStart({ x: touch.clientX - position.x, y: touch.clientY - position.y });
+                    setIsDragging(true);
+                    velocityRef.current = { x: 0, y: 0 };
+                }
                 // Prevent body scroll while dragging
                 document.body.style.overflow = 'hidden';
             };
 
             const handleTouchMove = (e) => {
-                if (!dragStart) return;
-                e.preventDefault(); // Prevent scroll
-                const touch = e.touches[0];
-                setPosition({
-                    x: touch.clientX - dragStart.x,
-                    y: touch.clientY - dragStart.y
-                });
+                if (e.touches.length === 2) {
+                    // Pinch zoom
+                    const touch1 = e.touches[0];
+                    const touch2 = e.touches[1];
+                    const distance = Math.hypot(
+                        touch2.clientX - touch1.clientX,
+                        touch2.clientY - touch1.clientY
+                    );
+                    
+                    if (lastTouchDistanceRef.current) {
+                        const scaleDelta = distance / lastTouchDistanceRef.current;
+                        setScale(prevScale => Math.max(0.5, Math.min(3, prevScale * scaleDelta)));
+                    }
+                    
+                    lastTouchDistanceRef.current = distance;
+                    e.preventDefault();
+                } else if (e.touches.length === 1 && dragStart) {
+                    // Single touch drag
+                    e.preventDefault(); // Prevent scroll
+                    const touch = e.touches[0];
+                    setPosition({
+                        x: touch.clientX - dragStart.x,
+                        y: touch.clientY - dragStart.y
+                    });
+                }
             };
 
             const handleTouchEnd = () => {
                 setDragStart(null);
                 setIsDragging(false);
+                lastTouchDistanceRef.current = null;
                 // Re-enable body scroll
                 document.body.style.overflow = '';
             };
@@ -674,11 +707,19 @@
                 e.preventDefault();
                 e.stopPropagation();
             };
+            
+            // Close when clicking overlay (not the card)
+            const handleOverlayClick = (e) => {
+                if (e.target === e.currentTarget) {
+                    onClose();
+                }
+            };
 
             return (
                 <div 
                     className="fixed inset-0 bg-black bg-opacity-90 z-50 flex items-center justify-center"
                     onTouchMove={preventScroll}
+                    onClick={handleOverlayClick}
                     style={{ touchAction: 'none', overscrollBehavior: 'none' }}
                 >
                     {/* Close button */}
@@ -693,7 +734,7 @@
                     <div
                         className="cursor-grab active:cursor-grabbing select-none"
                         style={{
-                            transform: `translate(${position.x}px, ${position.y}px) rotate(${rotation}deg)`,
+                            transform: `translate(${position.x}px, ${position.y}px) rotate(${rotation}deg) scale(${scale})`,
                             transition: isDragging ? 'none' : 'transform 0.1s ease-out',
                             maxWidth: '90vw',
                             maxHeight: '90vh',
@@ -703,6 +744,7 @@
                         onTouchMove={handleTouchMove}
                         onTouchEnd={handleTouchEnd}
                         onMouseDown={handleMouseDown}
+                        onClick={(e) => e.stopPropagation()}
                     >
                         <PokemonCard 
                             pokemon={pokemon} 
@@ -713,7 +755,7 @@
 
                     {/* Instructions */}
                     <div className="absolute bottom-8 left-0 right-0 text-center text-white text-sm opacity-70">
-                        Drag to move • Release to return to center
+                        Drag to move • Pinch to zoom • Release to return
                     </div>
                 </div>
             );
@@ -6162,10 +6204,15 @@
                                         : isOnCooldown()
                                             ? `⏳ ${formatCooldown(getCooldownRemaining(sessionCooldown, MAX_SESSIONS))}`
                                             : (
-                                                <span className="flex items-center justify-center gap-2">
-                                                    <PokeballIcon size={20} />
-                                                    <span>Exchange ({sessionCooldown.windowStart && Date.now() - sessionCooldown.windowStart < COOLDOWN_MS ? MAX_SESSIONS - sessionCooldown.count : MAX_SESSIONS} left)</span>
-                                                </span>
+                                                <div className="flex flex-col items-center justify-center gap-1">
+                                                    <div className="flex items-center gap-2">
+                                                        <PokeballIcon size={24} />
+                                                        <span className="text-xl">Exchange</span>
+                                                    </div>
+                                                    <span className="text-sm opacity-80">
+                                                        ({sessionCooldown.windowStart && Date.now() - sessionCooldown.windowStart < COOLDOWN_MS ? MAX_SESSIONS - sessionCooldown.count : MAX_SESSIONS} left)
+                                                    </span>
+                                                </div>
                                             )
                                     }
                                 </button>
@@ -6859,7 +6906,10 @@
                                                         className="bg-gray-50 rounded-lg border-2 border-gray-200 min-h-[200px] flex items-center justify-center"
                                                     >
                                                         {starter ? (
-                                                            <PokemonCard pokemon={starter} />
+                                                            <PokemonCard 
+                                                                pokemon={starter}
+                                                                enableInteractiveView={true}
+                                                            />
                                                         ) : (
                                                             <div className="text-gray-400 text-center">
                                                                 <div className="text-3xl mb-2">⚪</div>
@@ -6948,7 +6998,10 @@
                                                                             ✓
                                                                         </div>
                                                                     )}
-                                                                    <PokemonCard pokemon={pokemon} />
+                                                                    <PokemonCard 
+                                                                        pokemon={pokemon}
+                                                                        enableInteractiveView={!tradingWithFriend}
+                                                                    />
                                                                 </div>
                                                             );
                                                         })
