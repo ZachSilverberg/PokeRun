@@ -189,7 +189,41 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        console.log('Script starting...');
+        /*
+        ╔══════════════════════════════════════════════════════════════╗
+        ║  POKERUN - REFACTORED ARCHITECTURE v1.0                      ║
+        ║  Organized inline code, ready for module extraction          ║
+        ╠══════════════════════════════════════════════════════════════╣
+        ║  📦 SECTION 1: SERVICES (~lines 200-600)                     ║
+        ║     Future files: /services/*.js                             ║
+        ║     - pokemonData.js (Gen boundaries & helpers)              ║
+        ║     - rarityEngine.js (Rarity calculations + gen-gating)     ║
+        ║     - captureEngine.js (Catch probability + mercy boost)     ║
+        ║     - pokeballCalculator.js (Pokeball earning logic)         ║
+        ║                                                               ║
+        ║  🔧 SECTION 2: UTILITIES (~lines 600-1200)                   ║
+        ║     Future files: /utils/*.js                                ║
+        ║     - Firebase helpers & auth                                ║
+        ║     - Trainer name generation                                ║
+        ║     - Date/time utilities                                    ║
+        ║                                                               ║
+        ║  🎨 SECTION 3: COMPONENTS (~lines 1200-5500)                 ║
+        ║     Future files: /components/*.jsx                          ║
+        ║     - Each component clearly marked with headers             ║
+        ║     - Ready to extract to separate files                     ║
+        ║                                                               ║
+        ║  🏠 SECTION 4: MAIN APP (~lines 5500-6800)                   ║
+        ║     Future file: /app/PokeRunApp.jsx                         ║
+        ║     - State management                                       ║
+        ║     - Firebase integration                                   ║
+        ║     - View routing                                           ║
+        ║                                                               ║
+        ║  🚀 SECTION 5: BOOTSTRAP (~lines 6800-end)                   ║
+        ║     - ReactDOM.render()                                      ║
+        ╚══════════════════════════════════════════════════════════════╝
+        */
+        
+        console.log('🎮 PokéRun Refactored v1.0 - Loading...');
         const { useState, useRef, useEffect } = React;
         console.log('React loaded:', !!React);
 
@@ -226,6 +260,66 @@
         const database = firebase.database();
         
         console.log('🔥 Firebase initialized successfully');
+
+        // ╔════════════════════════════════════════════════════════╗
+        // ║  📦 SECTION 1: SERVICES                                 ║
+        // ║  [FUTURE: Extract to /services/*.js]                    ║
+        // ╚════════════════════════════════════════════════════════╝
+
+        // ============================================
+        // 📦 SERVICE: pokemonData.js
+        // [FUTURE FILE: /services/pokemonData.js]
+        // ============================================
+        
+        const POKEMON_GENERATIONS = {
+            1: { start: 1, end: 151, name: 'Kanto' },
+            2: { start: 152, end: 251, name: 'Johto' },
+            3: { start: 252, end: 386, name: 'Hoenn' },
+            4: { start: 387, end: 493, name: 'Sinnoh' },
+            5: { start: 494, end: 649, name: 'Unova' },
+            6: { start: 650, end: 721, name: 'Kalos' },
+            7: { start: 722, end: 809, name: 'Alola' },
+            8: { start: 810, end: 905, name: 'Galar' },
+            9: { start: 906, end: 1025, name: 'Paldea' }
+        };
+
+        const getAvailableGenerations = (streakDays) => {
+            if (streakDays === 0 || streakDays === 1) return [1, 2];
+            if (streakDays === 2) return [1, 2, 3];
+            if (streakDays === 3) return [1, 2, 3, 4, 5];
+            if (streakDays === 4) return [1, 2, 3, 4, 5, 6, 7];
+            return [1, 2, 3, 4, 5, 6, 7, 8, 9];
+        };
+
+        const isPokemonAvailable = (pokemonId, streakDays) => {
+            const availableGens = getAvailableGenerations(streakDays);
+            for (const gen of availableGens) {
+                const { start, end } = POKEMON_GENERATIONS[gen];
+                if (pokemonId >= start && pokemonId <= end) return true;
+            }
+            return false;
+        };
+
+        const getPokemonGeneration = (pokemonId) => {
+            for (const [gen, { start, end }] of Object.entries(POKEMON_GENERATIONS)) {
+                if (pokemonId >= start && pokemonId <= end) {
+                    return parseInt(gen);
+                }
+            }
+            return 1;
+        };
+
+        const getPokemonSpriteUrl = (pokemonId, isShiny = false) => {
+            const shinyPath = isShiny ? 'shiny/' : '';
+            return `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${shinyPath}${pokemonId}.png`;
+        };
+
+        console.log('✅ Pokemon data service loaded');
+
+        // ╔════════════════════════════════════════════════════════╗
+        // ║  🔧 SECTION 2: UTILITIES                                ║
+        // ║  [FUTURE: Extract to /utils/*.js]                       ║
+        // ╚════════════════════════════════════════════════════════╝
 
         // =========================
         // 🎨 TRAINER NAME GENERATION
@@ -2590,6 +2684,11 @@
             );
         };
 
+        // ╔════════════════════════════════════════════════════════╗
+        // ║  🏠 SECTION 4: MAIN APP COMPONENT                       ║
+        // ║  [FUTURE FILE: /app/PokeRunApp.jsx]                     ║
+        // ╚════════════════════════════════════════════════════════╝
+        
         const PokemonRunTracker = () => {
             // Cardio workout inputs (existing)
             const [pace, setPace] = useState('');
@@ -4403,18 +4502,27 @@
             };
 
             // ✅ Pick a Pokemon ID that *matches the tier* based on your map
-            const pickPokemonIdForTier = (tier) => {
-                const list = POKEMON_IDS_BY_RARITY[tier] || [];
-                if (!list.length) {
-                    // Hard fallback: any mapped ID
+            // 🎮 GEN-GATING: Filter pokemon by unlocked generations
+            const pickPokemonIdForTier = (tier, streakDays) => {
+                const allPokemonInTier = POKEMON_IDS_BY_RARITY[tier] || [];
+                
+                // Filter to only available generations
+                const availablePokemon = allPokemonInTier.filter(id => 
+                    isPokemonAvailable(id, streakDays)
+                );
+                
+                const pool = availablePokemon.length > 0 ? availablePokemon : allPokemonInTier;
+                
+                if (!pool.length) {
                     const allIds = Object.keys(POKEMON_RARITY_MAP).map(Number);
                     return allIds[Math.floor(Math.random() * allIds.length)];
                 }
-                return list[Math.floor(Math.random() * list.length)];
+                return pool[Math.floor(Math.random() * pool.length)];
             };
 
             const getPokemonByRarity = async (rarity) => {
-                const pokemonId = pickPokemonIdForTier(rarity.tier);
+                // 🎮 Pass currentStreak.days for gen-gating
+                const pokemonId = pickPokemonIdForTier(rarity.tier, currentStreak.days);
 
                 const baseShinyChance = 1/4096;
                 const streakBonus = currentStreak.days * (1/500);
@@ -5400,10 +5508,13 @@
                                     <span>{storedPokeballs}</span>
                                 </div>
                                 
-                                {/* Streak Badge */}
+                                {/* Streak Badge with Gen Info */}
                                 <div className="flex items-center gap-2 px-3 py-2 rounded-lg font-bold text-xs text-white shadow-md bg-gradient-to-br from-gray-800 to-gray-900">
                                     <span>🔥</span>
                                     <span>{currentStreak.days}d</span>
+                                    <span className="text-[10px] opacity-75">
+                                        Gen {getAvailableGenerations(currentStreak.days).join(',')}
+                                    </span>
                                 </div>
                                 
                                 {/* Runs Badge */}
@@ -6902,6 +7013,10 @@
             );
         };
 
+        // ╔════════════════════════════════════════════════════════╗
+        // ║  🚀 SECTION 5: BOOTSTRAP & RENDER                       ║
+        // ╚════════════════════════════════════════════════════════╝
+        
         const root = ReactDOM.createRoot(document.getElementById('root'));
         console.log('Root created, attempting render...');
         root.render(<PokemonRunTracker />);
