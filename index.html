@@ -189,41 +189,7 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        /*
-        ╔══════════════════════════════════════════════════════════════╗
-        ║  POKERUN - REFACTORED ARCHITECTURE v1.0                      ║
-        ║  Organized inline code, ready for module extraction          ║
-        ╠══════════════════════════════════════════════════════════════╣
-        ║  📦 SECTION 1: SERVICES (~lines 200-600)                     ║
-        ║     Future files: /services/*.js                             ║
-        ║     - pokemonData.js (Gen boundaries & helpers)              ║
-        ║     - rarityEngine.js (Rarity calculations + gen-gating)     ║
-        ║     - captureEngine.js (Catch probability + mercy boost)     ║
-        ║     - pokeballCalculator.js (Pokeball earning logic)         ║
-        ║                                                               ║
-        ║  🔧 SECTION 2: UTILITIES (~lines 600-1200)                   ║
-        ║     Future files: /utils/*.js                                ║
-        ║     - Firebase helpers & auth                                ║
-        ║     - Trainer name generation                                ║
-        ║     - Date/time utilities                                    ║
-        ║                                                               ║
-        ║  🎨 SECTION 3: COMPONENTS (~lines 1200-5500)                 ║
-        ║     Future files: /components/*.jsx                          ║
-        ║     - Each component clearly marked with headers             ║
-        ║     - Ready to extract to separate files                     ║
-        ║                                                               ║
-        ║  🏠 SECTION 4: MAIN APP (~lines 5500-6800)                   ║
-        ║     Future file: /app/PokeRunApp.jsx                         ║
-        ║     - State management                                       ║
-        ║     - Firebase integration                                   ║
-        ║     - View routing                                           ║
-        ║                                                               ║
-        ║  🚀 SECTION 5: BOOTSTRAP (~lines 6800-end)                   ║
-        ║     - ReactDOM.render()                                      ║
-        ╚══════════════════════════════════════════════════════════════╝
-        */
-        
-        console.log('🎮 PokéRun Refactored v1.0 - Loading...');
+        console.log('Script starting...');
         const { useState, useRef, useEffect } = React;
         console.log('React loaded:', !!React);
 
@@ -261,65 +227,455 @@
         
         console.log('🔥 Firebase initialized successfully');
 
-        // ╔════════════════════════════════════════════════════════╗
-        // ║  📦 SECTION 1: SERVICES                                 ║
-        // ║  [FUTURE: Extract to /services/*.js]                    ║
-        // ╚════════════════════════════════════════════════════════╝
-
-        // ============================================
-        // 📦 SERVICE: pokemonData.js
-        // [FUTURE FILE: /services/pokemonData.js]
-        // ============================================
+        // ╔════════════════════════════════════════════════════════════╗
+        // ║  🎴 UNIVERSAL POKEMON CARD COMPONENT (REFACTORED)          ║
+        // ║  Replaces 4 duplicate implementations                      ║
+        // ║  ~800 lines of redundant code → 1 reusable component       ║
+        // ╚════════════════════════════════════════════════════════════╝
         
-        const POKEMON_GENERATIONS = {
-            1: { start: 1, end: 151, name: 'Kanto' },
-            2: { start: 152, end: 251, name: 'Johto' },
-            3: { start: 252, end: 386, name: 'Hoenn' },
-            4: { start: 387, end: 493, name: 'Sinnoh' },
-            5: { start: 494, end: 649, name: 'Unova' },
-            6: { start: 650, end: 721, name: 'Kalos' },
-            7: { start: 722, end: 809, name: 'Alola' },
-            8: { start: 810, end: 905, name: 'Galar' },
-            9: { start: 906, end: 1025, name: 'Paldea' }
-        };
-
-        const getAvailableGenerations = (streakDays) => {
-            if (streakDays === 0 || streakDays === 1) return [1, 2];
-            if (streakDays === 2) return [1, 2, 3];
-            if (streakDays === 3) return [1, 2, 3, 4, 5];
-            if (streakDays === 4) return [1, 2, 3, 4, 5, 6, 7];
-            return [1, 2, 3, 4, 5, 6, 7, 8, 9];
-        };
-
-        const isPokemonAvailable = (pokemonId, streakDays) => {
-            const availableGens = getAvailableGenerations(streakDays);
-            for (const gen of availableGens) {
-                const { start, end } = POKEMON_GENERATIONS[gen];
-                if (pokemonId >= start && pokemonId <= end) return true;
-            }
-            return false;
-        };
-
-        const getPokemonGeneration = (pokemonId) => {
-            for (const [gen, { start, end }] of Object.entries(POKEMON_GENERATIONS)) {
-                if (pokemonId >= start && pokemonId <= end) {
-                    return parseInt(gen);
+        // Card image cache (improves performance)
+        const cardImageCache = new Map();
+        
+        const PokemonCard = ({ pokemon, onClick, showDelete, onDelete, className = "", showTradeBadge = false, enableInteractiveView = false }) => {
+            const [cardImage, setCardImage] = useState(null);
+            const [showInteractive, setShowInteractive] = useState(false);
+            const cacheKey = `${pokemon.id}-${pokemon.isShiny}-${pokemon.isTrade || false}`;
+            
+            // Helper: Draw star for rarity icons
+            const drawStar = (ctx, cx, cy, spikes, outerRadius, innerRadius) => {
+                let rot = Math.PI / 2 * 3;
+                const step = Math.PI / spikes;
+                ctx.beginPath();
+                ctx.moveTo(cx, cy - outerRadius);
+                for (let i = 0; i < spikes; i++) {
+                    let x = cx + Math.cos(rot) * outerRadius;
+                    let y = cy + Math.sin(rot) * outerRadius;
+                    ctx.lineTo(x, y);
+                    rot += step;
+                    x = cx + Math.cos(rot) * innerRadius;
+                    y = cy + Math.sin(rot) * innerRadius;
+                    ctx.lineTo(x, y);
+                    rot += step;
                 }
-            }
-            return 1;
+                ctx.lineTo(cx, cy - outerRadius);
+                ctx.closePath();
+                ctx.fill();
+            };
+
+            // Helper: Draw rarity icon
+            const drawRarityIcon = (ctx, x, y, size, tier) => {
+                ctx.save();
+                switch(tier) {
+                    case 'common':
+                        ctx.fillStyle = '#6B7280';
+                        ctx.beginPath();
+                        ctx.arc(x + size/2, y + size/2, size/2, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.strokeStyle = '#FFFFFF';
+                        ctx.lineWidth = 3;
+                        ctx.stroke();
+                        break;
+                    case 'uncommon':
+                        ctx.fillStyle = '#10B981';
+                        ctx.beginPath();
+                        ctx.moveTo(x + size/2, y);
+                        ctx.lineTo(x + size, y + size/2);
+                        ctx.lineTo(x + size/2, y + size);
+                        ctx.lineTo(x, y + size/2);
+                        ctx.closePath();
+                        ctx.fill();
+                        ctx.strokeStyle = '#FFFFFF';
+                        ctx.lineWidth = 3;
+                        ctx.stroke();
+                        break;
+                    case 'rare':
+                        ctx.fillStyle = '#3B82F6';
+                        drawStar(ctx, x + size/2, y + size/2, 5, size/2, size/4);
+                        ctx.strokeStyle = '#FFFFFF';
+                        ctx.lineWidth = 3;
+                        ctx.stroke();
+                        break;
+                    case 'epic':
+                        ctx.fillStyle = '#8B5CF6';
+                        ctx.globalAlpha = 0.7;
+                        drawStar(ctx, x + size/2 - 6, y + size/2, 5, size/2.2, size/4.4);
+                        ctx.globalAlpha = 1;
+                        drawStar(ctx, x + size/2 + 6, y + size/2, 5, size/2.2, size/4.4);
+                        ctx.strokeStyle = '#FFFFFF';
+                        ctx.lineWidth = 2.5;
+                        ctx.stroke();
+                        break;
+                    case 'legendary':
+                        ctx.fillStyle = '#F59E0B';
+                        drawStar(ctx, x + size/2, y + size/3, 5, size/2.5, size/5);
+                        drawStar(ctx, x + size/4, y + size*2/3, 5, size/3, size/6);
+                        drawStar(ctx, x + size*3/4, y + size*2/3, 5, size/3, size/6);
+                        ctx.strokeStyle = '#FFFFFF';
+                        ctx.lineWidth = 2.5;
+                        ctx.stroke();
+                        break;
+                }
+                ctx.restore();
+            };
+
+            useEffect(() => {
+                // Check cache first
+                if (cardImageCache.has(cacheKey)) {
+                    setCardImage(cardImageCache.get(cacheKey));
+                    return;
+                }
+
+                // Generate new card
+                const canvas = document.createElement('canvas');
+                canvas.width = 500;
+                canvas.height = 500;
+                const ctx = canvas.getContext('2d');
+
+                // Background
+                ctx.fillStyle = '#F3F4F6';
+                ctx.fillRect(0, 0, 500, 500);
+
+                // Pokemon name
+                ctx.fillStyle = '#1F2937';
+                ctx.font = 'bold 32px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(pokemon.pokemonName.toUpperCase(), 250, 45);
+
+                // Rarity icon
+                const iconSize = 55;
+                const iconX = 250 - iconSize / 2;
+                const iconY = 55;
+                drawRarityIcon(ctx, iconX, iconY, iconSize, pokemon.rarity);
+
+                // Load sprite
+                const img = new Image();
+                img.crossOrigin = 'anonymous';
+                img.src = pokemon.spriteUrl;
+                img.onload = () => {
+                    // Draw sprite
+                    const spriteSize = 200;
+                    const spriteX = (500 - spriteSize) / 2;
+                    const spriteY = 130;
+                    ctx.imageSmoothingEnabled = false;
+                    ctx.drawImage(img, spriteX, spriteY, spriteSize, spriteSize);
+
+                    // Shiny sparkles
+                    if (pokemon.isShiny) {
+                        ctx.fillStyle = '#FFD700';
+                        [[100, 100], [380, 120], [120, 300], [360, 320]].forEach(([x, y]) => {
+                            ctx.save();
+                            ctx.translate(x, y);
+                            for (let i = 0; i < 4; i++) {
+                                ctx.rotate(Math.PI / 4);
+                                ctx.fillRect(-2, -12, 4, 24);
+                            }
+                            ctx.restore();
+                        });
+                    }
+
+                    // Rarity badge
+                    const rarityColors = {
+                        legendary: '#F59E0B',
+                        epic: '#8B5CF6',
+                        rare: '#3B82F6',
+                        uncommon: '#10B981',
+                        common: '#9CA3AF'
+                    };
+                    
+                    const badgeY = 350;
+                    const badgeWidth = 240;
+                    const badgeHeight = 42;
+                    const badgeX = (500 - badgeWidth) / 2;
+                    
+                    ctx.fillStyle = rarityColors[pokemon.rarity] || rarityColors.common;
+                    ctx.beginPath();
+                    ctx.roundRect(badgeX, badgeY, badgeWidth, badgeHeight, 10);
+                    ctx.fill();
+                    
+                    ctx.fillStyle = 'white';
+                    ctx.font = 'bold 22px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(pokemon.rarity.toUpperCase(), 250, badgeY + 28);
+
+                    // Workout stats
+                    ctx.fillStyle = '#4B5563';
+                    ctx.font = '18px Arial';
+                    ctx.textAlign = 'center';
+                    
+                    const isLift = !pokemon.pace || pokemon.pace === '--';
+                    let statsY = 410;
+                    
+                    // Helper: Draw distance horseshoe icon
+                    const drawDistanceIcon = (x, y, size) => {
+                        ctx.save();
+                        ctx.strokeStyle = '#4B5563';
+                        ctx.lineWidth = 2.5;
+                        ctx.lineCap = 'round';
+                        
+                        // Draw horseshoe (open at top)
+                        ctx.beginPath();
+                        ctx.arc(x, y, size * 0.6, Math.PI * 0.2, Math.PI * 0.8, false);
+                        ctx.stroke();
+                        
+                        // Draw arrow at right end pointing forward
+                        ctx.fillStyle = '#4B5563';
+                        const arrowX = x + Math.cos(Math.PI * 0.8) * size * 0.6;
+                        const arrowY = y + Math.sin(Math.PI * 0.8) * size * 0.6;
+                        
+                        ctx.beginPath();
+                        ctx.moveTo(arrowX - 4, arrowY - 6);
+                        ctx.lineTo(arrowX + 2, arrowY);
+                        ctx.lineTo(arrowX - 4, arrowY + 6);
+                        ctx.closePath();
+                        ctx.fill();
+                        
+                        ctx.restore();
+                    };
+                    
+                    if (isLift) {
+                        if (pokemon.caloriesBurned) {
+                            ctx.fillText(`🔥 ${pokemon.caloriesBurned} cal`, 250, statsY);
+                            statsY += 28;
+                        }
+                        if (pokemon.liftDuration && pokemon.liftDuration !== '--') {
+                            ctx.fillText(`⏱️ ${pokemon.liftDuration}`, 250, statsY);
+                            statsY += 28;
+                        }
+                        if (pokemon.avgHR) {
+                            ctx.fillText(`❤️ ${pokemon.avgHR} bpm`, 250, statsY);
+                        }
+                    } else {
+                        if (pokemon.pace && pokemon.pace !== '--') {
+                            ctx.fillText(`⚡ ${pokemon.pace} min/mi`, 250, statsY);
+                            statsY += 28;
+                        }
+                        if (pokemon.distance && pokemon.distance !== '--') {
+                            // Draw distance loop icon
+                            drawDistanceIcon(210, statsY - 6, 14);
+                            ctx.fillText(`${pokemon.distance} mi`, 275, statsY);
+                            statsY += 28;
+                        }
+                        if (pokemon.duration && pokemon.duration !== '--') {
+                            ctx.fillText(`⏱️ ${pokemon.duration}`, 250, statsY);
+                        }
+                    }
+
+                    // Trade badge (drawn on canvas for PC)
+                    if (pokemon.isTrade && showTradeBadge) {
+                        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                        ctx.beginPath();
+                        ctx.roundRect(420, 10, 70, 24, 4);
+                        ctx.fill();
+                        
+                        ctx.fillStyle = 'white';
+                        ctx.font = 'bold 14px Arial';
+                        ctx.textAlign = 'center';
+                        ctx.fillText('🔄 TRADE', 455, 26);
+                        ctx.textAlign = 'left';
+                    }
+
+                    const dataUrl = canvas.toDataURL();
+                    cardImageCache.set(cacheKey, dataUrl); // Cache it
+                    setCardImage(dataUrl);
+                };
+            }, [pokemon, showTradeBadge]);
+
+            const handleClick = () => {
+                if (enableInteractiveView) {
+                    setShowInteractive(true);
+                } else if (onClick) {
+                    onClick();
+                }
+            };
+
+            return (
+                <>
+                    <div className={`relative ${className}`} onClick={handleClick}>
+                        {showDelete && (
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onDelete();
+                                }}
+                                className="absolute bottom-2 left-2 w-8 h-8 bg-red-500 hover:bg-red-600 text-white rounded-lg text-lg font-bold shadow-lg z-10"
+                            >
+                                ×
+                            </button>
+                        )}
+                        {cardImage && (
+                            <img src={cardImage} alt={pokemon.pokemonName} className="w-full h-auto rounded-lg" />
+                        )}
+                        {/* Trade badge only shows as overlay in Activity Feed (not in PC) */}
+                    </div>
+                    
+                    {showInteractive && (
+                        <InteractiveCardViewer 
+                            pokemon={pokemon} 
+                            onClose={() => setShowInteractive(false)} 
+                        />
+                    )}
+                </>
+            );
         };
 
-        const getPokemonSpriteUrl = (pokemonId, isShiny = false) => {
-            const shinyPath = isShiny ? 'shiny/' : '';
-            return `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${shinyPath}${pokemonId}.png`;
+        console.log('✅ Universal PokemonCard component loaded');
+
+        // ╔════════════════════════════════════════════════════════════╗
+        // ║  🎴 INTERACTIVE CARD VIEWER                                 ║
+        // ║  Full-screen draggable card with spring physics            ║
+        // ╚════════════════════════════════════════════════════════════╝
+        
+        const InteractiveCardViewer = ({ pokemon, onClose }) => {
+            const [position, setPosition] = useState({ x: 0, y: 0 });
+            const [isDragging, setIsDragging] = useState(false);
+            const [dragStart, setDragStart] = useState(null);
+            const animationRef = useRef(null);
+            const velocityRef = useRef({ x: 0, y: 0 });
+
+            // Spring physics constants
+            const SPRING_STRENGTH = 0.03;  // Reduced from 0.15 (20% speed)
+            const DAMPING = 0.97;  // Increased from 0.85 (slower, more floaty)
+            const VELOCITY_THRESHOLD = 0.1;  // Lower threshold for slower motion
+
+            // Spring animation back to center
+            useEffect(() => {
+                if (isDragging) return;
+
+                const animate = () => {
+                    setPosition(prev => {
+                        const dx = -prev.x;
+                        const dy = -prev.y;
+
+                        // Apply spring force
+                        velocityRef.current.x += dx * SPRING_STRENGTH;
+                        velocityRef.current.y += dy * SPRING_STRENGTH;
+
+                        // Apply damping
+                        velocityRef.current.x *= DAMPING;
+                        velocityRef.current.y *= DAMPING;
+
+                        const newX = prev.x + velocityRef.current.x;
+                        const newY = prev.y + velocityRef.current.y;
+
+                        // Stop when close enough to center
+                        if (Math.abs(newX) < 0.5 && Math.abs(newY) < 0.5 && 
+                            Math.abs(velocityRef.current.x) < VELOCITY_THRESHOLD && 
+                            Math.abs(velocityRef.current.y) < VELOCITY_THRESHOLD) {
+                            velocityRef.current = { x: 0, y: 0 };
+                            return { x: 0, y: 0 };
+                        }
+
+                        return { x: newX, y: newY };
+                    });
+
+                    animationRef.current = requestAnimationFrame(animate);
+                };
+
+                animationRef.current = requestAnimationFrame(animate);
+                return () => {
+                    if (animationRef.current) {
+                        cancelAnimationFrame(animationRef.current);
+                    }
+                };
+            }, [isDragging]);
+
+            // Touch handlers
+            const handleTouchStart = (e) => {
+                const touch = e.touches[0];
+                setDragStart({ x: touch.clientX - position.x, y: touch.clientY - position.y });
+                setIsDragging(true);
+                velocityRef.current = { x: 0, y: 0 };
+            };
+
+            const handleTouchMove = (e) => {
+                if (!dragStart) return;
+                e.preventDefault();
+                const touch = e.touches[0];
+                setPosition({
+                    x: touch.clientX - dragStart.x,
+                    y: touch.clientY - dragStart.y
+                });
+            };
+
+            const handleTouchEnd = () => {
+                setDragStart(null);
+                setIsDragging(false);
+            };
+
+            // Mouse handlers
+            const handleMouseDown = (e) => {
+                setDragStart({ x: e.clientX - position.x, y: e.clientY - position.y });
+                setIsDragging(true);
+                velocityRef.current = { x: 0, y: 0 };
+            };
+
+            const handleMouseMove = (e) => {
+                if (!dragStart) return;
+                setPosition({
+                    x: e.clientX - dragStart.x,
+                    y: e.clientY - dragStart.y
+                });
+            };
+
+            const handleMouseUp = () => {
+                setDragStart(null);
+                setIsDragging(false);
+            };
+
+            useEffect(() => {
+                if (isDragging) {
+                    document.addEventListener('mousemove', handleMouseMove);
+                    document.addEventListener('mouseup', handleMouseUp);
+                    return () => {
+                        document.removeEventListener('mousemove', handleMouseMove);
+                        document.removeEventListener('mouseup', handleMouseUp);
+                    };
+                }
+            }, [isDragging, dragStart]);
+
+            // Calculate rotation based on position
+            const rotation = position.x * 0.05;
+
+            return (
+                <div className="fixed inset-0 bg-black bg-opacity-90 z-50 flex items-center justify-center">
+                    {/* Close button */}
+                    <button
+                        onClick={onClose}
+                        className="absolute top-4 right-4 w-12 h-12 bg-white bg-opacity-20 hover:bg-opacity-30 rounded-full flex items-center justify-center text-white text-2xl font-bold transition z-50"
+                    >
+                        ×
+                    </button>
+
+                    {/* Draggable card */}
+                    <div
+                        className="cursor-grab active:cursor-grabbing select-none"
+                        style={{
+                            transform: `translate(${position.x}px, ${position.y}px) rotate(${rotation}deg)`,
+                            transition: isDragging ? 'none' : 'transform 0.1s ease-out',
+                            maxWidth: '90vw',
+                            maxHeight: '90vh'
+                        }}
+                        onTouchStart={handleTouchStart}
+                        onTouchMove={handleTouchMove}
+                        onTouchEnd={handleTouchEnd}
+                        onMouseDown={handleMouseDown}
+                    >
+                        <PokemonCard 
+                            pokemon={pokemon} 
+                            className="w-full shadow-2xl"
+                            showTradeBadge={true}
+                        />
+                    </div>
+
+                    {/* Instructions */}
+                    <div className="absolute bottom-8 left-0 right-0 text-center text-white text-sm opacity-70">
+                        Drag to move • Release to return to center
+                    </div>
+                </div>
+            );
         };
 
-        console.log('✅ Pokemon data service loaded');
-
-        // ╔════════════════════════════════════════════════════════╗
-        // ║  🔧 SECTION 2: UTILITIES                                ║
-        // ║  [FUTURE: Extract to /utils/*.js]                       ║
-        // ╚════════════════════════════════════════════════════════╝
+        console.log('✅ Interactive card viewer loaded');
 
         // =========================
         // 🎨 TRAINER NAME GENERATION
@@ -2009,19 +2365,90 @@
                         ctx.textAlign = 'center';
                         ctx.fillText(trainerName, 540, trainerBadgeY + 30);
 
-                        // Workout data below trainer badge - with units
+                        // Workout data below trainer badge - with icons
                         const workoutDataY = trainerBadgeY + trainerBadgeHeight + 35;
                         ctx.fillStyle = '#4B5563';
                         ctx.font = '36px sans-serif';
                         ctx.textAlign = 'center';
                         
-                        // Check if lift or cardio
-                        const isLift = activity.pace === '--' || !activity.pace || activity.pace === 'undefined';
-                        const statsText = isLift
-                            ? `${activity.duration || '--'} min    ${activity.caloriesBurned || '--'} kcal    ${activity.avgHR || '--'} bpm`
-                            : `${activity.pace} min/mi    ${activity.distance} mi    ${activity.duration}`;
+                        // Helper: Draw horseshoe distance icon (scaled for 1080x1080)
+                        const drawDistanceIconLarge = (x, y, size) => {
+                            ctx.save();
+                            ctx.strokeStyle = '#4B5563';
+                            ctx.lineWidth = 5;
+                            ctx.lineCap = 'round';
+                            
+                            ctx.beginPath();
+                            ctx.arc(x, y, size * 0.6, Math.PI * 0.2, Math.PI * 0.8, false);
+                            ctx.stroke();
+                            
+                            ctx.fillStyle = '#4B5563';
+                            const arrowX = x + Math.cos(Math.PI * 0.8) * size * 0.6;
+                            const arrowY = y + Math.sin(Math.PI * 0.8) * size * 0.6;
+                            
+                            ctx.beginPath();
+                            ctx.moveTo(arrowX - 8, arrowY - 12);
+                            ctx.lineTo(arrowX + 4, arrowY);
+                            ctx.lineTo(arrowX - 8, arrowY + 12);
+                            ctx.closePath();
+                            ctx.fill();
+                            
+                            ctx.restore();
+                        };
                         
-                        ctx.fillText(statsText, 540, workoutDataY);
+                        // Check if lift or cardio and draw with icons
+                        const isLift = activity.pace === '--' || !activity.pace || activity.pace === 'undefined';
+                        
+                        if (isLift) {
+                            // Lift workout: duration, calories, HR
+                            let xPos = 200;
+                            const iconSize = 28;
+                            
+                            // Duration (⏱️ timer icon)
+                            if (activity.duration) {
+                                ctx.fillText('⏱️', xPos, workoutDataY);
+                                ctx.fillText(`${activity.duration}`, xPos + 80, workoutDataY);
+                                xPos += 260;
+                            }
+                            
+                            // Calories (🔥 fire icon)
+                            if (activity.caloriesBurned) {
+                                ctx.fillText('🔥', xPos, workoutDataY);
+                                ctx.fillText(`${activity.caloriesBurned} cal`, xPos + 80, workoutDataY);
+                                xPos += 260;
+                            }
+                            
+                            // Heart rate (❤️ heart icon)
+                            if (activity.avgHR) {
+                                ctx.fillText('❤️', xPos, workoutDataY);
+                                ctx.fillText(`${activity.avgHR} bpm`, xPos + 80, workoutDataY);
+                            }
+                        } else {
+                            // Cardio workout: pace, distance, duration
+                            let xPos = 180;
+                            const iconSize = 28;
+                            
+                            // Pace (⚡ lightning)
+                            if (activity.pace) {
+                                ctx.fillText('⚡', xPos, workoutDataY);
+                                ctx.fillText(`${activity.pace} min/mi`, xPos + 80, workoutDataY);
+                                xPos += 300;
+                            }
+                            
+                            // Distance (horseshoe icon)
+                            if (activity.distance) {
+                                drawDistanceIconLarge(xPos + 20, workoutDataY - 12, iconSize);
+                                ctx.fillText(`${activity.distance} mi`, xPos + 100, workoutDataY);
+                                xPos += 260;
+                            }
+                            
+                            // Duration (⏱️ timer)
+                            if (activity.duration) {
+                                ctx.fillText('⏱️', xPos, workoutDataY);
+                                ctx.fillText(`${activity.duration}`, xPos + 80, workoutDataY);
+                            }
+                        }
+                        
                         ctx.textAlign = 'left';
 
                         // Shiny badge (if shiny) - small badge in top right corner
@@ -2144,206 +2571,6 @@
         };
 
         // ========================================
-        // 🎴 POKEMON CARD COMPONENT (for PC, Starters, Activity Feed)
-        // ========================================
-        const PokemonCard = ({ pokemon, onClick, showDelete, onDelete, className = "" }) => {
-            const canvasRef = useRef(null);
-            const [cardImage, setCardImage] = useState(null);
-
-            // Helper to draw rarity icon
-            const drawRarityIcon = (ctx, x, y, size, tier) => {
-                const drawStar = (ctx, cx, cy, spikes, outerRadius, innerRadius) => {
-                    let rot = Math.PI / 2 * 3;
-                    const step = Math.PI / spikes;
-                    ctx.beginPath();
-                    ctx.moveTo(cx, cy - outerRadius);
-                    for (let i = 0; i < spikes; i++) {
-                        let x = cx + Math.cos(rot) * outerRadius;
-                        let y = cy + Math.sin(rot) * outerRadius;
-                        ctx.lineTo(x, y);
-                        rot += step;
-                        x = cx + Math.cos(rot) * innerRadius;
-                        y = cy + Math.sin(rot) * innerRadius;
-                        ctx.lineTo(x, y);
-                        rot += step;
-                    }
-                    ctx.lineTo(cx, cy - outerRadius);
-                    ctx.closePath();
-                    ctx.fill();
-                };
-
-                ctx.save();
-                switch(tier) {
-                    case 'common':
-                        ctx.fillStyle = '#6B7280';
-                        ctx.beginPath();
-                        ctx.arc(x + size/2, y + size/2, size/2, 0, Math.PI * 2);
-                        ctx.fill();
-                        ctx.strokeStyle = '#FFFFFF';
-                        ctx.lineWidth = 3;
-                        ctx.stroke();
-                        break;
-                    case 'uncommon':
-                        ctx.fillStyle = '#10B981';
-                        ctx.beginPath();
-                        ctx.moveTo(x + size/2, y);
-                        ctx.lineTo(x + size, y + size/2);
-                        ctx.lineTo(x + size/2, y + size);
-                        ctx.lineTo(x, y + size/2);
-                        ctx.closePath();
-                        ctx.fill();
-                        ctx.strokeStyle = '#FFFFFF';
-                        ctx.lineWidth = 3;
-                        ctx.stroke();
-                        break;
-                    case 'rare':
-                        ctx.fillStyle = '#3B82F6';
-                        drawStar(ctx, x + size/2, y + size/2, 5, size/2, size/4);
-                        ctx.strokeStyle = '#FFFFFF';
-                        ctx.lineWidth = 3;
-                        ctx.stroke();
-                        break;
-                    case 'epic':
-                        ctx.fillStyle = '#8B5CF6';
-                        ctx.globalAlpha = 0.7;
-                        drawStar(ctx, x + size/2 - 6, y + size/2, 5, size/2.2, size/4.4);
-                        ctx.globalAlpha = 1;
-                        drawStar(ctx, x + size/2 + 6, y + size/2, 5, size/2.2, size/4.4);
-                        ctx.strokeStyle = '#FFFFFF';
-                        ctx.lineWidth = 2.5;
-                        ctx.stroke();
-                        break;
-                    case 'legendary':
-                        ctx.fillStyle = '#F59E0B';
-                        drawStar(ctx, x + size/2, y + size/3, 5, size/2.5, size/5);
-                        drawStar(ctx, x + size/4, y + size*2/3, 5, size/3, size/6);
-                        drawStar(ctx, x + size*3/4, y + size*2/3, 5, size/3, size/6);
-                        ctx.strokeStyle = '#FFFFFF';
-                        ctx.lineWidth = 2.5;
-                        ctx.stroke();
-                        break;
-                }
-                ctx.restore();
-            };
-
-            useEffect(() => {
-                const canvas = document.createElement('canvas');
-                canvas.width = 500; // Increased from 400
-                canvas.height = 500; // Increased from 400
-                const ctx = canvas.getContext('2d');
-
-                // Light gray background
-                ctx.fillStyle = '#F3F4F6';
-                ctx.fillRect(0, 0, 500, 500);
-
-                // Pokemon name - larger
-                ctx.fillStyle = '#1F2937';
-                ctx.font = 'bold 32px Arial'; // Increased from 24px
-                ctx.textAlign = 'center';
-                ctx.fillText(pokemon.pokemonName.toUpperCase(), 250, 45); // Adjusted center
-
-                // Rarity icon at top - larger
-                const iconSize = 55; // Increased from 40
-                const iconX = 250 - iconSize / 2;
-                const iconY = 55; // Adjusted position
-                drawRarityIcon(ctx, iconX, iconY, iconSize, pokemon.rarity);
-
-                // Load sprite
-                const img = new Image();
-                img.crossOrigin = 'anonymous';
-                img.src = pokemon.spriteUrl;
-                img.onload = () => {
-                    // Draw sprite - larger
-                    const spriteSize = 200; // Increased from 140
-                    const spriteX = (500 - spriteSize) / 2;
-                    const spriteY = 130; // Adjusted position
-                    ctx.imageSmoothingEnabled = false;
-                    ctx.drawImage(img, spriteX, spriteY, spriteSize, spriteSize);
-
-                    // Rarity badge below sprite - larger
-                    const rarityColors = {
-                        legendary: '#F59E0B',
-                        epic: '#8B5CF6',
-                        rare: '#3B82F6',
-                        uncommon: '#10B981',
-                        common: '#9CA3AF'
-                    };
-                    
-                    const badgeY = 350; // Adjusted position
-                    const badgeWidth = 240; // Increased from 180
-                    const badgeHeight = 42; // Increased from 32
-                    const badgeX = (500 - badgeWidth) / 2;
-                    
-                    ctx.fillStyle = rarityColors[pokemon.rarity] || rarityColors.common;
-                    ctx.beginPath();
-                    ctx.roundRect(badgeX, badgeY, badgeWidth, badgeHeight, 10); // Increased corner radius
-                    ctx.fill();
-                    
-                    ctx.fillStyle = 'white';
-                    ctx.font = 'bold 22px Arial'; // Increased from 16px
-                    ctx.textAlign = 'center';
-                    ctx.fillText(pokemon.rarity.toUpperCase(), 250, badgeY + 28); // Adjusted center and position
-
-                    // Workout data below badge - single row with units - larger text
-                    ctx.fillStyle = '#4B5563';
-                    ctx.font = '18px Arial'; // Increased from 14px
-                    ctx.textAlign = 'center';
-                    
-                    const isLift = pokemon.pace === '--' || !pokemon.pace || pokemon.pace === 'undefined';
-                    
-                    console.log('🎴 Rendering card for:', pokemon.pokemonName, {
-                        isLift,
-                        pace: pokemon.pace,
-                        distance: pokemon.distance,
-                        duration: pokemon.duration,
-                        caloriesBurned: pokemon.caloriesBurned,
-                        avgHR: pokemon.avgHR
-                    });
-                    
-                    if (isLift) {
-                        // Lift: duration min | calories kcal | HR bpm
-                        const duration = pokemon.duration || '--';
-                        const calories = pokemon.caloriesBurned || '--';
-                        const hr = pokemon.avgHR || '--';
-                        ctx.fillText(`${duration} min  ${calories} kcal  ${hr} bpm`, 250, 430); // Adjusted position
-                    } else {
-                        // Cardio: pace min/mi | distance mi | duration
-                        const pace = pokemon.pace || '--';
-                        const distance = pokemon.distance || '--';
-                        const duration = pokemon.duration || '--';
-                        ctx.fillText(`${pace} min/mi  ${distance} mi  ${duration}`, 250, 430); // Adjusted position
-                    }
-
-                    setCardImage(canvas.toDataURL());
-                };
-            }, [pokemon]);
-
-            return (
-                <div className={`relative ${className}`} onClick={onClick}>
-                    {showDelete && (
-                        <button
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                onDelete();
-                            }}
-                            className="absolute bottom-2 left-2 w-8 h-8 bg-red-500 hover:bg-red-600 text-white rounded-lg text-lg font-bold shadow-lg z-10"
-                        >
-                            ×
-                        </button>
-                    )}
-                    {cardImage && (
-                        <img src={cardImage} alt={pokemon.pokemonName} className="w-full h-auto rounded-lg" />
-                    )}
-                    {/* 🔄 Trade Badge */}
-                    {pokemon.isTrade && (
-                        <div className="absolute top-2 right-2 bg-black bg-opacity-70 rounded-md px-1.5 py-0.5 flex items-center gap-0.5 z-10">
-                            <span className="text-sm">🔄</span>
-                            <span className="text-white text-xs font-bold">TRADE</span>
-                        </div>
-                    )}
-                </div>
-            );
-        };
 
         // ========================================
         // 🎯 ENCOUNTER CARD COMPONENT (Canvas-based like old shareable cards)
@@ -2684,11 +2911,6 @@
             );
         };
 
-        // ╔════════════════════════════════════════════════════════╗
-        // ║  🏠 SECTION 4: MAIN APP COMPONENT                       ║
-        // ║  [FUTURE FILE: /app/PokeRunApp.jsx]                     ║
-        // ╚════════════════════════════════════════════════════════╝
-        
         const PokemonRunTracker = () => {
             // Cardio workout inputs (existing)
             const [pace, setPace] = useState('');
@@ -4502,27 +4724,18 @@
             };
 
             // ✅ Pick a Pokemon ID that *matches the tier* based on your map
-            // 🎮 GEN-GATING: Filter pokemon by unlocked generations
-            const pickPokemonIdForTier = (tier, streakDays) => {
-                const allPokemonInTier = POKEMON_IDS_BY_RARITY[tier] || [];
-                
-                // Filter to only available generations
-                const availablePokemon = allPokemonInTier.filter(id => 
-                    isPokemonAvailable(id, streakDays)
-                );
-                
-                const pool = availablePokemon.length > 0 ? availablePokemon : allPokemonInTier;
-                
-                if (!pool.length) {
+            const pickPokemonIdForTier = (tier) => {
+                const list = POKEMON_IDS_BY_RARITY[tier] || [];
+                if (!list.length) {
+                    // Hard fallback: any mapped ID
                     const allIds = Object.keys(POKEMON_RARITY_MAP).map(Number);
                     return allIds[Math.floor(Math.random() * allIds.length)];
                 }
-                return pool[Math.floor(Math.random() * pool.length)];
+                return list[Math.floor(Math.random() * list.length)];
             };
 
             const getPokemonByRarity = async (rarity) => {
-                // 🎮 Pass currentStreak.days for gen-gating
-                const pokemonId = pickPokemonIdForTier(rarity.tier, currentStreak.days);
+                const pokemonId = pickPokemonIdForTier(rarity.tier);
 
                 const baseShinyChance = 1/4096;
                 const streakBonus = currentStreak.days * (1/500);
@@ -5508,13 +5721,10 @@
                                     <span>{storedPokeballs}</span>
                                 </div>
                                 
-                                {/* Streak Badge with Gen Info */}
+                                {/* Streak Badge */}
                                 <div className="flex items-center gap-2 px-3 py-2 rounded-lg font-bold text-xs text-white shadow-md bg-gradient-to-br from-gray-800 to-gray-900">
                                     <span>🔥</span>
                                     <span>{currentStreak.days}d</span>
-                                    <span className="text-[10px] opacity-75">
-                                        Gen {getAvailableGenerations(currentStreak.days).join(',')}
-                                    </span>
                                 </div>
                                 
                                 {/* Runs Badge */}
@@ -5964,7 +6174,12 @@
                                         ? '✓ Exchanged' 
                                         : isOnCooldown()
                                             ? `⏳ ${formatCooldown(getCooldownRemaining(sessionCooldown, MAX_SESSIONS))}`
-                                            : `⚪ Exchange (${sessionCooldown.windowStart && Date.now() - sessionCooldown.windowStart < COOLDOWN_MS ? MAX_SESSIONS - sessionCooldown.count : MAX_SESSIONS} left)`
+                                            : (
+                                                <span className="flex items-center justify-center gap-2">
+                                                    <PokeballIcon size={20} />
+                                                    <span>Exchange ({sessionCooldown.windowStart && Date.now() - sessionCooldown.windowStart < COOLDOWN_MS ? MAX_SESSIONS - sessionCooldown.count : MAX_SESSIONS} left)</span>
+                                                </span>
+                                            )
                                     }
                                 </button>
                                 
@@ -6180,6 +6395,8 @@
                                                         }}
                                                         showDelete={deleteMode}
                                                         onDelete={() => setShowDeletePrompt(pokemon.id)}
+                                                        showTradeBadge={true}
+                                                        enableInteractiveView={selectingForSlot === null && !deleteMode}
                                                     />
                                                     
                                                     {showDeletePrompt === pokemon.id && (
@@ -6240,6 +6457,7 @@
                                                     <PokemonCard
                                                         pokemon={starter}
                                                         className="p-0"
+                                                        enableInteractiveView={true}
                                                     />
                                                     <button
                                                         onClick={() => removeFromStarters(index)}
@@ -7013,10 +7231,6 @@
             );
         };
 
-        // ╔════════════════════════════════════════════════════════╗
-        // ║  🚀 SECTION 5: BOOTSTRAP & RENDER                       ║
-        // ╚════════════════════════════════════════════════════════╝
-        
         const root = ReactDOM.createRoot(document.getElementById('root'));
         console.log('Root created, attempting render...');
         root.render(<PokemonRunTracker />);
