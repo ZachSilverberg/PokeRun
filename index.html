@@ -405,29 +405,25 @@
                     const isLift = !pokemon.pace || pokemon.pace === '--';
                     let statsY = 410;
                     
-                    // Helper: Draw distance horseshoe icon
+                    // Helper: Draw odometer/mile tracker icon
                     const drawDistanceIcon = (x, y, size) => {
                         ctx.save();
                         ctx.strokeStyle = '#4B5563';
-                        ctx.lineWidth = 2.5;
-                        ctx.lineCap = 'round';
-                        
-                        // Draw horseshoe (open at top)
-                        ctx.beginPath();
-                        ctx.arc(x, y, size * 0.6, Math.PI * 0.2, Math.PI * 0.8, false);
-                        ctx.stroke();
-                        
-                        // Draw arrow at right end pointing forward
                         ctx.fillStyle = '#4B5563';
-                        const arrowX = x + Math.cos(Math.PI * 0.8) * size * 0.6;
-                        const arrowY = y + Math.sin(Math.PI * 0.8) * size * 0.6;
+                        ctx.lineWidth = 2;
                         
-                        ctx.beginPath();
-                        ctx.moveTo(arrowX - 4, arrowY - 6);
-                        ctx.lineTo(arrowX + 2, arrowY);
-                        ctx.lineTo(arrowX - 4, arrowY + 6);
-                        ctx.closePath();
-                        ctx.fill();
+                        // Draw rounded rectangle (odometer display)
+                        const width = size * 1.4;
+                        const height = size * 0.9;
+                        const radius = size * 0.15;
+                        
+                        ctx.strokeRect(x - width/2, y - height/2, width, height);
+                        
+                        // Draw digital number segments (simplified "00.0" display)
+                        ctx.font = `bold ${size * 0.6}px monospace`;
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+                        ctx.fillText('0.0', x, y);
                         
                         ctx.restore();
                     };
@@ -450,9 +446,9 @@
                             statsY += 28;
                         }
                         if (pokemon.distance && pokemon.distance !== '--') {
-                            // Draw distance loop icon
-                            drawDistanceIcon(210, statsY - 6, 14);
-                            ctx.fillText(`${pokemon.distance} mi`, 275, statsY);
+                            // Draw odometer icon
+                            drawDistanceIcon(215, statsY - 4, 11);
+                            ctx.fillText(`${pokemon.distance} mi`, 270, statsY);
                             statsY += 28;
                         }
                         if (pokemon.duration && pokemon.duration !== '--') {
@@ -585,11 +581,13 @@
                 setDragStart({ x: touch.clientX - position.x, y: touch.clientY - position.y });
                 setIsDragging(true);
                 velocityRef.current = { x: 0, y: 0 };
+                // Prevent body scroll while dragging
+                document.body.style.overflow = 'hidden';
             };
 
             const handleTouchMove = (e) => {
                 if (!dragStart) return;
-                e.preventDefault();
+                e.preventDefault(); // Prevent scroll
                 const touch = e.touches[0];
                 setPosition({
                     x: touch.clientX - dragStart.x,
@@ -600,6 +598,8 @@
             const handleTouchEnd = () => {
                 setDragStart(null);
                 setIsDragging(false);
+                // Re-enable body scroll
+                document.body.style.overflow = '';
             };
 
             // Mouse handlers
@@ -607,6 +607,8 @@
                 setDragStart({ x: e.clientX - position.x, y: e.clientY - position.y });
                 setIsDragging(true);
                 velocityRef.current = { x: 0, y: 0 };
+                // Prevent body scroll while dragging
+                document.body.style.overflow = 'hidden';
             };
 
             const handleMouseMove = (e) => {
@@ -620,6 +622,8 @@
             const handleMouseUp = () => {
                 setDragStart(null);
                 setIsDragging(false);
+                // Re-enable body scroll
+                document.body.style.overflow = '';
             };
 
             useEffect(() => {
@@ -632,6 +636,13 @@
                     };
                 }
             }, [isDragging, dragStart]);
+            
+            // Cleanup on unmount
+            useEffect(() => {
+                return () => {
+                    document.body.style.overflow = '';
+                };
+            }, []);
 
             // Calculate rotation based on position
             const rotation = position.x * 0.05;
@@ -2365,88 +2376,31 @@
                         ctx.textAlign = 'center';
                         ctx.fillText(trainerName, 540, trainerBadgeY + 30);
 
-                        // Workout data below trainer badge - with icons
-                        const workoutDataY = trainerBadgeY + trainerBadgeHeight + 35;
+                        // Workout data below trainer badge - simplified for iOS compatibility
+                        const workoutDataY = trainerBadgeY + trainerBadgeHeight + 40;
                         ctx.fillStyle = '#4B5563';
-                        ctx.font = '36px sans-serif';
+                        ctx.font = '38px sans-serif';
                         ctx.textAlign = 'center';
                         
-                        // Helper: Draw horseshoe distance icon (scaled for 1080x1080)
-                        const drawDistanceIconLarge = (x, y, size) => {
-                            ctx.save();
-                            ctx.strokeStyle = '#4B5563';
-                            ctx.lineWidth = 5;
-                            ctx.lineCap = 'round';
-                            
-                            ctx.beginPath();
-                            ctx.arc(x, y, size * 0.6, Math.PI * 0.2, Math.PI * 0.8, false);
-                            ctx.stroke();
-                            
-                            ctx.fillStyle = '#4B5563';
-                            const arrowX = x + Math.cos(Math.PI * 0.8) * size * 0.6;
-                            const arrowY = y + Math.sin(Math.PI * 0.8) * size * 0.6;
-                            
-                            ctx.beginPath();
-                            ctx.moveTo(arrowX - 8, arrowY - 12);
-                            ctx.lineTo(arrowX + 4, arrowY);
-                            ctx.lineTo(arrowX - 8, arrowY + 12);
-                            ctx.closePath();
-                            ctx.fill();
-                            
-                            ctx.restore();
-                        };
-                        
-                        // Check if lift or cardio and draw with icons
+                        // Check if lift or cardio and use emojis (better iOS compatibility)
                         const isLift = activity.pace === '--' || !activity.pace || activity.pace === 'undefined';
                         
                         if (isLift) {
                             // Lift workout: duration, calories, HR
-                            let xPos = 200;
-                            const iconSize = 28;
+                            const parts = [];
+                            if (activity.duration) parts.push(`⏱️ ${activity.duration}`);
+                            if (activity.caloriesBurned) parts.push(`🔥 ${activity.caloriesBurned} cal`);
+                            if (activity.avgHR) parts.push(`❤️ ${activity.avgHR} bpm`);
                             
-                            // Duration (⏱️ timer icon)
-                            if (activity.duration) {
-                                ctx.fillText('⏱️', xPos, workoutDataY);
-                                ctx.fillText(`${activity.duration}`, xPos + 80, workoutDataY);
-                                xPos += 260;
-                            }
-                            
-                            // Calories (🔥 fire icon)
-                            if (activity.caloriesBurned) {
-                                ctx.fillText('🔥', xPos, workoutDataY);
-                                ctx.fillText(`${activity.caloriesBurned} cal`, xPos + 80, workoutDataY);
-                                xPos += 260;
-                            }
-                            
-                            // Heart rate (❤️ heart icon)
-                            if (activity.avgHR) {
-                                ctx.fillText('❤️', xPos, workoutDataY);
-                                ctx.fillText(`${activity.avgHR} bpm`, xPos + 80, workoutDataY);
-                            }
+                            ctx.fillText(parts.join('    '), 540, workoutDataY);
                         } else {
                             // Cardio workout: pace, distance, duration
-                            let xPos = 180;
-                            const iconSize = 28;
+                            const parts = [];
+                            if (activity.pace) parts.push(`⚡ ${activity.pace} min/mi`);
+                            if (activity.distance) parts.push(`📊 ${activity.distance} mi`);
+                            if (activity.duration) parts.push(`⏱️ ${activity.duration}`);
                             
-                            // Pace (⚡ lightning)
-                            if (activity.pace) {
-                                ctx.fillText('⚡', xPos, workoutDataY);
-                                ctx.fillText(`${activity.pace} min/mi`, xPos + 80, workoutDataY);
-                                xPos += 300;
-                            }
-                            
-                            // Distance (horseshoe icon)
-                            if (activity.distance) {
-                                drawDistanceIconLarge(xPos + 20, workoutDataY - 12, iconSize);
-                                ctx.fillText(`${activity.distance} mi`, xPos + 100, workoutDataY);
-                                xPos += 260;
-                            }
-                            
-                            // Duration (⏱️ timer)
-                            if (activity.duration) {
-                                ctx.fillText('⏱️', xPos, workoutDataY);
-                                ctx.fillText(`${activity.duration}`, xPos + 80, workoutDataY);
-                            }
+                            ctx.fillText(parts.join('    '), 540, workoutDataY);
                         }
                         
                         ctx.textAlign = 'left';
