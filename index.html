@@ -639,16 +639,48 @@
             
             // Cleanup on unmount
             useEffect(() => {
+                // Lock scrolling on mount
+                const originalStyle = window.getComputedStyle(document.body).overflow;
+                const originalPosition = window.getComputedStyle(document.body).position;
+                
+                document.body.style.overflow = 'hidden';
+                document.body.style.position = 'fixed';
+                document.body.style.width = '100%';
+                document.body.style.height = '100%';
+                
+                // Prevent pull-to-refresh on iOS
+                const preventPullToRefresh = (e) => {
+                    if (e.touches.length > 1) return;
+                    e.preventDefault();
+                    return false;
+                };
+                
+                document.addEventListener('touchmove', preventPullToRefresh, { passive: false });
+                
                 return () => {
-                    document.body.style.overflow = '';
+                    document.body.style.overflow = originalStyle;
+                    document.body.style.position = originalPosition;
+                    document.body.style.width = '';
+                    document.body.style.height = '';
+                    document.removeEventListener('touchmove', preventPullToRefresh);
                 };
             }, []);
 
             // Calculate rotation based on position
             const rotation = position.x * 0.05;
 
+            // Prevent scroll on the overlay itself
+            const preventScroll = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+            };
+
             return (
-                <div className="fixed inset-0 bg-black bg-opacity-90 z-50 flex items-center justify-center">
+                <div 
+                    className="fixed inset-0 bg-black bg-opacity-90 z-50 flex items-center justify-center"
+                    onTouchMove={preventScroll}
+                    style={{ touchAction: 'none', overscrollBehavior: 'none' }}
+                >
                     {/* Close button */}
                     <button
                         onClick={onClose}
@@ -664,7 +696,8 @@
                             transform: `translate(${position.x}px, ${position.y}px) rotate(${rotation}deg)`,
                             transition: isDragging ? 'none' : 'transform 0.1s ease-out',
                             maxWidth: '90vw',
-                            maxHeight: '90vh'
+                            maxHeight: '90vh',
+                            touchAction: 'none'
                         }}
                         onTouchStart={handleTouchStart}
                         onTouchMove={handleTouchMove}
