@@ -2890,7 +2890,7 @@
                     setTimeout(() => {
                         setShowRarity(true);
                         
-                        // After 2s, show everything else
+                        // After 1.0s (reduced from 1.5s), show everything else
                         setTimeout(() => {
                             setShowEverythingElse(true);
                             if (onImageVisible) onImageVisible();
@@ -2898,7 +2898,7 @@
                             if (onRevealComplete) {
                                 setTimeout(() => onRevealComplete(), 700);
                             }
-                        }, 2000);
+                        }, 1000); // Changed from 1500 to 1000
                     }, 50);
                 }, 50);
                 
@@ -2916,7 +2916,7 @@
                     {/* Layer 1: Card background (shows with rarity) */}
                     <EncounterCardBase trait={encounter.trait} visible={showRarity} />
                     
-                    {/* Layer 2: Big centered rarity badge (shows first) - REMOVED, only show badge at bottom */}
+                    {/* Layer 2: Big centered rarity badge (shows first, hides when everything else shows) */}
                     {showRarity && !showEverythingElse && (
                         <div className="absolute inset-0 flex items-center justify-center">
                             <div 
@@ -5108,6 +5108,22 @@
                 return session;
             };
 
+            // Auto-scroll to encounter card when it appears
+            useEffect(() => {
+                if (currentEncounter) {
+                    // Small delay to ensure DOM is ready
+                    setTimeout(() => {
+                        const encounterElement = document.getElementById('encounter-view');
+                        if (encounterElement) {
+                            encounterElement.scrollIntoView({ 
+                                behavior: 'smooth', 
+                                block: 'center' 
+                            });
+                        }
+                    }, 100);
+                }
+            }, [currentEncounter?.encounterId]); // Trigger on new encounter
+
             // Load existing session from storage
             const loadCaptureSession = async () => {
                 try {
@@ -6381,17 +6397,23 @@
                                 
                                 <div className="flex justify-between items-center mb-4">
                                     <div>
-                                        <h2 className="text-xl font-bold text-white capitalize">Wild {currentEncounter.pokemonName}!</h2>
-                                        {/* Trait indicator - shown after card image appears */}
-                                        {isImageVisible && currentEncounter.trait === 'light' && (
-                                            <p className="text-yellow-300 text-sm mt-1 animate-pulse">
-                                                ☀️ This Pokémon radiates with Light energy!
-                                            </p>
-                                        )}
-                                        {isImageVisible && currentEncounter.trait === 'dark' && (
-                                            <p className="text-purple-300 text-sm mt-1 animate-pulse">
-                                                🌙 This Pokémon is shrouded in Dark power!
-                                            </p>
+                                        {isCardRevealed ? (
+                                            <>
+                                                <h2 className="text-xl font-bold text-white capitalize">Wild {currentEncounter.pokemonName}!</h2>
+                                                {/* Trait indicator - shown after card image appears */}
+                                                {currentEncounter.trait === 'light' && (
+                                                    <p className="text-yellow-300 text-sm mt-1 animate-pulse">
+                                                        ☀️ This Pokémon radiates with Light energy!
+                                                    </p>
+                                                )}
+                                                {currentEncounter.trait === 'dark' && (
+                                                    <p className="text-purple-300 text-sm mt-1 animate-pulse">
+                                                        🌙 This Pokémon is shrouded in Dark power!
+                                                    </p>
+                                                )}
+                                            </>
+                                        ) : (
+                                            <h2 className="text-xl font-bold text-white">Wild Pokémon Appeared!</h2>
                                         )}
                                     </div>
                                     <div className="text-sm font-bold text-gray-400">
