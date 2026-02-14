@@ -2723,7 +2723,8 @@
                     style={{ 
                         opacity: visible ? 1 : 0,
                         pointerEvents: visible ? 'auto' : 'none',
-                        marginTop: '-40px' // Shift up slightly to center better with badge below
+                        top: '120px', // Push down below name
+                        bottom: '200px' // Pull up above badge/stats
                     }}
                 >
                     <div className="relative">
@@ -2737,14 +2738,14 @@
                             </>
                         )}
                         
-                        {/* Pokémon sprite */}
+                        {/* Pokémon sprite - smaller to prevent overlap */}
                         <img 
                             src={spriteUrl}
                             alt={pokemonName}
                             className="pixelated"
                             style={{ 
-                                width: '280px',
-                                height: '280px',
+                                width: '200px',
+                                height: '200px',
                                 imageRendering: 'pixelated',
                                 filter: isShiny ? 'drop-shadow(0 0 12px rgba(255, 215, 0, 0.8))' : 'none'
                             }}
@@ -2768,8 +2769,8 @@
             // Rarity icon (same as canvas version)
             const RarityIcon = ({ rarity }) => {
                 const iconStyle = {
-                    width: '40px',
-                    height: '40px',
+                    width: '30px',
+                    height: '30px',
                     display: 'inline-flex',
                     alignItems: 'center',
                     justifyContent: 'center'
@@ -2777,17 +2778,17 @@
                 
                 switch(rarity) {
                     case 'common':
-                        return <div style={iconStyle} className="text-gray-500 text-3xl">●</div>;
+                        return <div style={iconStyle} className="text-gray-500 text-2xl">●</div>;
                     case 'uncommon':
-                        return <div style={iconStyle} className="text-green-500 text-3xl">◆</div>;
+                        return <div style={iconStyle} className="text-green-500 text-2xl">◆</div>;
                     case 'rare':
-                        return <div style={iconStyle} className="text-blue-500 text-3xl">★</div>;
+                        return <div style={iconStyle} className="text-blue-500 text-2xl">★</div>;
                     case 'epic':
-                        return <div style={iconStyle} className="text-purple-500 text-3xl">★★</div>;
+                        return <div style={iconStyle} className="text-purple-500 text-2xl">★★</div>;
                     case 'legendary':
-                        return <div style={iconStyle} className="text-amber-500 text-3xl">★★★</div>;
+                        return <div style={iconStyle} className="text-amber-500 text-2xl">★★★</div>;
                     default:
-                        return <div style={iconStyle} className="text-gray-500 text-3xl">●</div>;
+                        return <div style={iconStyle} className="text-gray-500 text-2xl">●</div>;
                 }
             };
             
@@ -2800,16 +2801,16 @@
                     }}
                 >
                     {/* Top section - Rarity icon and Name */}
-                    <div className="absolute top-0 left-0 right-0 flex flex-col items-center gap-2 pt-6">
+                    <div className="absolute top-0 left-0 right-0 flex flex-col items-center gap-1 pt-4">
                         <RarityIcon rarity={encounter.rarity} />
-                        <h2 className="text-3xl font-bold text-gray-900">{encounter.pokemonName.toUpperCase()}</h2>
+                        <h2 className="text-2xl font-bold text-gray-900">{encounter.pokemonName.toUpperCase()}</h2>
                     </div>
 
                     {/* Bottom section - Rarity badge + Stats box */}
-                    <div className="absolute bottom-0 left-0 right-0 flex flex-col items-center pb-6">
+                    <div className="absolute bottom-0 left-0 right-0 flex flex-col items-center pb-4">
                         {/* Rarity badge - positioned above stats box */}
                         <div 
-                            className="px-6 py-2 rounded-full text-white font-bold text-sm shadow-lg mb-3"
+                            className="px-5 py-1.5 rounded-full text-white font-bold text-xs shadow-lg mb-2"
                             style={{ 
                                 backgroundColor: rarityColors[encounter.rarity]
                             }}
@@ -2817,49 +2818,52 @@
                             {encounter.rarity.toUpperCase()}
                         </div>
 
-                        {/* Workout stats (narrower) */}
-                        <div className="bg-amber-50 rounded-lg p-4 border-4 border-white shadow-lg" style={{ 
-                            width: '85%',
-                            maxWidth: '400px',
+                        {/* Workout stats - smaller and more compact */}
+                        <div className="bg-amber-50 rounded-lg p-3 border-4 border-white shadow-lg" style={{ 
+                            width: '90%',
+                            maxWidth: '360px',
                             borderColor: '#000',
                             boxShadow: '0 0 0 4px #fff, 0 0 0 8px #000'
                         }}>
-                            <div className="grid grid-cols-3 gap-3 text-center">
+                            <div className="grid grid-cols-3 gap-2 text-center">
                                 {workoutData.workoutType === 'lift' ? (
                                     <>
                                         <div>
                                             <div className="text-xs font-bold text-gray-600">Duration</div>
-                                            <div className="text-base font-bold text-gray-900">{workoutData.liftDuration || '--'} min</div>
+                                            <div className="text-sm font-bold text-gray-900">{workoutData.liftDuration || '--'}</div>
+                                            <div className="text-xs text-gray-600">min</div>
                                         </div>
                                         <div>
                                             <div className="text-xs font-bold text-gray-600">Calories</div>
-                                            <div className="text-base font-bold text-gray-900">{workoutData.caloriesBurned || '--'} kcal</div>
+                                            <div className="text-sm font-bold text-gray-900">{workoutData.caloriesBurned || '--'}</div>
+                                            <div className="text-xs text-gray-600">kcal</div>
                                         </div>
                                         <div>
                                             <div className="text-xs font-bold text-gray-600">Avg HR</div>
-                                            <div className="text-base font-bold text-gray-900">{workoutData.avgHR || '--'}</div>
+                                            <div className="text-sm font-bold text-gray-900">{workoutData.avgHR || '--'}</div>
+                                            <div className="text-xs text-gray-600">bpm</div>
                                         </div>
                                     </>
                                 ) : (
                                     <>
                                         <div>
                                             <div className="text-xs font-bold text-gray-600">Avg Pace</div>
-                                            <div className="text-base font-bold text-gray-900">{workoutData.pace || '--'}</div>
+                                            <div className="text-sm font-bold text-gray-900">{workoutData.pace || '--'}</div>
                                             <div className="text-xs text-gray-600">min/mi</div>
                                         </div>
                                         <div>
                                             <div className="text-xs font-bold text-gray-600">Distance</div>
-                                            <div className="text-base font-bold text-gray-900">{workoutData.distance || '--'}</div>
+                                            <div className="text-sm font-bold text-gray-900">{workoutData.distance || '--'}</div>
                                             <div className="text-xs text-gray-600">mi</div>
                                         </div>
                                         <div>
                                             <div className="text-xs font-bold text-gray-600">Duration</div>
-                                            <div className="text-base font-bold text-gray-900">{workoutData.duration || '--'}</div>
+                                            <div className="text-sm font-bold text-gray-900">{workoutData.duration || '--'}</div>
                                         </div>
                                     </>
                                 )}
                             </div>
-                            <div className="text-xs text-gray-500 text-right mt-2 font-mono">
+                            <div className="text-xs text-gray-500 text-right mt-1.5 font-mono">
                                 {new Date().toLocaleString()}
                             </div>
                         </div>
