@@ -3198,7 +3198,7 @@
                         const paceSeconds = min * 60 + (sec || 0);
                         const totalSeconds = paceSeconds * dist;
                         const durMin = Math.floor(totalSeconds / 60);
-                        const durSec = Math.round(totalSeconds % 60);
+                        const durSec = Math.floor(totalSeconds % 60); // Changed from round to floor
                         setDuration(`${durMin}:${durSec.toString().padStart(2, '0')}`);
                     }
                 }
@@ -3213,7 +3213,7 @@
                         const paceSeconds = min * 60 + (sec || 0);
                         const totalSeconds = paceSeconds * dist;
                         const durMin = Math.floor(totalSeconds / 60);
-                        const durSec = Math.round(totalSeconds % 60);
+                        const durSec = Math.floor(totalSeconds % 60); // Changed from round to floor
                         setDuration(`${durMin}:${durSec.toString().padStart(2, '0')}`);
                     }
                 }
@@ -3237,7 +3237,7 @@
                         const paceSeconds = min * 60 + (sec || 0);
                         const totalSeconds = paceSeconds * dist;
                         const durMin = Math.floor(totalSeconds / 60);
-                        const durSec = Math.round(totalSeconds % 60);
+                        const durSec = Math.floor(totalSeconds % 60); // Changed from round to floor
                         setDuration(`${durMin}:${durSec.toString().padStart(2, '0')}`);
                     }
                 }
@@ -3252,7 +3252,7 @@
                         const paceSeconds = min * 60 + (sec || 0);
                         const totalSeconds = paceSeconds * dist;
                         const durMin = Math.floor(totalSeconds / 60);
-                        const durSec = Math.round(totalSeconds % 60);
+                        const durSec = Math.floor(totalSeconds % 60); // Changed from round to floor
                         setDuration(`${durMin}:${durSec.toString().padStart(2, '0')}`);
                     }
                 }
@@ -6419,7 +6419,7 @@
                                             : 'bg-slate-700 text-gray-300 hover:bg-slate-600'
                                     }`}
                                 >
-                                    🏃 Cardio
+                                    🏃 🚴 Cardio
                                 </button>
                                 <button
                                     onClick={() => setWorkoutTab('lift')}
