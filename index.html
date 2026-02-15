@@ -5041,16 +5041,27 @@
             };
 
             // Generate 5-encounter capture session
-            const generateCaptureSession = async () => {
+            const generateCaptureSession = async (debugMode = false) => {
                 console.log('🎯 Generating 5-encounter capture session...');
                 
-                if (!lastWorkoutIntensity) {
+                // Use dummy data if in debug mode, otherwise use lastWorkoutIntensity
+                const workoutIntensity = debugMode 
+                    ? {
+                        workoutType: 'cardio',
+                        pace: '8:30',
+                        distance: '3.5',
+                        duration: '30:00',
+                        chances: { common: 0.4, uncommon: 0.3, rare: 0.2, epic: 0.08, legendary: 0.02 }
+                      }
+                    : lastWorkoutIntensity;
+                
+                if (!workoutIntensity) {
                     alert('No workout intensity data. Please do a Pokéball Exchange first.');
                     return;
                 }
                 
                 const encounters = [];
-                const { chances } = lastWorkoutIntensity;
+                const { chances } = workoutIntensity;
                 
                 // Generate 5 Pokémon using the same intensity
                 for (let i = 0; i < 5; i++) {
@@ -5087,18 +5098,18 @@
                     encounters,
                     currentIndex: 0,
                     createdAt: Date.now(),
-                    workoutData: lastWorkoutIntensity.workoutType === 'lift' 
+                    workoutData: workoutIntensity.workoutType === 'lift' 
                         ? {
                             workoutType: 'lift',
-                            liftDuration: lastWorkoutIntensity.liftDuration,
-                            caloriesBurned: lastWorkoutIntensity.caloriesBurned,
-                            avgHR: lastWorkoutIntensity.avgHR
+                            liftDuration: workoutIntensity.liftDuration,
+                            caloriesBurned: workoutIntensity.caloriesBurned,
+                            avgHR: workoutIntensity.avgHR
                           }
                         : {
                             workoutType: 'cardio',
-                            pace: lastWorkoutIntensity.pace,
-                            distance: lastWorkoutIntensity.distance,
-                            duration: lastWorkoutIntensity.duration
+                            pace: workoutIntensity.pace,
+                            distance: workoutIntensity.distance,
+                            duration: workoutIntensity.duration
                           }
                 };
                 
@@ -6341,25 +6352,14 @@
                                         // Start hold timer for debug
                                         const holdTimer = setTimeout(() => {
                                             console.log('🐛 DEBUG: 8-second hold detected - generating new encounter with dummy data');
-                                            // Set dummy workout intensity for debug
-                                            setLastWorkoutIntensity({
-                                                workoutType: 'cardio',
-                                                pace: '8:30',
-                                                distance: '3.5',
-                                                duration: '30:00',
-                                                chances: { common: 0.4, uncommon: 0.3, rare: 0.2, epic: 0.08, legendary: 0.02 }
-                                            });
-                                            // Generate session after setting data
+                                            generateCaptureSession(true); // Pass true for debug mode
+                                            // Auto-scroll to encounter view
                                             setTimeout(() => {
-                                                generateCaptureSession();
-                                                // Auto-scroll to encounter view
-                                                setTimeout(() => {
-                                                    const encounterEl = document.getElementById('encounter-view');
-                                                    if (encounterEl) {
-                                                        encounterEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                                                    }
-                                                }, 300);
-                                            }, 100);
+                                                const encounterEl = document.getElementById('encounter-view');
+                                                if (encounterEl) {
+                                                    encounterEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                                }
+                                            }, 300);
                                         }, 8000);
                                         
                                         // Store timer ID on the button element
@@ -6383,25 +6383,14 @@
                                         // Start hold timer for debug (mobile)
                                         const holdTimer = setTimeout(() => {
                                             console.log('🐛 DEBUG: 8-second hold detected - generating new encounter with dummy data');
-                                            // Set dummy workout intensity for debug
-                                            setLastWorkoutIntensity({
-                                                workoutType: 'cardio',
-                                                pace: '8:30',
-                                                distance: '3.5',
-                                                duration: '30:00',
-                                                chances: { common: 0.4, uncommon: 0.3, rare: 0.2, epic: 0.08, legendary: 0.02 }
-                                            });
-                                            // Generate session after setting data
+                                            generateCaptureSession(true); // Pass true for debug mode
+                                            // Auto-scroll to encounter view
                                             setTimeout(() => {
-                                                generateCaptureSession();
-                                                // Auto-scroll to encounter view
-                                                setTimeout(() => {
-                                                    const encounterEl = document.getElementById('encounter-view');
-                                                    if (encounterEl) {
-                                                        encounterEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                                                    }
-                                                }, 300);
-                                            }, 100);
+                                                const encounterEl = document.getElementById('encounter-view');
+                                                if (encounterEl) {
+                                                    encounterEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                                }
+                                            }, 300);
                                         }, 8000);
                                         
                                         // Store timer ID on the button element
