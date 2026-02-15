@@ -6,7 +6,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="theme-color" content="#8B5CF6">
-    <title>PokéRun - Embrace the Grind</title>
+    <title>PokéRun - Legendary Journey Tracker</title>
     
     <!-- 🔥 Firebase SDKs -->
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
@@ -6340,15 +6340,26 @@
                                     onMouseDown={(e) => {
                                         // Start hold timer for debug
                                         const holdTimer = setTimeout(() => {
-                                            console.log('🐛 DEBUG: 8-second hold detected - generating new encounter');
-                                            generateCaptureSession();
-                                            // Auto-scroll to encounter view
+                                            console.log('🐛 DEBUG: 8-second hold detected - generating new encounter with dummy data');
+                                            // Set dummy workout intensity for debug
+                                            setLastWorkoutIntensity({
+                                                workoutType: 'cardio',
+                                                pace: '8:30',
+                                                distance: '3.5',
+                                                duration: '30:00',
+                                                chances: { common: 0.4, uncommon: 0.3, rare: 0.2, epic: 0.08, legendary: 0.02 }
+                                            });
+                                            // Generate session after setting data
                                             setTimeout(() => {
-                                                const encounterEl = document.getElementById('encounter-view');
-                                                if (encounterEl) {
-                                                    encounterEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                                                }
-                                            }, 300);
+                                                generateCaptureSession();
+                                                // Auto-scroll to encounter view
+                                                setTimeout(() => {
+                                                    const encounterEl = document.getElementById('encounter-view');
+                                                    if (encounterEl) {
+                                                        encounterEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                                    }
+                                                }, 300);
+                                            }, 100);
                                         }, 8000);
                                         
                                         // Store timer ID on the button element
@@ -6371,15 +6382,26 @@
                                     onTouchStart={(e) => {
                                         // Start hold timer for debug (mobile)
                                         const holdTimer = setTimeout(() => {
-                                            console.log('🐛 DEBUG: 8-second hold detected - generating new encounter');
-                                            generateCaptureSession();
-                                            // Auto-scroll to encounter view
+                                            console.log('🐛 DEBUG: 8-second hold detected - generating new encounter with dummy data');
+                                            // Set dummy workout intensity for debug
+                                            setLastWorkoutIntensity({
+                                                workoutType: 'cardio',
+                                                pace: '8:30',
+                                                distance: '3.5',
+                                                duration: '30:00',
+                                                chances: { common: 0.4, uncommon: 0.3, rare: 0.2, epic: 0.08, legendary: 0.02 }
+                                            });
+                                            // Generate session after setting data
                                             setTimeout(() => {
-                                                const encounterEl = document.getElementById('encounter-view');
-                                                if (encounterEl) {
-                                                    encounterEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                                                }
-                                            }, 300);
+                                                generateCaptureSession();
+                                                // Auto-scroll to encounter view
+                                                setTimeout(() => {
+                                                    const encounterEl = document.getElementById('encounter-view');
+                                                    if (encounterEl) {
+                                                        encounterEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                                    }
+                                                }, 300);
+                                            }, 100);
                                         }, 8000);
                                         
                                         // Store timer ID on the button element
