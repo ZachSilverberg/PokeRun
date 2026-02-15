@@ -395,11 +395,21 @@
                 ctx.fillStyle = '#F3F4F6';
                 ctx.fillRect(0, 0, 500, 500);
 
+                // Trait label (if light or dark) - above name, smaller font
+                if (pokemon.trait === 'light' || pokemon.trait === 'dark') {
+                    ctx.font = 'bold 26px Arial'; // 20% smaller than name (32px)
+                    ctx.textAlign = 'center';
+                    ctx.fillStyle = pokemon.trait === 'light' ? '#FCD34D' : '#A78BFA';
+                    const traitLabel = pokemon.trait === 'light' ? '☀️ LIGHT' : '🌙 DARK';
+                    ctx.fillText(traitLabel, 250, 25); // Above name
+                }
+                
                 // Pokemon name
                 ctx.fillStyle = '#1F2937';
                 ctx.font = 'bold 32px Arial';
                 ctx.textAlign = 'center';
-                ctx.fillText(pokemon.pokemonName.toUpperCase(), 250, 45);
+                const nameY = (pokemon.trait === 'light' || pokemon.trait === 'dark') ? 50 : 45;
+                ctx.fillText(pokemon.pokemonName.toUpperCase(), 250, nameY);
 
                 // Rarity icon
                 const iconSize = 55;
@@ -419,18 +429,61 @@
                     ctx.imageSmoothingEnabled = false;
                     ctx.drawImage(img, spriteX, spriteY, spriteSize, spriteSize);
 
-                    // Shiny sparkles
+                    // Shiny badge - clean icon in top left corner
                     if (pokemon.isShiny) {
+                        // Draw rounded badge background
+                        const badgeSize = 50;
+                        const badgeX = 20;
+                        const badgeY = 80;
+                        
                         ctx.fillStyle = '#FFD700';
-                        [[100, 100], [380, 120], [120, 300], [360, 320]].forEach(([x, y]) => {
-                            ctx.save();
-                            ctx.translate(x, y);
-                            for (let i = 0; i < 4; i++) {
-                                ctx.rotate(Math.PI / 4);
-                                ctx.fillRect(-2, -12, 4, 24);
-                            }
-                            ctx.restore();
-                        });
+                        ctx.beginPath();
+                        ctx.arc(badgeX + badgeSize/2, badgeY + badgeSize/2, badgeSize/2, 0, Math.PI * 2);
+                        ctx.fill();
+                        
+                        // Draw star icon
+                        ctx.fillStyle = '#FFFFFF';
+                        ctx.font = 'bold 32px Arial';
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+                        ctx.fillText('✨', badgeX + badgeSize/2, badgeY + badgeSize/2);
+                    }
+                    
+                    // Trait badges - clean icons in top left (below shiny if present)
+                    if (pokemon.trait === 'light') {
+                        const badgeSize = 50;
+                        const badgeX = 20;
+                        const badgeY = pokemon.isShiny ? 140 : 80; // Below shiny badge if present
+                        
+                        // Light blue background
+                        ctx.fillStyle = '#60A5FA';
+                        ctx.beginPath();
+                        ctx.arc(badgeX + badgeSize/2, badgeY + badgeSize/2, badgeSize/2, 0, Math.PI * 2);
+                        ctx.fill();
+                        
+                        // Sun icon
+                        ctx.fillStyle = '#FFFFFF';
+                        ctx.font = 'bold 32px Arial';
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+                        ctx.fillText('☀️', badgeX + badgeSize/2, badgeY + badgeSize/2);
+                    } else if (pokemon.trait === 'dark') {
+                        const badgeSize = 50;
+                        const badgeX = 20;
+                        const badgeY = pokemon.isShiny ? 140 : 80; // Below shiny badge if present
+                        
+                        // Purple background
+                        ctx.fillStyle = '#A78BFA';
+                        ctx.beginPath();
+                        ctx.arc(badgeX + badgeSize/2, badgeY + badgeSize/2, badgeSize/2, 0, Math.PI * 2);
+                        ctx.fill();
+                        
+                        // Moon icon
+                        ctx.fillStyle = '#FFFFFF';
+                        ctx.font = 'bold 32px Arial';
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+                        ctx.fillText('🌙', badgeX + badgeSize/2, badgeY + badgeSize/2);
                     }
 
                     // Rarity badge
@@ -2800,9 +2853,18 @@
                         pointerEvents: visible ? 'auto' : 'none'
                     }}
                 >
-                    {/* Top section - Rarity icon and Name */}
-                    <div className="absolute top-0 left-0 right-0 flex flex-col items-center gap-1 pt-2">
+                    {/* Top section - Rarity icon, Trait label, and Name */}
+                    <div className="absolute top-0 left-0 right-0 flex flex-col items-center gap-0.5 pt-2">
                         <RarityIcon rarity={encounter.rarity} />
+                        {/* Trait label - 20% smaller than name */}
+                        {(encounter.trait === 'light' || encounter.trait === 'dark') && (
+                            <div className="text-xs font-semibold" style={{ 
+                                fontSize: '0.8rem',
+                                color: encounter.trait === 'light' ? '#FCD34D' : '#A78BFA'
+                            }}>
+                                {encounter.trait === 'light' ? '☀️ LIGHT' : '🌙 DARK'}
+                            </div>
+                        )}
                         <h2 className="text-xl font-bold text-gray-900">{encounter.pokemonName.toUpperCase()}</h2>
                     </div>
 
@@ -4809,7 +4871,42 @@
                     const allIds = Object.keys(POKEMON_RARITY_MAP).map(Number);
                     return allIds[Math.floor(Math.random() * allIds.length)];
                 }
-                return list[Math.floor(Math.random() * list.length)];
+                
+                // Gen gating based on streak (original plan)
+                const streakDays = currentStreak.days;
+                let maxGen;
+                if (streakDays <= 1) maxGen = 2;       // Day 0-1: Gen 1-2 (Kanto + Johto)
+                else if (streakDays === 2) maxGen = 3; // Day 2: Gen 1-3 (+ Hoenn)
+                else if (streakDays === 3) maxGen = 5; // Day 3: Gen 1-5 (+ Sinnoh + Unova)
+                else if (streakDays === 4) maxGen = 7; // Day 4: Gen 1-7 (+ Kalos + Alola)
+                else maxGen = 8;                        // Day 5+: All 9 generations
+                
+                const genLimits = {
+                    1: 151,   // Gen 1: Kanto
+                    2: 251,   // Gen 2: Johto
+                    3: 386,   // Gen 3: Hoenn
+                    4: 493,   // Gen 4: Sinnoh
+                    5: 649,   // Gen 5: Unova
+                    6: 721,   // Gen 6: Kalos
+                    7: 809,   // Gen 7: Alola
+                    8: 905    // Gen 8+: All
+                };
+                
+                const maxPokemonId = genLimits[maxGen];
+                
+                // Filter list to only include Pokémon within gen limit
+                const filteredList = list.filter(id => id <= maxPokemonId);
+                
+                if (filteredList.length === 0) {
+                    // Fallback to full list if no matches (shouldn't happen)
+                    console.warn('⚠️ No Pokémon found within gen limit, using full list');
+                    return list[Math.floor(Math.random() * list.length)];
+                }
+                
+                const selectedId = filteredList[Math.floor(Math.random() * filteredList.length)];
+                console.log(`🎲 Gen gating: Day ${streakDays} → Max Gen ${maxGen} (ID ≤${maxPokemonId}) → Selected ID ${selectedId}`);
+                
+                return selectedId;
             };
 
             const getPokemonByRarity = async (rarity) => {
