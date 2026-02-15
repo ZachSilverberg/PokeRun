@@ -186,13 +186,20 @@
         }
         
         @keyframes pokeballSuccessGlow {
-            0% { filter: none; }
-            100% { filter: drop-shadow(0 0 20px #3b82f6) drop-shadow(0 0 40px #60a5fa) drop-shadow(0 0 60px #93c5fd); }
+            0% { 
+                box-shadow: 0 0 0px rgba(59, 130, 246, 0);
+            }
+            100% { 
+                box-shadow: 0 0 30px rgba(59, 130, 246, 0.8),
+                           0 0 60px rgba(96, 165, 250, 0.6),
+                           0 0 90px rgba(147, 197, 253, 0.4);
+            }
         }
         
         .pokeball-success {
             animation: pokeballSuccessGlow 0.5s ease-out forwards;
             transform: rotate(0deg);
+            border-radius: 50%; /* Ensure glow follows circular shape */
         }
         
         @keyframes pokeballFail {
@@ -3152,7 +3159,8 @@
             // PC Storage & Starters
             const [pokemonPC, setPokemonPC] = useState([]); // All caught Pokemon
             const [starterTeam, setStarterTeam] = useState([null, null, null, null, null, null]); // 6 starter slots
-            const [currentView, setCurrentView] = useState('main'); // 'main', 'pc', 'starters', 'friends', 'feed'
+            const [currentView, setCurrentView] = useState('main'); // 'main', 'pc', 'starters', 'pokedex', 'friends', 'feed'
+            const [pokedexGen, setPokedexGen] = useState(1); // Selected generation in Pokédex
             const [showDeletePrompt, setShowDeletePrompt] = useState(null); // Pokemon ID to delete
             const [selectingForSlot, setSelectingForSlot] = useState(null); // Which starter slot is being filled
             const [deleteMode, setDeleteMode] = useState(false); // Delete mode for PC
@@ -5299,25 +5307,41 @@
                 
                 console.log('🎲 Catch attempt:', { probability, roll, success, shakes, rarity: currentEncounter.rarity });
                 
-                // Haptic feedback helper with iOS support
+                // Haptic feedback helper with multiple fallbacks for iOS
                 const triggerHaptic = (pattern) => {
                     try {
-                        // Try Vibration API (Android and some browsers)
+                        // Try standard Vibration API (Android)
                         if (navigator.vibrate) {
-                            navigator.vibrate(pattern);
-                            console.log('📳 Vibration triggered:', pattern);
+                            const result = navigator.vibrate(pattern);
+                            console.log('📳 Vibration API result:', result);
+                            return;
                         }
-                        // Try Haptic Engine API (iOS Safari)
-                        else if (window.navigator && window.navigator.vibrate) {
+                        
+                        // Try webkit vibrate (some iOS versions)
+                        if (window.navigator && typeof window.navigator.vibrate === 'function') {
                             window.navigator.vibrate(pattern);
-                            console.log('📳 Window vibration triggered:', pattern);
+                            console.log('📳 WebKit vibration triggered');
+                            return;
                         }
-                        // Log if neither works
-                        else {
-                            console.warn('⚠️ No vibration API available');
-                        }
+                        
+                        // Fallback: Play silent audio to trigger haptic feedback on iOS
+                        // iOS requires user interaction + audio playback for haptics
+                        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                        const oscillator = audioCtx.createOscillator();
+                        const gainNode = audioCtx.createGain();
+                        
+                        oscillator.connect(gainNode);
+                        gainNode.connect(audioCtx.destination);
+                        
+                        gainNode.gain.setValueAtTime(0, audioCtx.currentTime); // Silent
+                        oscillator.frequency.setValueAtTime(20, audioCtx.currentTime); // Low frequency
+                        
+                        oscillator.start(audioCtx.currentTime);
+                        oscillator.stop(audioCtx.currentTime + 0.1);
+                        
+                        console.log('📳 Audio fallback triggered (iOS)');
                     } catch (err) {
-                        console.error('❌ Haptic error:', err);
+                        console.error('❌ All haptic methods failed:', err);
                     }
                 };
                 
@@ -5983,8 +6007,8 @@
                             <p className="text-sm text-gray-600">Track runs • Catch Pokémon • Complete journeys</p>
                         </div>
 
-                        {/* Bill's PC, Starters & Feed Buttons */}
-                        <div className="grid grid-cols-2 gap-3 mb-6">
+                        {/* Bill's PC, Starters & Pokédex Buttons */}
+                        <div className="grid grid-cols-3 gap-3 mb-6">
                             <button
                                 onClick={() => setCurrentView('pc')}
                                 className="bg-gradient-to-br from-slate-700 to-slate-800 hover:from-slate-600 hover:to-slate-700 rounded-xl p-3 text-white shadow-lg hover:shadow-2xl transition-all border border-slate-600"
@@ -5999,10 +6023,17 @@
                                 <div className="text-xs font-semibold mb-1">⭐ Starters</div>
                                 <div className="text-lg font-bold">{(Array.isArray(starterTeam) ? starterTeam : []).filter(s => s !== null).length}/6</div>
                             </button>
+                            <button
+                                onClick={() => setCurrentView('pokedex')}
+                                className="bg-gradient-to-br from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 rounded-xl p-3 text-white shadow-lg hover:shadow-2xl transition-all border border-red-500"
+                            >
+                                <div className="text-xs font-semibold mb-1">📖 Pokédex</div>
+                                <div className="text-lg font-bold">{new Set((Array.isArray(pokemonPC) ? pokemonPC : []).map(p => p.pokemonId)).size}/905</div>
+                            </button>
                             {firebaseProfile && (
                                 <button
                                     onClick={() => setCurrentView('feed')}
-                                    className="col-span-2 bg-gradient-to-br from-purple-600 to-indigo-700 hover:from-purple-500 hover:to-indigo-600 rounded-xl p-3 text-white shadow-lg hover:shadow-2xl transition-all border border-purple-500"
+                                    className="col-span-3 bg-gradient-to-br from-purple-600 to-indigo-700 hover:from-purple-500 hover:to-indigo-600 rounded-xl p-3 text-white shadow-lg hover:shadow-2xl transition-all border border-purple-500"
                                 >
                                     <div className="text-xs font-semibold mb-1">📸 Activity Feed</div>
                                     <div className="text-lg font-bold">View Recent Catches</div>
@@ -6884,6 +6915,91 @@
                                         </div>
                                     ))}
                                 </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* 📖 Pokédex View - Full Screen */}
+                        {currentView === 'pokedex' && (
+                            <div className="fixed inset-0 bg-gradient-to-br from-red-600 to-orange-600 z-50 overflow-y-auto">
+                                <div className="min-h-screen p-6">
+                                    <div className="flex justify-between items-center mb-4">
+                                        <h2 className="text-2xl font-bold text-white">📖 Pokédex</h2>
+                                        <button
+                                            onClick={() => setCurrentView('main')}
+                                            className="px-4 py-2 bg-white hover:bg-gray-100 text-gray-800 rounded-lg text-sm font-medium transition shadow-lg"
+                                        >
+                                            Back
+                                        </button>
+                                    </div>
+
+                                    {/* Gen Tabs */}
+                                    <div className="flex gap-2 mb-4 overflow-x-auto pb-2">
+                                        {[
+                                            { gen: 1, name: 'Gen I', range: '1-151' },
+                                            { gen: 2, name: 'Gen II', range: '152-251' },
+                                            { gen: 3, name: 'Gen III', range: '252-386' },
+                                            { gen: 4, name: 'Gen IV', range: '387-493' },
+                                            { gen: 5, name: 'Gen V', range: '494-649' },
+                                            { gen: 6, name: 'Gen VI', range: '650-721' },
+                                            { gen: 7, name: 'Gen VII', range: '722-809' },
+                                            { gen: 8, name: 'Gen VIII', range: '810-905' }
+                                        ].map(({ gen, name, range }) => (
+                                            <button
+                                                key={gen}
+                                                onClick={() => setPokedexGen(gen)}
+                                                className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap transition ${
+                                                    pokedexGen === gen
+                                                        ? 'bg-white text-red-600 shadow-lg'
+                                                        : 'bg-red-700 bg-opacity-50 text-white hover:bg-opacity-70'
+                                                }`}
+                                            >
+                                                {name}
+                                                <div className="text-xs opacity-75">{range}</div>
+                                            </button>
+                                        ))}
+                                    </div>
+
+                                    {/* Pokédex Grid */}
+                                    <div className="grid grid-cols-3 gap-3 max-w-2xl mx-auto">
+                                        {(() => {
+                                            const genRanges = {
+                                                1: [1, 151],
+                                                2: [152, 251],
+                                                3: [252, 386],
+                                                4: [387, 493],
+                                                5: [494, 649],
+                                                6: [650, 721],
+                                                7: [722, 809],
+                                                8: [810, 905]
+                                            };
+                                            const [start, end] = genRanges[pokedexGen];
+                                            const caughtPokemon = new Set((Array.isArray(pokemonPC) ? pokemonPC : []).map(p => p.pokemonId));
+                                            const slots = [];
+                                            
+                                            for (let id = start; id <= end; id++) {
+                                                const caught = Array.isArray(pokemonPC) ? pokemonPC.find(p => p.pokemonId === id) : null;
+                                                slots.push(
+                                                    <div key={id} className="relative bg-white bg-opacity-90 rounded-lg border-2 border-white shadow-lg">
+                                                        {caught ? (
+                                                            <PokemonCard
+                                                                pokemon={caught}
+                                                                className="p-0"
+                                                                enableInteractiveView={true}
+                                                            />
+                                                        ) : (
+                                                            <div className="aspect-square flex flex-col items-center justify-center p-4 opacity-50">
+                                                                <div className="text-4xl mb-2">❓</div>
+                                                                <div className="text-xs font-bold text-gray-600">#{String(id).padStart(3, '0')}</div>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                );
+                                            }
+                                            
+                                            return slots;
+                                        })()}
+                                    </div>
                                 </div>
                             </div>
                         )}
