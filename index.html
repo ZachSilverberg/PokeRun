@@ -2890,11 +2890,11 @@
                 const initTimer = setTimeout(() => {
                     setIsInitialized(true);
                     
-                    // Then start reveal after another small delay
+                    // Delay 0.5s before starting reveal
                     setTimeout(() => {
                         setShowRarity(true);
                         
-                        // After 1.0s (reduced from 1.5s), show everything else
+                        // After 1.0s, show everything else
                         setTimeout(() => {
                             setShowEverythingElse(true);
                             if (onImageVisible) onImageVisible();
@@ -2902,8 +2902,8 @@
                             if (onRevealComplete) {
                                 setTimeout(() => onRevealComplete(), 700);
                             }
-                        }, 1000); // Changed from 1500 to 1000
-                    }, 50);
+                        }, 1000);
+                    }, 500); // Added 500ms delay before rarity reveal
                 }, 50);
                 
                 return () => {
@@ -5202,8 +5202,29 @@
                 
                 console.log('🎲 Catch attempt:', { probability, roll, success, shakes, rarity: currentEncounter.rarity });
                 
-                // Animate shakes (600ms per shake + 500ms initial)
-                await new Promise(resolve => setTimeout(resolve, shakes * 600 + 500));
+                // Haptic feedback helper
+                const triggerHaptic = (duration = 50) => {
+                    if (navigator.vibrate) {
+                        navigator.vibrate(duration);
+                    }
+                };
+                
+                // Animate shakes with haptic feedback for each shake
+                const shakeDelay = 600; // ms per shake
+                for (let i = 0; i < shakes; i++) {
+                    await new Promise(resolve => setTimeout(resolve, i === 0 ? 500 : shakeDelay));
+                    triggerHaptic(100); // Vibrate for 100ms on each shake
+                }
+                
+                // Wait for final shake to complete
+                await new Promise(resolve => setTimeout(resolve, shakeDelay));
+                
+                // Final haptic for result
+                if (success) {
+                    triggerHaptic([50, 50, 50]); // Triple tap for success
+                } else {
+                    triggerHaptic(200); // Long vibration for failure
+                }
                 
                 setCatchResult(success ? 'success' : 'fail');
                 setIsCatchAnimating(false);
