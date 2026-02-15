@@ -5377,7 +5377,8 @@
                         name: updatedEncounter.pokemonName,
                         isShiny: updatedEncounter.isShiny,
                         rarity: updatedEncounter.rarity,
-                        spriteUrl: updatedEncounter.spriteUrl
+                        spriteUrl: updatedEncounter.spriteUrl,
+                        trait: updatedEncounter.trait || 'normal' // Add trait property
                     };
                     
                     if (captureSession.workoutData.workoutType === 'cardio') {
@@ -5410,6 +5411,7 @@
                             isShiny: updatedEncounter.isShiny,
                             rarity: updatedEncounter.rarity,
                             spriteUrl: updatedEncounter.spriteUrl,
+                            trait: updatedEncounter.trait || 'normal', // Add trait property
                             trainerName: firebaseProfile.displayName,
                             trainerBadgeColor: firebaseProfile.badgeColor
                         };
