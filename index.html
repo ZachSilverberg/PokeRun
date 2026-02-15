@@ -5202,18 +5202,37 @@
                 
                 console.log('🎲 Catch attempt:', { probability, roll, success, shakes, rarity: currentEncounter.rarity });
                 
-                // Haptic feedback helper
-                const triggerHaptic = (duration = 50) => {
-                    if (navigator.vibrate) {
-                        navigator.vibrate(duration);
+                // Haptic feedback helper with iOS support
+                const triggerHaptic = (pattern) => {
+                    try {
+                        // Try Vibration API (Android and some browsers)
+                        if (navigator.vibrate) {
+                            navigator.vibrate(pattern);
+                            console.log('📳 Vibration triggered:', pattern);
+                        }
+                        // Try Haptic Engine API (iOS Safari)
+                        else if (window.navigator && window.navigator.vibrate) {
+                            window.navigator.vibrate(pattern);
+                            console.log('📳 Window vibration triggered:', pattern);
+                        }
+                        // Log if neither works
+                        else {
+                            console.warn('⚠️ No vibration API available');
+                        }
+                    } catch (err) {
+                        console.error('❌ Haptic error:', err);
                     }
                 };
+                
+                // Initial haptic when ball is thrown
+                triggerHaptic(50);
                 
                 // Animate shakes with haptic feedback for each shake
                 const shakeDelay = 600; // ms per shake
                 for (let i = 0; i < shakes; i++) {
                     await new Promise(resolve => setTimeout(resolve, i === 0 ? 500 : shakeDelay));
                     triggerHaptic(100); // Vibrate for 100ms on each shake
+                    console.log(`📳 Shake ${i + 1}/${shakes}`);
                 }
                 
                 // Wait for final shake to complete
@@ -5222,8 +5241,10 @@
                 // Final haptic for result
                 if (success) {
                     triggerHaptic([50, 50, 50]); // Triple tap for success
+                    console.log('✅ Success haptic');
                 } else {
                     triggerHaptic(200); // Long vibration for failure
+                    console.log('❌ Fail haptic');
                 }
                 
                 setCatchResult(success ? 'success' : 'fail');
