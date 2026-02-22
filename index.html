@@ -408,106 +408,6 @@
         // Card image cache (improves performance)
         const cardImageCache = new Map();
         
-        // ── Pink Slip Pick Screen (extracted as proper component to satisfy Rules of Hooks) ──
-        const PinkSlipPickScreen = ({ currentBattle, battleResults, viewingFriendStarters, setViewingFriendStarters, setBattleView, claimPinkSlip, pinkSlipAnimating, pinkSlipSuccess, database }) => {
-            const [pinkSlipSelected, setPinkSlipSelected] = React.useState(null);
-
-            const loserId = battleResults.loserUserId;
-            const loserName = battleResults.loserUserId === currentBattle.initiatorId
-                ? currentBattle.initiatorName : currentBattle.accepterName;
-
-            // Load loser's starters when entering this screen
-            React.useEffect(() => {
-                let cancelled = false;
-                async function loadLoserStarters() {
-                    if (!loserId) return;
-                    if (viewingFriendStarters && viewingFriendStarters.filter(Boolean).length > 0) return;
-                    try {
-                        const snap = await database.ref(`users/${loserId}/starters`).once('value');
-                        const starters = snap.val() || [null,null,null,null,null,null];
-                        if (!cancelled) setViewingFriendStarters(starters);
-                    } catch(e) { console.error('Failed to load loser starters', e); }
-                }
-                loadLoserStarters();
-                return () => { cancelled = true; };
-            }, [loserId]);
-
-            return (
-                <div className="fixed inset-0 bg-gradient-to-br from-pink-950 via-rose-900 to-black z-[95] overflow-y-auto">
-                    <div className="min-h-screen p-5">
-                        <div className="flex justify-between items-center mb-4">
-                            <h2 className="text-2xl font-bold text-white">🎀 Pink Slip Ball</h2>
-                            <button
-                                onClick={() => setBattleView('results')}
-                                className="w-10 h-10 bg-pink-800 hover:bg-pink-700 rounded-full flex items-center justify-center text-white text-lg transition"
-                            >✕</button>
-                        </div>
-
-                        <div className="bg-pink-900 bg-opacity-40 border border-pink-600 rounded-xl p-4 mb-6 text-center">
-                            <div className="text-4xl mb-2">🎀</div>
-                            <p className="text-pink-200 text-sm font-bold">You won the battle!</p>
-                            <p className="text-pink-300 text-xs mt-1">
-                                Tap a card to magnify it, then throw the Pink Slip Ball to claim it from {loserName}.
-                            </p>
-                        </div>
-
-                        {viewingFriendStarters.filter(Boolean).length === 0 && (
-                            <div className="text-center py-12">
-                                <div className="loader mx-auto mb-4"></div>
-                                <div className="text-pink-300 text-sm">Loading {loserName}'s starters...</div>
-                            </div>
-                        )}
-
-                        <div className="grid grid-cols-2 gap-3">
-                            {viewingFriendStarters.filter(Boolean).map(pokemon => (
-                                <button
-                                    key={pokemon.id}
-                                    onClick={() => setPinkSlipSelected(pokemon)}
-                                    disabled={pinkSlipAnimating}
-                                    className="relative rounded-xl border-2 border-pink-600 bg-pink-900 bg-opacity-30 hover:bg-opacity-50 active:scale-95 transition overflow-hidden"
-                                >
-                                    <PokemonCard pokemon={pokemon} />
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* Magnified card overlay */}
-                    {pinkSlipSelected && (
-                        <div className="fixed inset-0 bg-black bg-opacity-90 z-[100] flex flex-col items-center justify-center p-6">
-                            <button
-                                onClick={() => { if (!pinkSlipAnimating) setPinkSlipSelected(null); }}
-                                className="absolute top-4 right-4 w-12 h-12 bg-white bg-opacity-20 hover:bg-opacity-30 rounded-full flex items-center justify-center text-white text-2xl font-bold z-10 transition"
-                            >×</button>
-
-                            <div className="relative w-full max-w-xs select-none">
-                                <PokemonCard pokemon={pinkSlipSelected} className="w-full shadow-2xl rounded-2xl" />
-                                {pinkSlipAnimating && (
-                                    <div className="absolute inset-0 bg-black bg-opacity-60 rounded-2xl flex flex-col items-center justify-center z-10">
-                                        <div className={`text-6xl mb-3 ${pinkSlipSuccess ? '' : 'pink-slip-throw'}`}>🎀</div>
-                                        <div className="text-white font-bold text-sm">
-                                            {pinkSlipSuccess ? '✅ Caught!' : 'Throwing Pink Slip Ball...'}
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-
-                            {!pinkSlipAnimating && (
-                                <button
-                                    onClick={() => claimPinkSlip(pinkSlipSelected)}
-                                    className="mt-6 w-full max-w-xs py-4 bg-gradient-to-r from-pink-600 to-rose-500 hover:from-pink-700 hover:to-rose-600 text-white rounded-2xl font-bold text-lg shadow-2xl pink-slip-glow transition"
-                                >
-                                    🎀 Throw Pink Slip Ball!
-                                </button>
-                            )}
-
-                            <p className="mt-3 text-pink-300 text-xs opacity-70">Tap × to pick a different Pokémon</p>
-                        </div>
-                    )}
-                </div>
-            );
-        };
-
         const PokemonCard = ({ pokemon, onClick, showDelete, onDelete, className = "", showTradeBadge = false, enableInteractiveView = false }) => {
             const [cardImage, setCardImage] = useState(null);
             const [showInteractive, setShowInteractive] = useState(false);
@@ -873,6 +773,107 @@
         // ║  Full-screen draggable card with spring physics            ║
         // ╚════════════════════════════════════════════════════════════╝
         
+
+        // ── Pink Slip Pick Screen (extracted as proper component to satisfy Rules of Hooks) ──
+        const PinkSlipPickScreen = ({ currentBattle, battleResults, viewingFriendStarters, setViewingFriendStarters, setBattleView, claimPinkSlip, pinkSlipAnimating, pinkSlipSuccess, database }) => {
+            const [pinkSlipSelected, setPinkSlipSelected] = React.useState(null);
+
+            const loserId = battleResults.loserUserId;
+            const loserName = battleResults.loserUserId === currentBattle.initiatorId
+                ? currentBattle.initiatorName : currentBattle.accepterName;
+
+            // Load loser's starters when entering this screen
+            React.useEffect(() => {
+                let cancelled = false;
+                async function loadLoserStarters() {
+                    if (!loserId) return;
+                    if (viewingFriendStarters && viewingFriendStarters.filter(Boolean).length > 0) return;
+                    try {
+                        const snap = await database.ref(`users/${loserId}/starters`).once('value');
+                        const starters = snap.val() || [null,null,null,null,null,null];
+                        if (!cancelled) setViewingFriendStarters(starters);
+                    } catch(e) { console.error('Failed to load loser starters', e); }
+                }
+                loadLoserStarters();
+                return () => { cancelled = true; };
+            }, [loserId]);
+
+            return (
+                <div className="fixed inset-0 bg-gradient-to-br from-pink-950 via-rose-900 to-black z-[95] overflow-y-auto">
+                    <div className="min-h-screen p-5">
+                        <div className="flex justify-between items-center mb-4">
+                            <h2 className="text-2xl font-bold text-white">🎀 Pink Slip Ball</h2>
+                            <button
+                                onClick={() => setBattleView('results')}
+                                className="w-10 h-10 bg-pink-800 hover:bg-pink-700 rounded-full flex items-center justify-center text-white text-lg transition"
+                            >✕</button>
+                        </div>
+
+                        <div className="bg-pink-900 bg-opacity-40 border border-pink-600 rounded-xl p-4 mb-6 text-center">
+                            <div className="text-4xl mb-2">🎀</div>
+                            <p className="text-pink-200 text-sm font-bold">You won the battle!</p>
+                            <p className="text-pink-300 text-xs mt-1">
+                                Tap a card to magnify it, then throw the Pink Slip Ball to claim it from {loserName}.
+                            </p>
+                        </div>
+
+                        {viewingFriendStarters.filter(Boolean).length === 0 && (
+                            <div className="text-center py-12">
+                                <div className="loader mx-auto mb-4"></div>
+                                <div className="text-pink-300 text-sm">Loading {loserName}'s starters...</div>
+                            </div>
+                        )}
+
+                        <div className="grid grid-cols-2 gap-3">
+                            {viewingFriendStarters.filter(Boolean).map(pokemon => (
+                                <button
+                                    key={pokemon.id}
+                                    onClick={() => setPinkSlipSelected(pokemon)}
+                                    disabled={pinkSlipAnimating}
+                                    className="relative rounded-xl border-2 border-pink-600 bg-pink-900 bg-opacity-30 hover:bg-opacity-50 active:scale-95 transition overflow-hidden"
+                                >
+                                    <PokemonCard pokemon={pokemon} />
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Magnified card overlay */}
+                    {pinkSlipSelected && (
+                        <div className="fixed inset-0 bg-black bg-opacity-90 z-[100] flex flex-col items-center justify-center p-6">
+                            <button
+                                onClick={() => { if (!pinkSlipAnimating) setPinkSlipSelected(null); }}
+                                className="absolute top-4 right-4 w-12 h-12 bg-white bg-opacity-20 hover:bg-opacity-30 rounded-full flex items-center justify-center text-white text-2xl font-bold z-10 transition"
+                            >×</button>
+
+                            <div className="relative w-full max-w-xs select-none">
+                                <PokemonCard pokemon={pinkSlipSelected} className="w-full shadow-2xl rounded-2xl" />
+                                {pinkSlipAnimating && (
+                                    <div className="absolute inset-0 bg-black bg-opacity-60 rounded-2xl flex flex-col items-center justify-center z-10">
+                                        <div className={`text-6xl mb-3 ${pinkSlipSuccess ? '' : 'pink-slip-throw'}`}>🎀</div>
+                                        <div className="text-white font-bold text-sm">
+                                            {pinkSlipSuccess ? '✅ Caught!' : 'Throwing Pink Slip Ball...'}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {!pinkSlipAnimating && (
+                                <button
+                                    onClick={() => claimPinkSlip(pinkSlipSelected)}
+                                    className="mt-6 w-full max-w-xs py-4 bg-gradient-to-r from-pink-600 to-rose-500 hover:from-pink-700 hover:to-rose-600 text-white rounded-2xl font-bold text-lg shadow-2xl pink-slip-glow transition"
+                                >
+                                    🎀 Throw Pink Slip Ball!
+                                </button>
+                            )}
+
+                            <p className="mt-3 text-pink-300 text-xs opacity-70">Tap × to pick a different Pokémon</p>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
         const InteractiveCardViewer = ({ pokemon, onClose }) => {
             const [position, setPosition] = useState({ x: 0, y: 0 });
             const [scale, setScale] = useState(1);
@@ -5428,48 +5429,43 @@
             const updateStreak = async () => {
                 const today = new Date().toDateString();
                 console.log('🔥 updateStreak called, today:', today);
-                
-                // Load from storage to get latest data
-                const storedHistory = await window.storage.get('run-history');
-                const history = storedHistory ? JSON.parse(storedHistory.value) : [];
-                const lastRun = history.length > 0 ? new Date(history[history.length - 1].date).toDateString() : null;
-                console.log('🔥 Last run date:', lastRun, 'History length:', history.length);
-                
+
                 // Load current streak from storage
                 const storedStreak = await window.storage.get('current-streak');
-                const currentStoredStreak = storedStreak ? JSON.parse(storedStreak.value) : { days: 0, weeks: 0 };
+                const currentStoredStreak = storedStreak?.value ? JSON.parse(storedStreak.value) : { days: 0, weeks: 0, lastRunDate: null };
                 console.log('🔥 Current stored streak:', currentStoredStreak);
-                
-                // If already ran today, don't increment again
-                if (lastRun === today) {
-                    console.log('🔥 Already ran today, returning current streak');
+
+                // Guard: already updated today — do not double-increment
+                if (currentStoredStreak.lastRunDate === today) {
+                    console.log('🔥 Already ran today, streak stays at:', currentStoredStreak);
+                    setCurrentStreak(currentStoredStreak);
                     return currentStoredStreak;
                 }
-                
-                let newStreak = { ...currentStoredStreak };
-                
-                // Calculate yesterday's date
+
+                // Calculate yesterday
                 const yesterday = new Date();
                 yesterday.setDate(yesterday.getDate() - 1);
                 const yesterdayStr = yesterday.toDateString();
-                console.log('🔥 Yesterday:', yesterdayStr);
-                
-                // Increment if last run was yesterday OR this is first ever run
-                if (lastRun === yesterdayStr || history.length === 0) {
-                    newStreak.days = currentStoredStreak.days + 1;
-                    if (newStreak.days % 7 === 0) {
-                        newStreak.weeks = Math.floor(newStreak.days / 7);
-                    }
+
+                let newStreak;
+                if (!currentStoredStreak.lastRunDate || currentStoredStreak.lastRunDate === yesterdayStr) {
+                    // Continue or start streak
+                    const newDays = (currentStoredStreak.days || 0) + 1;
+                    newStreak = {
+                        days: newDays,
+                        weeks: Math.floor(newDays / 7),
+                        lastRunDate: today
+                    };
                     console.log('🔥 Incrementing streak to:', newStreak);
                 } else {
-                    // Streak broken - reset to 1
-                    newStreak = { days: 1, weeks: 0 };
-                    console.log('🔥 Streak broken, resetting to 1. Last run was:', lastRun);
+                    // Streak broken
+                    newStreak = { days: 1, weeks: 0, lastRunDate: today };
+                    console.log('🔥 Streak broken, resetting to 1. Last run was:', currentStoredStreak.lastRunDate);
                 }
-                
+
                 await window.storage.set('current-streak', JSON.stringify(newStreak));
                 setCurrentStreak(newStreak);
-                console.log('🔥 Streak saved and state updated:', newStreak);
+                console.log('🔥 Streak saved:', newStreak);
                 return newStreak;
             };
 
@@ -5798,6 +5794,8 @@
                 window.storage.set('stored-pokeballs', newTotal.toString());
                 
                 // Store workout intensity AND workout data for capture session
+                // Also update streak + run history here — this is the primary save path
+                // (generatePokemon is the legacy flow; exchange is the active one)
                 if (workoutTab === 'cardio') {
                     const rawPace2 = pace && pace.includes(':') ? pace : '0:00';
                     const rawDuration2 = duration && duration.includes(':') ? duration : '0:00';
@@ -5819,8 +5817,29 @@
                         distance,
                         duration
                     });
+
+                    // ── Save run to history + update streak ──
+                    const newRun = {
+                        date: new Date().toISOString(),
+                        pace: paceSeconds,
+                        distance: distanceNum,
+                        duration: durationSeconds,
+                        intensity,
+                        workoutType: 'cardio',
+                        newPRs: Object.keys(newPRs).filter(k => newPRs[k])
+                    };
+                    updateStreak();                            // async, no need to await here
+                    saveRunHistory(newRun);                   // async, no need to await here
+                    if (paceSeconds > 0 || distanceNum > 0 || durationSeconds > 0) {
+                        updatePersonalRecords(paceSeconds, distanceNum, durationSeconds);
+                    }
+
                 } else if (workoutTab === 'lift') {
-                    // For lift, use default chances since we don't have intensity calculation yet
+                    const calories = parseFloat(caloriesBurned) || 0;
+                    const rawLiftDuration2 = liftDuration && liftDuration.includes(':') ? liftDuration : '0:00';
+                    const [durMin, durSec] = rawLiftDuration2.split(':').map(Number);
+                    const durationSeconds = ((durMin || 0) * 60 + (durSec || 0));
+
                     const chances = {
                         common: { chance: 0.50 },
                         uncommon: { chance: 0.30 },
@@ -5829,11 +5848,7 @@
                         legendary: { chance: 0.01 }
                     };
                     
-                    console.log('🏋️ Storing lift data:', {
-                        liftDuration,
-                        caloriesBurned,
-                        avgHR
-                    });
+                    console.log('🏋️ Storing lift data:', { liftDuration, caloriesBurned, avgHR });
                     
                     setLastWorkoutIntensity({
                         chances,
@@ -5843,6 +5858,17 @@
                         caloriesBurned,
                         avgHR
                     });
+
+                    // ── Save lift to history + update streak ──
+                    const newRun = {
+                        date: new Date().toISOString(),
+                        duration: durationSeconds,
+                        calories,
+                        workoutType: 'lift',
+                        newPRs: []
+                    };
+                    updateStreak();
+                    saveRunHistory(newRun);
                 }
             };
 
