@@ -4895,6 +4895,8 @@
             };
 
             // Accepter watches the battle resolve slot by slot
+            const battleScrollRef = React.useRef(null);
+
             const runBattleSpectate = async (result, battle) => {
                 setBattleSpectateRunning(true);
                 setBattleSpectateSlots([]);
@@ -4902,16 +4904,28 @@
 
                 for (let i = 0; i < result.slotResults.length; i++) {
                     const slot = result.slotResults[i];
-                    await new Promise(r => setTimeout(r, 900));
+                    // Brief pause between slots
+                    await new Promise(r => setTimeout(r, 700));
+                    // Show the sprites
                     setBattleSpectateSlots(prev => [...prev, slot]);
-                    await new Promise(r => setTimeout(r, 600));
+                    // Scroll newest slot into view
+                    await new Promise(r => setTimeout(r, 150));
+                    if (battleScrollRef.current) {
+                        const cards = battleScrollRef.current.querySelectorAll('[data-slot]');
+                        const last = cards[cards.length - 1];
+                        if (last) last.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                    // Wait 1 full second for sprites to land, then reveal result
+                    await new Promise(r => setTimeout(r, 1000));
                     setBattleSlotAnimations(prev => ({
                         ...prev,
                         [i]: slot.outcome === 'TIE' ? 'tie' : slot.outcome === 'A_WIN' ? 'awin' : 'bwin'
                     }));
+                    // Short pause to let win/loss animation play before next slot
+                    await new Promise(r => setTimeout(r, 600));
                 }
 
-                await new Promise(r => setTimeout(r, 1200));
+                await new Promise(r => setTimeout(r, 1400));
                 setBattleSpectateRunning(false);
                 setBattleResults(result);
                 setBattleView('results');
@@ -4941,27 +4955,40 @@
 
                 try {
                     const myUid = firebaseManager.user.uid;
-                    const loserId = currentBattle.result.loserUserId;
 
-                    // Fetch loser's starters
-                    const loserStartersSnap = await database.ref(`users/${loserId}/starters`).once('value');
-                    const loserStarters = loserStartersSnap.val() || [];
+                    // loserId — prefer from battleResults in state, fall back to currentBattle.result
+                    const loserId = (battleResults && battleResults.loserUserId)
+                        || (currentBattle.result && currentBattle.result.loserUserId);
 
-                    // Verify pokemon belongs to loser
-                    const pokemonExists = loserStarters.some(s => s && s.id === targetPokemon.id);
-                    if (!pokemonExists) {
-                        alert('That Pokémon could not be found in their starters.');
+                    if (!loserId) {
+                        console.error('❌ Cannot determine loserId', { battleResults, currentBattle });
+                        alert('Could not determine battle loser. Try reopening results.');
                         setPinkSlipAnimating(false);
                         return;
                     }
 
-                    await new Promise(r => setTimeout(r, 800)); // Ball throw animation time
+                    // Play the throw animation (1s) while we do the Firebase work in parallel
+                    const throwDelay = new Promise(r => setTimeout(r, 1000));
 
-                    // Remove from loser's starters (replace with null)
-                    const updatedLoserStarters = loserStarters.map(s => (s && s.id === targetPokemon.id) ? null : s);
+                    // Fetch loser's current starters from Firebase
+                    const loserStartersSnap = await database.ref(`users/${loserId}/starters`).once('value');
+                    const loserStarters = loserStartersSnap.val() || [];
+
+                    // Soft-verify: warn but don't block if starters are out of sync
+                    const pokemonExists = Array.isArray(loserStarters) && loserStarters.some(s => s && s.id === targetPokemon.id);
+                    if (!pokemonExists) {
+                        console.warn('⚠️ Pokemon not found in live starters — may be stale cache, proceeding anyway', targetPokemon.id, loserStarters);
+                    }
+
+                    await throwDelay;
+
+                    // Remove from loser's starters (replace slot with null)
+                    const updatedLoserStarters = Array.isArray(loserStarters)
+                        ? loserStarters.map(s => (s && s.id === targetPokemon.id) ? null : s)
+                        : loserStarters;
                     await database.ref(`users/${loserId}/starters`).set(updatedLoserStarters);
 
-                    // Add to winner's PC
+                    // Add to winner's PC (mark as a battle-won transfer)
                     const markedPokemon = { ...targetPokemon, isTrade: true };
                     const updatedMyPC = [markedPokemon, ...pokemonPC];
                     setPokemonPC(updatedMyPC);
@@ -4976,9 +5003,11 @@
                     });
 
                     setPinkSlipSuccess(true);
-                    await new Promise(r => setTimeout(r, 1200));
+                    await new Promise(r => setTimeout(r, 1000));
                     setPinkSlipAnimating(false);
                     setPinkSlipSuccess(false);
+                    // Update local currentBattle so "already claimed" shows correctly
+                    setCurrentBattle(prev => prev ? { ...prev, status: 'COMPLETED', pinkSlipClaimedPokemonId: targetPokemon.id } : prev);
                     setBattleView('results');
                     alert(`🎉 ${targetPokemon.pokemonName} was added to your PC!`);
                 } catch (err) {
@@ -8441,11 +8470,11 @@
                                         </div>
                                     )}
 
-                                    <div className="space-y-4">
+                                    <div className="space-y-4" ref={battleScrollRef}>
                                         {battleSpectateSlots.map((slot, idx) => {
                                             const anim = battleSlotAnimations[slot.slotIndex];
                                             return (
-                                                <div key={slot.slotIndex} className={`bg-gray-800 rounded-2xl p-4 border-2 slot-reveal ${
+                                                <div key={slot.slotIndex} data-slot={slot.slotIndex} className={`bg-gray-800 rounded-2xl p-4 border-2 slot-reveal ${
                                                     anim === 'awin' ? 'border-blue-500' : anim === 'bwin' ? 'border-orange-500' : 'border-gray-600'
                                                 }`} style={{ animationDelay: `${idx * 0.1}s` }}>
                                                     <div className="flex items-center justify-between mb-3">
@@ -8519,6 +8548,23 @@
                                             Done
                                         </button>
                                     </div>
+
+                                    {/* ── Pink Slip Ball button at TOP ── */}
+                                    {battleResults.winnerUserId === firebaseManager.user?.uid &&
+                                     currentBattle.status === 'LOOT_PENDING' &&
+                                     !currentBattle.pinkSlipClaimedPokemonId && (
+                                        <button
+                                            onClick={() => setBattleView('pinkSlip')}
+                                            className="w-full py-4 bg-gradient-to-r from-pink-600 to-rose-500 hover:from-pink-700 hover:to-rose-600 text-white rounded-2xl font-bold text-lg transition shadow-2xl pink-slip-glow mb-5"
+                                        >
+                                            🎀 Use Pink Slip Ball
+                                        </button>
+                                    )}
+                                    {currentBattle.pinkSlipClaimedPokemonId && (
+                                        <div className="bg-pink-900 bg-opacity-40 border border-pink-600 rounded-xl p-3 text-center text-pink-300 text-sm font-bold mb-5">
+                                            🎀 Pink Slip already claimed
+                                        </div>
+                                    )}
 
                                     {/* Scoreboard */}
                                     <div className="bg-gray-800 rounded-2xl p-5 border border-gray-700 mb-5">
@@ -8603,85 +8649,102 @@
                                         ))}
                                     </div>
 
-                                    {/* Pink Slip Ball button (winner only, when loot pending) */}
-                                    {battleResults.winnerUserId === firebaseManager.user?.uid &&
-                                     currentBattle.status === 'LOOT_PENDING' &&
-                                     !currentBattle.pinkSlipClaimedPokemonId && (
-                                        <button
-                                            onClick={() => setBattleView('pinkSlip')}
-                                            className="w-full py-4 bg-gradient-to-r from-pink-600 to-rose-500 hover:from-pink-700 hover:to-rose-600 text-white rounded-2xl font-bold text-lg transition shadow-2xl pink-slip-glow mb-4"
-                                        >
-                                            🎀 Use Pink Slip Ball
-                                        </button>
-                                    )}
-
-                                    {currentBattle.pinkSlipClaimedPokemonId && (
-                                        <div className="bg-pink-900 bg-opacity-40 border border-pink-600 rounded-xl p-3 text-center text-pink-300 text-sm font-bold mb-4">
-                                            🎀 Pink Slip already claimed
-                                        </div>
-                                    )}
+{/* Pink Slip button moved to top */}
                                 </div>
                             </div>
                         )}
 
                         {/* ⚔️ PINK SLIP PICK SCREEN */}
-                        {battleView === 'pinkSlip' && currentBattle && battleResults && (
-                            <div className="fixed inset-0 bg-gradient-to-br from-pink-950 via-rose-900 to-black z-[95] overflow-y-auto">
-                                <div className="min-h-screen p-5">
-                                    <div className="flex justify-between items-center mb-4">
-                                        <h2 className="text-2xl font-bold text-white">🎀 Pink Slip Ball</h2>
-                                        <button
-                                            onClick={() => setBattleView('results')}
-                                            className="w-10 h-10 bg-pink-800 hover:bg-pink-700 rounded-full flex items-center justify-center text-white text-lg transition"
-                                        >✕</button>
-                                    </div>
+                        {battleView === 'pinkSlip' && currentBattle && battleResults && (() => {
+                            const [pinkSlipSelected, setPinkSlipSelected] = React.useState(null);
+                            const loserName = battleResults.loserUserId === currentBattle.initiatorId
+                                ? currentBattle.initiatorName : currentBattle.accepterName;
 
-                                    <div className="bg-pink-900 bg-opacity-40 border border-pink-600 rounded-xl p-4 mb-6 text-center">
-                                        <div className="text-4xl mb-2">🎀</div>
-                                        <p className="text-pink-200 text-sm font-bold">You won the battle!</p>
-                                        <p className="text-pink-300 text-xs mt-1">
-                                            Choose one of {battleResults.loserUserId === currentBattle.initiatorId ? currentBattle.initiatorName : currentBattle.accepterName}'s starters to claim.
-                                        </p>
-                                    </div>
-
-                                    {/* Opponent starters grid */}
-                                    {viewingFriendStarters.filter(Boolean).length === 0 && (
-                                        <div className="text-center py-6 text-pink-400 text-sm">
-                                            <div className="loader mx-auto mb-2"></div>
-                                            Loading opponent's starters...
-                                        </div>
-                                    )}
-                                    <div className="grid grid-cols-2 gap-3">
-                                        {viewingFriendStarters.filter(Boolean).map(pokemon => (
+                            return (
+                                <div className="fixed inset-0 bg-gradient-to-br from-pink-950 via-rose-900 to-black z-[95] overflow-y-auto">
+                                    <div className="min-h-screen p-5">
+                                        <div className="flex justify-between items-center mb-4">
+                                            <h2 className="text-2xl font-bold text-white">🎀 Pink Slip Ball</h2>
                                             <button
-                                                key={pokemon.id}
-                                                onClick={() => {
-                                                    if (window.confirm(`Use the Pink Slip Ball on ${pokemon.pokemonName}? This will permanently transfer it to your PC.`)) {
-                                                        claimPinkSlip(pokemon);
-                                                    }
-                                                }}
-                                                disabled={pinkSlipAnimating}
-                                                className={`relative rounded-xl border-2 border-pink-600 bg-pink-900 bg-opacity-30 hover:bg-opacity-50 transition overflow-hidden ${pinkSlipAnimating ? 'opacity-50' : ''}`}
-                                            >
+                                                onClick={() => setBattleView('results')}
+                                                className="w-10 h-10 bg-pink-800 hover:bg-pink-700 rounded-full flex items-center justify-center text-white text-lg transition"
+                                            >✕</button>
+                                        </div>
+
+                                        <div className="bg-pink-900 bg-opacity-40 border border-pink-600 rounded-xl p-4 mb-6 text-center">
+                                            <div className="text-4xl mb-2">🎀</div>
+                                            <p className="text-pink-200 text-sm font-bold">You won the battle!</p>
+                                            <p className="text-pink-300 text-xs mt-1">
+                                                Tap a card to magnify it, then throw the Pink Slip Ball to claim it from {loserName}.
+                                            </p>
+                                        </div>
+
+                                        {/* Loading state */}
+                                        {viewingFriendStarters.filter(Boolean).length === 0 && (
+                                            <div className="text-center py-12">
+                                                <div className="loader mx-auto mb-4"></div>
+                                                <div className="text-pink-300 text-sm">Loading {loserName}'s starters...</div>
+                                            </div>
+                                        )}
+
+                                        {/* Starters grid — tap to magnify */}
+                                        <div className="grid grid-cols-2 gap-3">
+                                            {viewingFriendStarters.filter(Boolean).map(pokemon => (
+                                                <button
+                                                    key={pokemon.id}
+                                                    onClick={() => setPinkSlipSelected(pokemon)}
+                                                    disabled={pinkSlipAnimating}
+                                                    className="relative rounded-xl border-2 border-pink-600 bg-pink-900 bg-opacity-30 hover:bg-opacity-50 active:scale-95 transition overflow-hidden"
+                                                >
+                                                    <PokemonCard pokemon={pokemon} />
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* ── Magnified card overlay — appears when a card is tapped ── */}
+                                    {pinkSlipSelected && (
+                                        <div className="fixed inset-0 bg-black bg-opacity-90 z-[100] flex flex-col items-center justify-center p-6">
+                                            {/* Close without claiming */}
+                                            <button
+                                                onClick={() => { if (!pinkSlipAnimating) setPinkSlipSelected(null); }}
+                                                className="absolute top-4 right-4 w-12 h-12 bg-white bg-opacity-20 hover:bg-opacity-30 rounded-full flex items-center justify-center text-white text-2xl font-bold z-10 transition"
+                                            >×</button>
+
+                                            {/* The card — full-width like InteractiveCardViewer */}
+                                            <div className="relative w-full max-w-xs select-none">
+                                                <PokemonCard
+                                                    pokemon={pinkSlipSelected}
+                                                    className="w-full shadow-2xl rounded-2xl"
+                                                />
+
+                                                {/* Ball throw overlay */}
                                                 {pinkSlipAnimating && (
-                                                    <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-60 z-10">
-                                                        <div className={pinkSlipSuccess ? 'text-4xl' : 'pink-slip-throw text-4xl'}>🎀</div>
+                                                    <div className="absolute inset-0 bg-black bg-opacity-60 rounded-2xl flex flex-col items-center justify-center z-10">
+                                                        <div className={`text-6xl mb-3 ${pinkSlipSuccess ? '' : 'pink-slip-throw'}`}>🎀</div>
+                                                        <div className="text-white font-bold text-sm">
+                                                            {pinkSlipSuccess ? '✅ Caught!' : 'Throwing Pink Slip Ball...'}
+                                                        </div>
                                                     </div>
                                                 )}
-                                                <PokemonCard pokemon={pokemon} />
-                                            </button>
-                                        ))}
-                                    </div>
+                                            </div>
 
-                                    {viewingFriendStarters.filter(Boolean).length === 0 && (
-                                        <div className="text-center py-12">
-                                            <div className="text-4xl mb-3">😮</div>
-                                            <div className="text-pink-300 font-bold">Opponent has no starters to claim</div>
+                                            {/* Confirm / throw button */}
+                                            {!pinkSlipAnimating && (
+                                                <button
+                                                    onClick={() => claimPinkSlip(pinkSlipSelected)}
+                                                    className="mt-6 w-full max-w-xs py-4 bg-gradient-to-r from-pink-600 to-rose-500 hover:from-pink-700 hover:to-rose-600 text-white rounded-2xl font-bold text-lg shadow-2xl pink-slip-glow transition"
+                                                >
+                                                    🎀 Throw Pink Slip Ball!
+                                                </button>
+                                            )}
+
+                                            <p className="mt-3 text-pink-300 text-xs opacity-70">Tap × to pick a different Pokémon</p>
                                         </div>
                                     )}
                                 </div>
-                            </div>
-                        )}
+                            );
+                        })()}
 
                         {/* 👥 Friends Search Modal - AFTER ALL VIEWS */}
                         {showFriendSearch && firebaseProfile && (
