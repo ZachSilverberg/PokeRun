@@ -4387,12 +4387,6 @@
                     setViewingFriendId(friendId);
                     setFriendProfileTab('starters'); // Default to starters tab
                     setCurrentView('friendProfile');
-                    // Clear any stale battle state when opening a fresh friend profile
-                    // (battle is only re-set when tapping the ⚔️ tile or initiating)
-                    setCurrentBattle(prev => {
-                        if (prev && prev.initiatorId !== friendId && prev.accepterId !== friendId) return null;
-                        return prev;
-                    });
                     console.log('✅ Switched to friendProfile view');
                     
                 } catch (error) {
@@ -4625,6 +4619,7 @@
             useEffect(() => {
                 if (firebaseProfile) {
                     loadPendingTrades();
+                    processPendingBattleLosses();
                     
                     // Sync PC to Firebase if user has local data
                     const syncPCToFirebase = async () => {
@@ -4778,12 +4773,16 @@
                 try {
                     const myUid = firebaseManager.user.uid;
 
-                    // Always trust battleSetupRole — it was set explicitly when entering setup.
-                    // Do NOT re-derive from currentBattle.initiatorId which may be stale/mismatched.
-                    const isInitiator = battleSetupRole === 'initiator';
+                    // Fetch the live battle to get authoritative initiatorId/accepterId.
+                    // We do NOT trust battleSetupRole state — it can lag when set inside .then() callbacks.
+                    const liveBattleSnap = await database.ref(`battles/${currentBattle.battleId}`).once('value');
+                    const liveBattle = liveBattleSnap.val();
+                    if (!liveBattle) throw new Error('Battle not found in Firebase');
+
+                    const isInitiator = liveBattle.initiatorId === myUid;
                     const selectionKey = isInitiator ? 'initiatorSelection' : 'accepterSelection';
 
-                    console.log('⚔️ submitBattleLoadout', { myUid, role: battleSetupRole, isInitiator, battleId: currentBattle.battleId, initiatorId: currentBattle.initiatorId });
+                    console.log('⚔️ submitBattleLoadout', { myUid, isInitiator, initiatorId: liveBattle.initiatorId, accepterId: liveBattle.accepterId, battleId: liveBattle.battleId });
 
                     // Build pokemon details for results display
                     const pokemonDetails = battleSetupSelection.orderedPokemonIds.map(id => {
@@ -4811,16 +4810,24 @@
                     }
 
                     // ── ACCEPTER PATH ──
-                    // Accepter is always submitting after initiator (initiator sent first).
-                    // Fetch fresh battle state to merge both selections for resolution.
-                    const snap = await database.ref(`battles/${currentBattle.battleId}`).once('value');
-                    const updatedBattle = snap.val();
+                    // liveBattle was already fetched above — use it directly.
+                    const updatedBattle = liveBattle;
 
                     if (!updatedBattle.initiatorSelection) {
-                        // Edge case: initiator somehow hasn't submitted yet (should not happen in normal flow)
+                        // Initiator hasn't submitted their loadout yet.
+                        // This happens if the initiator sent the battle invite but never completed their own setup.
+                        console.error('❌ initiatorSelection missing from live battle', { 
+                            battleId: liveBattle.battleId, 
+                            status: liveBattle.status,
+                            hasInitiatorSelection: !!liveBattle.initiatorSelection,
+                            hasAccepterSelection: !!liveBattle.accepterSelection,
+                            myUid, isInitiator,
+                            initiatorId: liveBattle.initiatorId,
+                            accepterId: liveBattle.accepterId
+                        });
                         setBattleView(null);
                         setCurrentBattle(null);
-                        alert('✅ Loadout submitted! Waiting for the other trainer to finalize their team.');
+                        alert('⚠️ The trainer who challenged you hasn\'t finalized their team yet. Ask them to open the battle request and submit their lineup first.');
                         return;
                     }
 
@@ -4952,68 +4959,88 @@
             const claimPinkSlip = async (targetPokemon) => {
                 if (!firebaseManager.user || !currentBattle) return;
                 setPinkSlipAnimating(true);
+                setPinkSlipSuccess(false);
 
                 try {
                     const myUid = firebaseManager.user.uid;
-
-                    // loserId — prefer from battleResults in state, fall back to currentBattle.result
                     const loserId = (battleResults && battleResults.loserUserId)
                         || (currentBattle.result && currentBattle.result.loserUserId);
 
+                    console.log('🎀 claimPinkSlip start', { myUid, loserId, battleId: currentBattle.battleId, pokemon: targetPokemon?.id });
+
                     if (!loserId) {
-                        console.error('❌ Cannot determine loserId', { battleResults, currentBattle });
-                        alert('Could not determine battle loser. Try reopening results.');
+                        console.error('❌ loserId missing', { battleResults, currentBattleResult: currentBattle?.result });
+                        alert('Could not determine battle loser. Please close and re-open the results screen.');
                         setPinkSlipAnimating(false);
                         return;
                     }
 
-                    // Play the throw animation (1s) while we do the Firebase work in parallel
+                    // Start throw animation timer
                     const throwDelay = new Promise(r => setTimeout(r, 1000));
 
-                    // Fetch loser's current starters from Firebase
-                    const loserStartersSnap = await database.ref(`users/${loserId}/starters`).once('value');
-                    const loserStarters = loserStartersSnap.val() || [];
-
-                    // Soft-verify: warn but don't block if starters are out of sync
-                    const pokemonExists = Array.isArray(loserStarters) && loserStarters.some(s => s && s.id === targetPokemon.id);
-                    if (!pokemonExists) {
-                        console.warn('⚠️ Pokemon not found in live starters — may be stale cache, proceeding anyway', targetPokemon.id, loserStarters);
-                    }
-
-                    await throwDelay;
-
-                    // Remove from loser's starters (replace slot with null)
-                    const updatedLoserStarters = Array.isArray(loserStarters)
-                        ? loserStarters.map(s => (s && s.id === targetPokemon.id) ? null : s)
-                        : loserStarters;
-                    await database.ref(`users/${loserId}/starters`).set(updatedLoserStarters);
-
-                    // Add to winner's PC (mark as a battle-won transfer)
-                    const markedPokemon = { ...targetPokemon, isTrade: true };
+                    // 1. Add to winner's own PC — winner can always write their own /users/$uid node
+                    const markedPokemon = { ...targetPokemon, isTrade: true, wonInBattle: currentBattle.battleId };
                     const updatedMyPC = [markedPokemon, ...pokemonPC];
                     setPokemonPC(updatedMyPC);
                     await window.storage.set('pokemon-pc', JSON.stringify(updatedMyPC));
+                    console.log('🎀 writing to my PC...');
                     await database.ref(`users/${myUid}/pc`).set(updatedMyPC);
+                    console.log('🎀 PC write OK');
 
-                    // Mark battle completed
+                    // 2. Mark battle as COMPLETED and record which pokemon was claimed.
+                    //    Also store pendingRemoval so the loser can process it on their own session.
+                    //    Winner can write the battle node (they wrote it originally, rules allow auth'd writes to /battles).
+                    console.log('🎀 updating battle record...');
                     await database.ref(`battles/${currentBattle.battleId}`).update({
                         status: 'COMPLETED',
                         pinkSlipClaimedPokemonId: targetPokemon.id,
-                        pinkSlipCompletedAt: Date.now()
+                        pinkSlipCompletedAt: Date.now(),
+                        // Loser reads this on load and removes the pokemon from their own starters
+                        pendingRemoval: {
+                            pokemonId: targetPokemon.id,
+                            processedByLoser: false
+                        }
                     });
+                    console.log('🎀 battle record updated OK');
 
+                    await throwDelay;
                     setPinkSlipSuccess(true);
-                    await new Promise(r => setTimeout(r, 1000));
+                    await new Promise(r => setTimeout(r, 900));
                     setPinkSlipAnimating(false);
                     setPinkSlipSuccess(false);
-                    // Update local currentBattle so "already claimed" shows correctly
                     setCurrentBattle(prev => prev ? { ...prev, status: 'COMPLETED', pinkSlipClaimedPokemonId: targetPokemon.id } : prev);
                     setBattleView('results');
                     alert(`🎉 ${targetPokemon.pokemonName} was added to your PC!`);
                 } catch (err) {
-                    console.error('❌ Error claiming pink slip:', err);
+                    console.error('❌ claimPinkSlip FAILED:', err.code, err.message, err);
                     setPinkSlipAnimating(false);
-                    alert('Failed to claim Pokémon. Try again.');
+                    alert('Failed to claim Pokémon: ' + (err.message || err.code || 'unknown error'));
+                }
+            };
+
+            // Called on app load for the loser — checks if any battles have a pendingRemoval for them
+            const processPendingBattleLosses = async () => {
+                if (!firebaseManager.user) return;
+                try {
+                    const myUid = firebaseManager.user.uid;
+                    // Find battles where I was the loser and pendingRemoval hasn't been processed
+                    const snap = await database.ref('battles')
+                        .orderByChild('result/loserUserId').equalTo(myUid).once('value');
+                    const battles = snap.val() || {};
+                    for (const battle of Object.values(battles)) {
+                        if (battle.pendingRemoval && !battle.pendingRemoval.processedByLoser && battle.pinkSlipClaimedPokemonId) {
+                            // Remove the claimed pokemon from MY OWN starters
+                            const myStartersSnap = await database.ref(`users/${myUid}/starters`).once('value');
+                            const myStarters = myStartersSnap.val() || [];
+                            const updated = myStarters.map(s => (s && s.id === battle.pinkSlipClaimedPokemonId) ? null : s);
+                            await database.ref(`users/${myUid}/starters`).set(updated);
+                            // Mark as processed so we don't repeat
+                            await database.ref(`battles/${battle.battleId}/pendingRemoval/processedByLoser`).set(true);
+                            console.log('✅ Processed battle loss — removed', battle.pinkSlipClaimedPokemonId, 'from starters');
+                        }
+                    }
+                } catch (err) {
+                    console.warn('⚠️ processPendingBattleLosses error (non-fatal):', err.message);
                 }
             };
 
@@ -7756,6 +7783,7 @@
                                                                 <button
                                                                     onClick={() => {
                                                                         console.log('🖱️ FRIEND TILE CLICKED:', friend.id);
+                                                                        setCurrentBattle(null); // normal nav — no active battle
                                                                         viewFriendStarters(friend.id);
                                                                     }}
                                                                     className="flex-1 bg-white rounded-xl p-4 flex items-center gap-3 shadow-lg hover:shadow-xl hover:bg-gray-50 transition cursor-pointer text-left"
