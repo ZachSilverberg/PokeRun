@@ -4387,6 +4387,12 @@
                     setViewingFriendId(friendId);
                     setFriendProfileTab('starters'); // Default to starters tab
                     setCurrentView('friendProfile');
+                    // Clear any stale battle state when opening a fresh friend profile
+                    // (battle is only re-set when tapping the ⚔️ tile or initiating)
+                    setCurrentBattle(prev => {
+                        if (prev && prev.initiatorId !== friendId && prev.accepterId !== friendId) return null;
+                        return prev;
+                    });
                     console.log('✅ Switched to friendProfile view');
                     
                 } catch (error) {
@@ -4771,8 +4777,13 @@
 
                 try {
                     const myUid = firebaseManager.user.uid;
-                    const isInitiator = myUid === currentBattle.initiatorId;
+
+                    // Always trust battleSetupRole — it was set explicitly when entering setup.
+                    // Do NOT re-derive from currentBattle.initiatorId which may be stale/mismatched.
+                    const isInitiator = battleSetupRole === 'initiator';
                     const selectionKey = isInitiator ? 'initiatorSelection' : 'accepterSelection';
+
+                    console.log('⚔️ submitBattleLoadout', { myUid, role: battleSetupRole, isInitiator, battleId: currentBattle.battleId, initiatorId: currentBattle.initiatorId });
 
                     // Build pokemon details for results display
                     const pokemonDetails = battleSetupSelection.orderedPokemonIds.map(id => {
@@ -4786,42 +4797,54 @@
                         isLocked: true
                     };
 
+                    // Write this player's selection
                     await database.ref(`battles/${currentBattle.battleId}/${selectionKey}`).set(selection);
 
-                    // Fetch current battle state to check if both sides submitted
+                    if (isInitiator) {
+                        // ── INITIATOR PATH ──
+                        // Initiator submits first. Battle is still PENDING_ACCEPT — opponent hasn't
+                        // accepted or set their loadout yet. Just close setup and wait.
+                        setBattleView(null);
+                        setCurrentBattle(null);
+                        alert("⚔️ Battle request sent! You'll get a notification once the battle resolves.");
+                        return;
+                    }
+
+                    // ── ACCEPTER PATH ──
+                    // Accepter is always submitting after initiator (initiator sent first).
+                    // Fetch fresh battle state to merge both selections for resolution.
                     const snap = await database.ref(`battles/${currentBattle.battleId}`).once('value');
                     const updatedBattle = snap.val();
 
-                    if (updatedBattle.initiatorSelection && updatedBattle.accepterSelection) {
-                        // Resolve battle
-                        const resolved = resolveBattle(updatedBattle);
-                        await database.ref(`battles/${currentBattle.battleId}`).update({
-                            status: resolved.matchOutcome === 'DRAW' ? 'RESOLVED' : 'LOOT_PENDING',
-                            result: resolved,
-                        });
-                        setCurrentBattle({ ...updatedBattle, result: resolved, status: resolved.matchOutcome === 'DRAW' ? 'RESOLVED' : 'LOOT_PENDING' });
-                        setBattleResults(resolved);
-
-                        // Run spectate animation for accepter
-                        if (!isInitiator) {
-                            setBattleView('spectate');
-                            runBattleSpectate(resolved, updatedBattle);
-                        } else {
-                            // Initiator just sees "waiting" toast and goes back
-                            setBattleView(null);
-                            setCurrentBattle(null);
-                            alert("⚔️ Loadout sent! You'll get a notification when the battle resolves.");
-                        }
-                    } else {
-                        // Other side hasn't submitted yet
+                    if (!updatedBattle.initiatorSelection) {
+                        // Edge case: initiator somehow hasn't submitted yet (should not happen in normal flow)
                         setBattleView(null);
                         setCurrentBattle(null);
-                        if (isInitiator) {
-                            alert('⚔️ Battle request sent! Waiting for your opponent to accept and set their loadout.');
-                        } else {
-                            alert('✅ Loadout submitted! The battle will resolve once your opponent confirms.');
-                        }
+                        alert('✅ Loadout submitted! Waiting for the other trainer to finalize their team.');
+                        return;
                     }
+
+                    // Both selections present — resolve now
+                    const fullBattle = {
+                        ...updatedBattle,
+                        accepterSelection: selection  // use the just-written selection directly (avoids race)
+                    };
+                    const resolved = resolveBattle(fullBattle);
+                    const finalStatus = resolved.matchOutcome === 'DRAW' ? 'RESOLVED' : 'LOOT_PENDING';
+
+                    await database.ref(`battles/${currentBattle.battleId}`).update({
+                        status: finalStatus,
+                        result: resolved,
+                    });
+
+                    const finalBattle = { ...fullBattle, result: resolved, status: finalStatus };
+                    setCurrentBattle(finalBattle);
+                    setBattleResults(resolved);
+
+                    // Accepter watches the battle play out live
+                    setBattleView('spectate');
+                    runBattleSpectate(resolved, fullBattle);
+
                 } catch (err) {
                     console.error('❌ Error submitting loadout:', err);
                     alert('Failed to submit loadout. Try again.');
@@ -7729,14 +7752,18 @@
                                                                         🤝
                                                                     </button>
                                                                 )}
-                                                                {/* ⚔️ Battle Notification Tile */}
+                                                                {/* ⚔️ Battle Notification Tile - opens friend profile first */}
                                                                 {(() => {
                                                                     const incomingBattle = Object.values(pendingBattles).find(b => b.initiatorId === friend.id);
                                                                     return incomingBattle ? (
                                                                         <button
-                                                                            onClick={() => acceptBattle(incomingBattle)}
+                                                                            onClick={() => {
+                                                                                // Store pending battle so friend profile can show Accept button
+                                                                                setCurrentBattle(incomingBattle);
+                                                                                viewFriendStarters(friend.id);
+                                                                            }}
                                                                             className="w-16 bg-gradient-to-br from-red-600 to-orange-500 hover:from-red-700 hover:to-orange-600 rounded-xl flex items-center justify-center text-white text-2xl shadow-lg transition battle-badge-glow"
-                                                                            title="Battle request!"
+                                                                            title="Battle request! Tap to view their starters"
                                                                         >
                                                                             ⚔️
                                                                         </button>
@@ -8006,13 +8033,58 @@
                                     {/* Starters Tab */}
                                     {friendProfileTab === 'starters' && (
                                         <div className="bg-white rounded-2xl p-6 shadow-2xl">
-                                            {/* ⚔️ Battle for Keeps Button */}
-                                            <button
-                                                onClick={() => initiateBattle(viewingFriendId)}
-                                                className="w-full mb-5 py-3 bg-gradient-to-r from-red-600 to-orange-500 hover:from-red-700 hover:to-orange-600 text-white rounded-xl font-bold text-base transition shadow-lg battle-badge-glow"
-                                            >
-                                                ⚔️ Battle for Keeps
-                                            </button>
+                                            {/* ⚔️ Battle Buttons */}
+                                            {(() => {
+                                                const pendingFromThisFriend = currentBattle && currentBattle.initiatorId === viewingFriendId && currentBattle.status === 'PENDING_ACCEPT';
+                                                if (pendingFromThisFriend) {
+                                                    // Accepter flow: show opponent starters above, then accept
+                                                    return (
+                                                        <div className="mb-5 space-y-3">
+                                                            <div className="bg-red-900 bg-opacity-40 border-2 border-red-500 rounded-xl p-4 text-center">
+                                                                <div className="text-2xl mb-1">⚔️</div>
+                                                                <div className="text-white font-bold">{currentBattle.initiatorName} challenged you!</div>
+                                                                <div className="text-red-300 text-xs mt-1">These are their starters — study them carefully.</div>
+                                                            </div>
+                                                            <button
+                                                                onClick={() => {
+                                                                    // Accept and go to setup
+                                                                    database.ref(`battles/${currentBattle.battleId}`).update({ status: 'ACCEPTED' }).then(() => {
+                                                                        setBattleSetupRole('accepter');
+                                                                        setBattleSetupSelection({ orderedPokemonIds: [null,null,null,null,null,null], slotMoves: [null,null,null,null,null,null] });
+                                                                        setBattleSetupFlippedSlot(null);
+                                                                        setCurrentBattle(prev => ({ ...prev, status: 'ACCEPTED' }));
+                                                                        setBattleView('setup');
+                                                                    }).catch(err => {
+                                                                        console.error('❌ Error accepting:', err);
+                                                                        alert('Failed to accept. Try again.');
+                                                                    });
+                                                                }}
+                                                                className="w-full py-3 bg-gradient-to-r from-red-600 to-orange-500 hover:from-red-700 hover:to-orange-600 text-white rounded-xl font-bold text-base transition shadow-lg battle-badge-glow"
+                                                            >
+                                                                ⚔️ Accept & Set Loadout
+                                                            </button>
+                                                            <button
+                                                                onClick={() => {
+                                                                    database.ref(`battles/${currentBattle.battleId}`).update({ status: 'CANCELLED' });
+                                                                    setCurrentBattle(null);
+                                                                }}
+                                                                className="w-full py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-xl text-sm font-medium transition"
+                                                            >
+                                                                Decline
+                                                            </button>
+                                                        </div>
+                                                    );
+                                                }
+                                                // Default: initiate a new battle
+                                                return (
+                                                    <button
+                                                        onClick={() => initiateBattle(viewingFriendId)}
+                                                        className="w-full mb-5 py-3 bg-gradient-to-r from-red-600 to-orange-500 hover:from-red-700 hover:to-orange-600 text-white rounded-xl font-bold text-base transition shadow-lg battle-badge-glow"
+                                                    >
+                                                        ⚔️ Battle for Keeps
+                                                    </button>
+                                                );
+                                            })()}
                                             <div className="grid grid-cols-2 gap-4">
                                                 {viewingFriendStarters.map((starter, index) => (
                                                     <div
