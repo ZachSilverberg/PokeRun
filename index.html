@@ -247,6 +247,111 @@
             image-rendering: -moz-crisp-edges;
             image-rendering: crisp-edges;
         }
+
+        /* ⚔️ BATTLE SYSTEM ANIMATIONS */
+        @keyframes battlePulse {
+            0%, 100% { box-shadow: 0 0 15px rgba(239, 68, 68, 0.6); }
+            50% { box-shadow: 0 0 30px rgba(239, 68, 68, 1), 0 0 50px rgba(239, 68, 68, 0.4); }
+        }
+        .battle-badge-glow {
+            animation: battlePulse 1.5s ease-in-out infinite;
+        }
+
+        @keyframes cardFlip {
+            0% { transform: rotateY(0deg); }
+            50% { transform: rotateY(90deg); }
+            100% { transform: rotateY(0deg); }
+        }
+        .card-flip {
+            animation: cardFlip 0.4s ease-in-out;
+        }
+
+        @keyframes slotReveal {
+            0% { opacity: 0; transform: scale(0.8) translateY(10px); }
+            100% { opacity: 1; transform: scale(1) translateY(0); }
+        }
+        .slot-reveal {
+            animation: slotReveal 0.4s ease-out forwards;
+        }
+
+        @keyframes loserFade {
+            0% { opacity: 1; filter: brightness(1); transform: scale(1); }
+            50% { opacity: 0.6; filter: brightness(0.3) grayscale(1); transform: scale(0.95); }
+            100% { opacity: 0.2; filter: brightness(0.1) grayscale(1); transform: scale(0.9); }
+        }
+        .loser-fade {
+            animation: loserFade 0.8s ease-out forwards;
+        }
+
+        @keyframes winnerGlow {
+            0% { filter: brightness(1); }
+            50% { filter: brightness(1.4) drop-shadow(0 0 12px rgba(255,215,0,0.9)); }
+            100% { filter: brightness(1.2) drop-shadow(0 0 6px rgba(255,215,0,0.6)); }
+        }
+        .winner-glow {
+            animation: winnerGlow 0.8s ease-out forwards;
+        }
+
+        @keyframes tieShimmer {
+            0%, 100% { filter: brightness(1); }
+            50% { filter: brightness(1.1) hue-rotate(15deg); }
+        }
+        .tie-shimmer {
+            animation: tieShimmer 1s ease-in-out;
+        }
+
+        @keyframes moveReveal {
+            0% { opacity: 0; transform: scale(0) rotate(-15deg); }
+            70% { transform: scale(1.2) rotate(3deg); }
+            100% { opacity: 1; transform: scale(1) rotate(0deg); }
+        }
+        .move-reveal {
+            animation: moveReveal 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+        }
+
+        @keyframes pinkSlipBall {
+            0% { transform: translateY(0) scale(1); }
+            30% { transform: translateY(-40px) scale(1.1) rotate(-10deg); }
+            60% { transform: translateY(20px) scale(0.9) rotate(5deg); }
+            80% { transform: translateY(0) scale(1.05) rotate(-2deg); }
+            100% { transform: translateY(0) scale(1) rotate(0deg); }
+        }
+        .pink-slip-throw {
+            animation: pinkSlipBall 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+        }
+
+        @keyframes battleEntry {
+            0% { opacity: 0; transform: translateX(-30px); }
+            100% { opacity: 1; transform: translateX(0); }
+        }
+        .battle-entry {
+            animation: battleEntry 0.3s ease-out forwards;
+        }
+
+        @keyframes scoreCount {
+            0% { transform: scale(1.5); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .score-pop {
+            animation: scoreCount 0.3s ease-out forwards;
+        }
+
+        .battle-card-back {
+            background: linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #1e1b4b 100%);
+            border: 2px solid #6366f1;
+        }
+
+        .move-btn-quick { background: linear-gradient(135deg, #f59e0b, #d97706); }
+        .move-btn-charge { background: linear-gradient(135deg, #ef4444, #dc2626); }
+        .move-btn-counter { background: linear-gradient(135deg, #8b5cf6, #7c3aed); }
+
+        @keyframes pinkSlipGlow {
+            0%, 100% { box-shadow: 0 0 15px rgba(236, 72, 153, 0.7), 0 0 30px rgba(236, 72, 153, 0.3); }
+            50% { box-shadow: 0 0 25px rgba(236, 72, 153, 1), 0 0 50px rgba(236, 72, 153, 0.5); }
+        }
+        .pink-slip-glow {
+            animation: pinkSlipGlow 2s ease-in-out infinite;
+        }
     </style>
 </head>
 <body>
@@ -3143,6 +3248,23 @@
             const [trainerName, setTrainerName] = useState('Trainer');
             const [profileColor, setProfileColor] = useState('#FF6B6B');
 
+            // ⚔️ BATTLE SYSTEM STATE
+            const [pendingBattles, setPendingBattles] = useState({}); // battleId -> battleData
+            const [battleBadgeCount, setBattleBadgeCount] = useState(0);
+            const [currentBattle, setCurrentBattle] = useState(null);
+            const [battleSetupSelection, setBattleSetupSelection] = useState(
+                { orderedPokemonIds: [null,null,null,null,null,null], slotMoves: [null,null,null,null,null,null] }
+            );
+            const [battleSetupFlippedSlot, setBattleSetupFlippedSlot] = useState(null);
+            const [battleSetupRole, setBattleSetupRole] = useState(null); // 'initiator' | 'accepter'
+            const [battleView, setBattleView] = useState(null); // 'setup' | 'results' | 'pinkSlip' | 'spectate'
+            const [battleResults, setBattleResults] = useState(null);
+            const [pinkSlipAnimating, setPinkSlipAnimating] = useState(false);
+            const [pinkSlipSuccess, setPinkSlipSuccess] = useState(false);
+            const [battleSlotAnimations, setBattleSlotAnimations] = useState({});
+            const [battleSpectateSlots, setBattleSpectateSlots] = useState([]);
+            const [battleSpectateRunning, setBattleSpectateRunning] = useState(false);
+
             // 🐛 DEBUG: Log friends state changes
             useEffect(() => {
                 console.log('🐛 FRIENDS STATE CHANGED:', {
@@ -4480,6 +4602,19 @@
                 }
             };
 
+            // Load loser's starters when entering pink slip screen
+            useEffect(() => {
+                if (battleView === 'pinkSlip' && currentBattle && battleResults) {
+                    const loserId = battleResults.loserUserId;
+                    if (loserId && viewingFriendStarters.filter(Boolean).length === 0) {
+                        database.ref(`users/${loserId}/starters`).once('value').then(snap => {
+                            const starters = snap.val();
+                            if (Array.isArray(starters)) setViewingFriendStarters(starters);
+                        }).catch(err => console.error('❌ Error loading loser starters:', err));
+                    }
+                }
+            }, [battleView]);
+
             // Load trades when firebase profile loads
             useEffect(() => {
                 if (firebaseProfile) {
@@ -4514,6 +4649,402 @@
                 }
             }, [firebaseProfile, pokemonPC, starterTeam]);
 
+            // =========================
+            // ⚔️ BATTLE FOR KEEPS SYSTEM
+            // =========================
+
+            // RPS resolution
+            const moveBeats = (a, b) => {
+                if (a === 'QUICK'   && b === 'CHARGE')  return true;
+                if (a === 'CHARGE'  && b === 'COUNTER') return true;
+                if (a === 'COUNTER' && b === 'QUICK')   return true;
+                return false;
+            };
+
+            const computeSlotOutcome = (moveA, moveB) => {
+                if (moveA === moveB) return 'TIE';
+                if (moveBeats(moveA, moveB)) return 'A_WIN';
+                return 'B_WIN';
+            };
+
+            // Start a battle request from friend profile starters tab
+            const initiateBattle = async (friendId) => {
+                if (!firebaseManager.user || !firebaseProfile) {
+                    alert('You need a trainer profile to battle!');
+                    return;
+                }
+                const myStarters = starterTeam.filter(s => s !== null);
+                if (myStarters.length < 6) {
+                    alert('You need all 6 starter slots filled to battle!');
+                    return;
+                }
+                try {
+                    const myUid = firebaseManager.user.uid;
+                    const battleId = `battle_${Date.now()}_${Math.random().toString(36).substr(2,9)}`;
+                    const battleData = {
+                        battleId,
+                        initiatorId: myUid,
+                        initiatorName: firebaseProfile.displayName,
+                        initiatorBadgeColor: firebaseProfile.badgeColor,
+                        accepterId: friendId,
+                        accepterName: friendProfiles[friendId]?.displayName || 'Trainer',
+                        accepterBadgeColor: friendProfiles[friendId]?.badgeColor || '#8B5CF6',
+                        status: 'PENDING_ACCEPT',
+                        createdAt: Date.now(),
+                        expiresAt: Date.now() + (48 * 60 * 60 * 1000),
+                        initiatorSelection: null,
+                        accepterSelection: null,
+                        result: null,
+                        pinkSlipClaimedPokemonId: null,
+                        pinkSlipCompletedAt: null,
+                    };
+                    await database.ref(`battles/${battleId}`).set(battleData);
+                    console.log('⚔️ Battle created:', battleId);
+
+                    // Open battle setup for initiator
+                    setCurrentBattle(battleData);
+                    setBattleSetupRole('initiator');
+                    setBattleSetupSelection({ orderedPokemonIds: [null,null,null,null,null,null], slotMoves: [null,null,null,null,null,null] });
+                    setBattleSetupFlippedSlot(null);
+                    setBattleView('setup');
+                } catch (err) {
+                    console.error('❌ Error creating battle:', err);
+                    alert('Failed to start battle. Try again.');
+                }
+            };
+
+            // Accept an incoming battle request
+            const acceptBattle = async (battle) => {
+                if (!firebaseManager.user) return;
+                try {
+                    await database.ref(`battles/${battle.battleId}`).update({ status: 'ACCEPTED' });
+                    setCurrentBattle({ ...battle, status: 'ACCEPTED' });
+                    setBattleSetupRole('accepter');
+                    setBattleSetupSelection({ orderedPokemonIds: [null,null,null,null,null,null], slotMoves: [null,null,null,null,null,null] });
+                    setBattleSetupFlippedSlot(null);
+                    setBattleView('setup');
+                    // Remove from pending
+                    setPendingBattles(prev => {
+                        const n = { ...prev };
+                        delete n[battle.battleId];
+                        return n;
+                    });
+                } catch (err) {
+                    console.error('❌ Error accepting battle:', err);
+                }
+            };
+
+            // Handle slot selection in battle setup
+            const handleBattleSlotSelect = (slotIndex, pokemon) => {
+                setBattleSetupSelection(prev => {
+                    const ids = [...prev.orderedPokemonIds];
+                    const moves = [...prev.slotMoves];
+                    // If same pokemon clicked again, re-flip to allow move change
+                    ids[slotIndex] = pokemon.id;
+                    moves[slotIndex] = null; // reset move so picker shows
+                    return { orderedPokemonIds: ids, slotMoves: moves };
+                });
+                setBattleSetupFlippedSlot(slotIndex);
+            };
+
+            const handleBattleMoveSelect = (slotIndex, move) => {
+                setBattleSetupSelection(prev => {
+                    const moves = [...prev.slotMoves];
+                    moves[slotIndex] = move;
+                    return { ...prev, slotMoves: moves };
+                });
+                setBattleSetupFlippedSlot(null);
+            };
+
+            const isBattleSetupComplete = () => {
+                const { orderedPokemonIds, slotMoves } = battleSetupSelection;
+                return orderedPokemonIds.every(id => id !== null) && slotMoves.every(m => m !== null);
+            };
+
+            // Submit loadout and potentially resolve battle
+            const submitBattleLoadout = async () => {
+                if (!firebaseManager.user || !currentBattle) return;
+                if (!isBattleSetupComplete()) {
+                    alert('Assign all 6 Pokémon and moves before submitting!');
+                    return;
+                }
+
+                try {
+                    const myUid = firebaseManager.user.uid;
+                    const isInitiator = myUid === currentBattle.initiatorId;
+                    const selectionKey = isInitiator ? 'initiatorSelection' : 'accepterSelection';
+
+                    // Build pokemon details for results display
+                    const pokemonDetails = battleSetupSelection.orderedPokemonIds.map(id => {
+                        return starterTeam.find(s => s && s.id === id) || { id, pokemonName: '???', spriteUrl: '' };
+                    });
+
+                    const selection = {
+                        orderedPokemonIds: battleSetupSelection.orderedPokemonIds,
+                        slotMoves: battleSetupSelection.slotMoves,
+                        pokemonDetails,
+                        isLocked: true
+                    };
+
+                    await database.ref(`battles/${currentBattle.battleId}/${selectionKey}`).set(selection);
+
+                    // Fetch current battle state to check if both sides submitted
+                    const snap = await database.ref(`battles/${currentBattle.battleId}`).once('value');
+                    const updatedBattle = snap.val();
+
+                    if (updatedBattle.initiatorSelection && updatedBattle.accepterSelection) {
+                        // Resolve battle
+                        const resolved = resolveBattle(updatedBattle);
+                        await database.ref(`battles/${currentBattle.battleId}`).update({
+                            status: resolved.matchOutcome === 'DRAW' ? 'RESOLVED' : 'LOOT_PENDING',
+                            result: resolved,
+                        });
+                        setCurrentBattle({ ...updatedBattle, result: resolved, status: resolved.matchOutcome === 'DRAW' ? 'RESOLVED' : 'LOOT_PENDING' });
+                        setBattleResults(resolved);
+
+                        // Run spectate animation for accepter
+                        if (!isInitiator) {
+                            setBattleView('spectate');
+                            runBattleSpectate(resolved, updatedBattle);
+                        } else {
+                            // Initiator just sees "waiting" toast and goes back
+                            setBattleView(null);
+                            setCurrentBattle(null);
+                            alert("⚔️ Loadout sent! You'll get a notification when the battle resolves.");
+                        }
+                    } else {
+                        // Other side hasn't submitted yet
+                        setBattleView(null);
+                        setCurrentBattle(null);
+                        if (isInitiator) {
+                            alert('⚔️ Battle request sent! Waiting for your opponent to accept and set their loadout.');
+                        } else {
+                            alert('✅ Loadout submitted! The battle will resolve once your opponent confirms.');
+                        }
+                    }
+                } catch (err) {
+                    console.error('❌ Error submitting loadout:', err);
+                    alert('Failed to submit loadout. Try again.');
+                }
+            };
+
+            // Pure function: resolve all 6 slots
+            const resolveBattle = (battle) => {
+                const selA = battle.initiatorSelection;
+                const selB = battle.accepterSelection;
+                const slotResults = [];
+                let winsA = 0, winsB = 0, ties = 0;
+
+                for (let i = 0; i < 6; i++) {
+                    const moveA = selA.slotMoves[i];
+                    const moveB = selB.slotMoves[i];
+                    const outcome = computeSlotOutcome(moveA, moveB);
+                    if (outcome === 'A_WIN') winsA++;
+                    else if (outcome === 'B_WIN') winsB++;
+                    else ties++;
+
+                    slotResults.push({
+                        slotIndex: i,
+                        pokemonAId: selA.orderedPokemonIds[i],
+                        pokemonBId: selB.orderedPokemonIds[i],
+                        pokemonAName: selA.pokemonDetails?.[i]?.pokemonName || '???',
+                        pokemonBName: selB.pokemonDetails?.[i]?.pokemonName || '???',
+                        pokemonASprite: selA.pokemonDetails?.[i]?.spriteUrl || '',
+                        pokemonBSprite: selB.pokemonDetails?.[i]?.spriteUrl || '',
+                        moveA, moveB, outcome
+                    });
+                }
+
+                let matchOutcome = 'DRAW';
+                let winnerUserId = null;
+                let loserUserId = null;
+                if (winsA > winsB) {
+                    matchOutcome = 'A_WIN';
+                    winnerUserId = battle.initiatorId;
+                    loserUserId = battle.accepterId;
+                } else if (winsB > winsA) {
+                    matchOutcome = 'B_WIN';
+                    winnerUserId = battle.accepterId;
+                    loserUserId = battle.initiatorId;
+                }
+
+                return { slotResults, winsA, winsB, ties, matchOutcome, winnerUserId, loserUserId };
+            };
+
+            // Accepter watches the battle resolve slot by slot
+            const runBattleSpectate = async (result, battle) => {
+                setBattleSpectateRunning(true);
+                setBattleSpectateSlots([]);
+                setBattleSlotAnimations({});
+
+                for (let i = 0; i < result.slotResults.length; i++) {
+                    const slot = result.slotResults[i];
+                    await new Promise(r => setTimeout(r, 900));
+                    setBattleSpectateSlots(prev => [...prev, slot]);
+                    await new Promise(r => setTimeout(r, 600));
+                    setBattleSlotAnimations(prev => ({
+                        ...prev,
+                        [i]: slot.outcome === 'TIE' ? 'tie' : slot.outcome === 'A_WIN' ? 'awin' : 'bwin'
+                    }));
+                }
+
+                await new Promise(r => setTimeout(r, 1200));
+                setBattleSpectateRunning(false);
+                setBattleResults(result);
+                setBattleView('results');
+            };
+
+            // Open battle results from notification tap
+            const openBattleResults = async (battleId) => {
+                try {
+                    const snap = await database.ref(`battles/${battleId}`).once('value');
+                    const battle = snap.val();
+                    if (!battle || !battle.result) {
+                        alert('Battle results not ready yet.');
+                        return;
+                    }
+                    setCurrentBattle(battle);
+                    setBattleResults(battle.result);
+                    setBattleView('results');
+                } catch (err) {
+                    console.error('❌ Error loading battle results:', err);
+                }
+            };
+
+            // Pink Slip claim
+            const claimPinkSlip = async (targetPokemon) => {
+                if (!firebaseManager.user || !currentBattle) return;
+                setPinkSlipAnimating(true);
+
+                try {
+                    const myUid = firebaseManager.user.uid;
+                    const loserId = currentBattle.result.loserUserId;
+
+                    // Fetch loser's starters
+                    const loserStartersSnap = await database.ref(`users/${loserId}/starters`).once('value');
+                    const loserStarters = loserStartersSnap.val() || [];
+
+                    // Verify pokemon belongs to loser
+                    const pokemonExists = loserStarters.some(s => s && s.id === targetPokemon.id);
+                    if (!pokemonExists) {
+                        alert('That Pokémon could not be found in their starters.');
+                        setPinkSlipAnimating(false);
+                        return;
+                    }
+
+                    await new Promise(r => setTimeout(r, 800)); // Ball throw animation time
+
+                    // Remove from loser's starters (replace with null)
+                    const updatedLoserStarters = loserStarters.map(s => (s && s.id === targetPokemon.id) ? null : s);
+                    await database.ref(`users/${loserId}/starters`).set(updatedLoserStarters);
+
+                    // Add to winner's PC
+                    const markedPokemon = { ...targetPokemon, isTrade: true };
+                    const updatedMyPC = [markedPokemon, ...pokemonPC];
+                    setPokemonPC(updatedMyPC);
+                    await window.storage.set('pokemon-pc', JSON.stringify(updatedMyPC));
+                    await database.ref(`users/${myUid}/pc`).set(updatedMyPC);
+
+                    // Mark battle completed
+                    await database.ref(`battles/${currentBattle.battleId}`).update({
+                        status: 'COMPLETED',
+                        pinkSlipClaimedPokemonId: targetPokemon.id,
+                        pinkSlipCompletedAt: Date.now()
+                    });
+
+                    setPinkSlipSuccess(true);
+                    await new Promise(r => setTimeout(r, 1200));
+                    setPinkSlipAnimating(false);
+                    setPinkSlipSuccess(false);
+                    setBattleView('results');
+                    alert(`🎉 ${targetPokemon.pokemonName} was added to your PC!`);
+                } catch (err) {
+                    console.error('❌ Error claiming pink slip:', err);
+                    setPinkSlipAnimating(false);
+                    alert('Failed to claim Pokémon. Try again.');
+                }
+            };
+
+            // Load pending battles from Firebase
+            const loadPendingBattles = async () => {
+                if (!firebaseManager.user) return;
+                try {
+                    const myUid = firebaseManager.user.uid;
+                    const snap = await database.ref('battles').orderByChild('accepterId').equalTo(myUid).once('value');
+                    const allBattles = snap.val() || {};
+                    const pending = {};
+                    Object.values(allBattles).forEach(b => {
+                        if (b.status === 'PENDING_ACCEPT' && Date.now() < b.expiresAt) {
+                            pending[b.battleId] = b;
+                        }
+                    });
+                    setPendingBattles(pending);
+                    setBattleBadgeCount(Object.keys(pending).length);
+                } catch (err) {
+                    console.error('❌ Error loading battles:', err);
+                }
+            };
+
+            // Check for resolved battles where I'm the initiator (async notification)
+            const checkResolvedBattles = async () => {
+                if (!firebaseManager.user) return;
+                try {
+                    const myUid = firebaseManager.user.uid;
+                    const snap = await database.ref('battles').orderByChild('initiatorId').equalTo(myUid).once('value');
+                    const allBattles = snap.val() || {};
+                    Object.values(allBattles).forEach(b => {
+                        if ((b.status === 'LOOT_PENDING' || b.status === 'RESOLVED') && b.result) {
+                            // Store notification for initiator - could show a badge/alert
+                            // For now surface via pending battles badge
+                        }
+                    });
+                } catch (err) {
+                    console.error('❌ Error checking resolved battles:', err);
+                }
+            };
+
+            // Listen for incoming battles in real-time
+            const [resolvedBattlesForMe, setResolvedBattlesForMe] = useState([]);
+            useEffect(() => {
+                if (!firebaseProfile || !firebaseManager.user) return;
+                const myUid = firebaseManager.user.uid;
+                const battlesRef = database.ref('battles');
+                const listener = battlesRef.on('value', (snap) => {
+                    const all = snap.val() || {};
+                    const pending = {};
+                    const resolvedForMe = [];
+                    Object.values(all).forEach(b => {
+                        if (!b) return;
+                        if (b.accepterId === myUid && b.status === 'PENDING_ACCEPT' && Date.now() < b.expiresAt) {
+                            pending[b.battleId] = b;
+                        }
+                        // Notify initiator of resolved battles they haven't viewed
+                        if (b.initiatorId === myUid && (b.status === 'LOOT_PENDING' || b.status === 'RESOLVED') && b.result) {
+                            resolvedForMe.push(b);
+                        }
+                    });
+                    setPendingBattles(pending);
+                    setResolvedBattlesForMe(resolvedForMe);
+                    setBattleBadgeCount(Object.keys(pending).length + resolvedForMe.length);
+                });
+                return () => battlesRef.off('value', listener);
+            }, [firebaseProfile]);
+
+            const MOVE_LABELS = { QUICK: '⚡ Quick', CHARGE: '🔥 Charge', COUNTER: '🛡️ Counter' };
+            const MOVE_DESC = { QUICK: 'Beats Charge', CHARGE: 'Beats Counter', COUNTER: 'Beats Quick' };
+
+            // Get all starters in order for the setup screen
+            const getBattleReadyStarters = () => starterTeam.filter(s => s !== null);
+
+            const getBattlePokemonById = (id, battle) => {
+                // Try initiator details, then accepter details
+                const allDetails = [
+                    ...(battle?.initiatorSelection?.pokemonDetails || []),
+                    ...(battle?.accepterSelection?.pokemonDetails || [])
+                ];
+                return allDetails.find(p => p && p.id === id) || { id, pokemonName: '???', spriteUrl: '' };
+            };
+
             const loadRunHistory = async () => {
                 try {
                     const historyResult = await window.storage.get('run-history');
@@ -4526,7 +5057,14 @@
                     const startersResult = await window.storage.get('starter-team');
 
                     if (historyResult?.value) setRunHistory(safeParse(historyResult.value, []));
-                    if (streakResult?.value) setCurrentStreak(safeParse(streakResult.value, { days: 0, weeks: 0 }));
+                    if (streakResult?.value) {
+                        const loadedStreak = safeParse(streakResult.value, { days: 0, weeks: 0 });
+                        console.log('📊 Loaded streak from storage:', loadedStreak);
+                        setCurrentStreak(loadedStreak);
+                    } else {
+                        console.log('📊 No streak in storage, initializing to 0');
+                        setCurrentStreak({ days: 0, weeks: 0 });
+                    }
                     if (prResult?.value) setPersonalRecords(safeParse(prResult.value, {
                         fastestPace: null, 
                         longestDistance: null, 
@@ -4710,27 +5248,49 @@
 
             const updateStreak = async () => {
                 const today = new Date().toDateString();
-                const lastRun = runHistory.length > 0 ? new Date(runHistory[runHistory.length - 1].date).toDateString() : null;
+                console.log('🔥 updateStreak called, today:', today);
                 
-                let newStreak = { ...currentStreak };
+                // Load from storage to get latest data
+                const storedHistory = await window.storage.get('run-history');
+                const history = storedHistory ? JSON.parse(storedHistory.value) : [];
+                const lastRun = history.length > 0 ? new Date(history[history.length - 1].date).toDateString() : null;
+                console.log('🔥 Last run date:', lastRun, 'History length:', history.length);
                 
-                if (lastRun === today) return currentStreak;
+                // Load current streak from storage
+                const storedStreak = await window.storage.get('current-streak');
+                const currentStoredStreak = storedStreak ? JSON.parse(storedStreak.value) : { days: 0, weeks: 0 };
+                console.log('🔥 Current stored streak:', currentStoredStreak);
                 
+                // If already ran today, don't increment again
+                if (lastRun === today) {
+                    console.log('🔥 Already ran today, returning current streak');
+                    return currentStoredStreak;
+                }
+                
+                let newStreak = { ...currentStoredStreak };
+                
+                // Calculate yesterday's date
                 const yesterday = new Date();
                 yesterday.setDate(yesterday.getDate() - 1);
                 const yesterdayStr = yesterday.toDateString();
+                console.log('🔥 Yesterday:', yesterdayStr);
                 
-                if (lastRun === yesterdayStr || runHistory.length === 0) {
-                    newStreak.days = currentStreak.days + 1;
+                // Increment if last run was yesterday OR this is first ever run
+                if (lastRun === yesterdayStr || history.length === 0) {
+                    newStreak.days = currentStoredStreak.days + 1;
                     if (newStreak.days % 7 === 0) {
                         newStreak.weeks = Math.floor(newStreak.days / 7);
                     }
+                    console.log('🔥 Incrementing streak to:', newStreak);
                 } else {
+                    // Streak broken - reset to 1
                     newStreak = { days: 1, weeks: 0 };
+                    console.log('🔥 Streak broken, resetting to 1. Last run was:', lastRun);
                 }
                 
                 await window.storage.set('current-streak', JSON.stringify(newStreak));
                 setCurrentStreak(newStreak);
+                console.log('🔥 Streak saved and state updated:', newStreak);
                 return newStreak;
             };
 
@@ -6179,9 +6739,9 @@
                                                                     className="flex-1 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium transition relative"
                                                                 >
                                                                     👥 Friends
-                                                                    {friends.length > 0 && (
-                                                                        <span className="absolute -top-2 -right-2 w-5 h-5 bg-gray-800 text-white rounded-full text-xs flex items-center justify-center font-bold">
-                                                                            {friends.length}
+                                                                    {(Object.keys(pendingTrades).length + battleBadgeCount) > 0 && (
+                                                                        <span className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center font-bold">
+                                                                            {Object.keys(pendingTrades).length + battleBadgeCount}
                                                                         </span>
                                                                     )}
                                                                 </button>
@@ -7030,6 +7590,55 @@
                                         <span>Search for Trainers</span>
                                     </button>
 
+                                    {/* ⚔️ Resolved Battles (initiator notification) */}
+                                    {resolvedBattlesForMe.length > 0 && (
+                                        <div className="mb-6">
+                                            <h3 className="text-lg font-bold text-white mb-3">⚔️ Battle Results ({resolvedBattlesForMe.length})</h3>
+                                            <div className="space-y-2">
+                                                {resolvedBattlesForMe.map(battle => {
+                                                    const iWon = battle.result.winnerUserId === firebaseManager.user?.uid;
+                                                    const isDraw = battle.result.matchOutcome === 'DRAW';
+                                                    return (
+                                                        <button
+                                                            key={battle.battleId}
+                                                            onClick={() => {
+                                                                setCurrentBattle(battle);
+                                                                setBattleResults(battle.result);
+                                                                // Load friend starters for pink slip
+                                                                if (iWon) {
+                                                                    const loserId = battle.result.loserUserId;
+                                                                    database.ref(`users/${loserId}/starters`).once('value').then(snap => {
+                                                                        const st = snap.val();
+                                                                        if (Array.isArray(st)) setViewingFriendStarters(st);
+                                                                    });
+                                                                }
+                                                                setBattleView('results');
+                                                            }}
+                                                            className={`w-full p-4 rounded-xl flex items-center justify-between transition shadow-lg ${
+                                                                iWon ? 'bg-green-900 bg-opacity-60 border-2 border-green-500' :
+                                                                isDraw ? 'bg-gray-800 border-2 border-gray-600' :
+                                                                'bg-red-900 bg-opacity-40 border-2 border-red-700'
+                                                            }`}
+                                                        >
+                                                            <div className="text-left">
+                                                                <div className="text-white font-bold text-sm">vs {battle.accepterName}</div>
+                                                                <div className={`text-xs font-bold mt-0.5 ${iWon ? 'text-green-400' : isDraw ? 'text-gray-400' : 'text-red-400'}`}>
+                                                                    {iWon ? '🏆 You won!' : isDraw ? '🤝 Draw' : '💀 You lost'}
+                                                                    {' '}· {battle.result.winsA}–{battle.result.winsB}
+                                                                </div>
+                                                            </div>
+                                                            {iWon && !battle.pinkSlipClaimedPokemonId && (
+                                                                <div className="text-xs bg-pink-600 text-white px-2 py-1 rounded-lg font-bold pink-slip-glow">
+                                                                    🎀 Claim
+                                                                </div>
+                                                            )}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
+
                                     {/* Incoming Friend Requests */}
                                     {incomingRequests.length > 0 && (
                                         <div className="mb-6">
@@ -7120,6 +7729,19 @@
                                                                         🤝
                                                                     </button>
                                                                 )}
+                                                                {/* ⚔️ Battle Notification Tile */}
+                                                                {(() => {
+                                                                    const incomingBattle = Object.values(pendingBattles).find(b => b.initiatorId === friend.id);
+                                                                    return incomingBattle ? (
+                                                                        <button
+                                                                            onClick={() => acceptBattle(incomingBattle)}
+                                                                            className="w-16 bg-gradient-to-br from-red-600 to-orange-500 hover:from-red-700 hover:to-orange-600 rounded-xl flex items-center justify-center text-white text-2xl shadow-lg transition battle-badge-glow"
+                                                                            title="Battle request!"
+                                                                        >
+                                                                            ⚔️
+                                                                        </button>
+                                                                    ) : null;
+                                                                })()}
                                                             </div>
                                                         );
                                                     })}
@@ -7384,6 +8006,13 @@
                                     {/* Starters Tab */}
                                     {friendProfileTab === 'starters' && (
                                         <div className="bg-white rounded-2xl p-6 shadow-2xl">
+                                            {/* ⚔️ Battle for Keeps Button */}
+                                            <button
+                                                onClick={() => initiateBattle(viewingFriendId)}
+                                                className="w-full mb-5 py-3 bg-gradient-to-r from-red-600 to-orange-500 hover:from-red-700 hover:to-orange-600 text-white rounded-xl font-bold text-base transition shadow-lg battle-badge-glow"
+                                            >
+                                                ⚔️ Battle for Keeps
+                                            </button>
                                             <div className="grid grid-cols-2 gap-4">
                                                 {viewingFriendStarters.map((starter, index) => (
                                                     <div
@@ -7572,6 +8201,410 @@
                                                     Catch some Pokémon or add friends to see activity!
                                                 </div>
                                             </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+
+                        {/* ⚔️ BATTLE SETUP SCREEN */}
+                        {battleView === 'setup' && currentBattle && (
+                            <div className="fixed inset-0 bg-gradient-to-br from-gray-900 via-slate-900 to-black z-[90] overflow-y-auto">
+                                <div className="min-h-screen p-5">
+                                    {/* Header */}
+                                    <div className="flex justify-between items-center mb-6">
+                                        <div>
+                                            <h2 className="text-2xl font-bold text-white">⚔️ Battle Setup</h2>
+                                            <p className="text-sm text-gray-400">
+                                                {battleSetupRole === 'initiator' ? `vs ${currentBattle.accepterName}` : `vs ${currentBattle.initiatorName}`}
+                                            </p>
+                                        </div>
+                                        <button
+                                            onClick={() => { setBattleView(null); setCurrentBattle(null); }}
+                                            className="w-10 h-10 bg-gray-700 hover:bg-gray-600 rounded-full flex items-center justify-center text-white text-lg transition"
+                                        >✕</button>
+                                    </div>
+
+                                    <p className="text-gray-300 text-sm mb-5 bg-gray-800 rounded-xl p-4 border border-gray-700">
+                                        🎯 Assign all 6 of your starters to battle slots and pick a secret move for each one.
+                                        Your opponent won't see your moves until the battle resolves!
+                                    </p>
+
+                                    {/* Slot Grid */}
+                                    <div className="space-y-3 mb-6">
+                                        {[0,1,2,3,4,5].map(slotIdx => {
+                                            const assignedId = battleSetupSelection.orderedPokemonIds[slotIdx];
+                                            const assignedMove = battleSetupSelection.slotMoves[slotIdx];
+                                            const assignedPokemon = assignedId ? starterTeam.find(s => s && s.id === assignedId) : null;
+                                            const isFlipped = battleSetupFlippedSlot === slotIdx;
+                                            const usedIds = battleSetupSelection.orderedPokemonIds.filter((id, i) => id && i !== slotIdx);
+
+                                            return (
+                                                <div key={slotIdx} className={`rounded-xl border-2 transition-all ${assignedMove ? 'border-green-500 bg-green-900 bg-opacity-30' : assignedId ? 'border-yellow-500 bg-yellow-900 bg-opacity-20' : 'border-gray-700 bg-gray-800'}`}>
+                                                    {/* Slot header */}
+                                                    <div className="flex items-center gap-3 p-3">
+                                                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-sm ${assignedMove ? 'bg-green-500' : assignedId ? 'bg-yellow-500' : 'bg-gray-600'}`}>
+                                                            {slotIdx + 1}
+                                                        </div>
+                                                        {assignedPokemon ? (
+                                                            <div className="flex items-center gap-2 flex-1">
+                                                                <img src={assignedPokemon.spriteUrl} alt={assignedPokemon.pokemonName} className="w-10 h-10 pixelated" />
+                                                                <div className="flex-1">
+                                                                    <div className="text-white font-bold text-sm capitalize">{assignedPokemon.pokemonName}</div>
+                                                                    {assignedMove && (
+                                                                        <div className={`text-xs font-bold px-2 py-0.5 rounded inline-block move-reveal ${
+                                                                            assignedMove === 'QUICK' ? 'bg-yellow-500 text-black' :
+                                                                            assignedMove === 'CHARGE' ? 'bg-red-500 text-white' : 'bg-purple-500 text-white'
+                                                                        }`}>
+                                                                            {assignedMove === 'QUICK' ? '⚡ Quick' : assignedMove === 'CHARGE' ? '🔥 Charge' : '🛡️ Counter'}
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        ) : (
+                                                            <div className="text-gray-500 text-sm flex-1">— Empty slot —</div>
+                                                        )}
+                                                    </div>
+
+                                                    {/* Move picker (shown when slot has a pokemon but no move yet) */}
+                                                    {isFlipped && (
+                                                        <div className="px-3 pb-3">
+                                                            <p className="text-gray-400 text-xs mb-2">Choose a move for this Pokémon:</p>
+                                                            <div className="grid grid-cols-3 gap-2">
+                                                                {['QUICK','CHARGE','COUNTER'].map(move => (
+                                                                    <button
+                                                                        key={move}
+                                                                        onClick={() => handleBattleMoveSelect(slotIdx, move)}
+                                                                        className={`py-2 px-1 rounded-lg text-white font-bold text-xs transition shadow-md active:scale-95 ${
+                                                                            move === 'QUICK' ? 'move-btn-quick' :
+                                                                            move === 'CHARGE' ? 'move-btn-charge' : 'bg-purple-600 hover:bg-purple-700'
+                                                                        }`}
+                                                                    >
+                                                                        <div>{move === 'QUICK' ? '⚡' : move === 'CHARGE' ? '🔥' : '🛡️'}</div>
+                                                                        <div>{move === 'QUICK' ? 'Quick' : move === 'CHARGE' ? 'Charge' : 'Counter'}</div>
+                                                                        <div className="text-[10px] opacity-75">{MOVE_DESC[move]}</div>
+                                                                    </button>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    )}
+
+                                                    {/* Pokemon picker (shown when slot is empty) */}
+                                                    {!assignedId && !isFlipped && (
+                                                        <div className="px-3 pb-3">
+                                                            <p className="text-gray-500 text-xs mb-2">Pick a starter for this slot:</p>
+                                                            <div className="grid grid-cols-3 gap-2">
+                                                                {starterTeam.filter(s => s !== null && !usedIds.includes(s.id)).map(poke => (
+                                                                    <button
+                                                                        key={poke.id}
+                                                                        onClick={() => handleBattleSlotSelect(slotIdx, poke)}
+                                                                        className="bg-gray-700 hover:bg-gray-600 rounded-lg p-2 flex flex-col items-center transition active:scale-95"
+                                                                    >
+                                                                        <img src={poke.spriteUrl} alt={poke.pokemonName} className="w-10 h-10 pixelated" />
+                                                                        <div className="text-white text-[10px] capitalize mt-1 font-bold">{poke.pokemonName}</div>
+                                                                    </button>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    )}
+
+                                                    {/* Re-pick option when assigned but move selected */}
+                                                    {assignedId && assignedMove && (
+                                                        <button
+                                                            onClick={() => handleBattleSlotSelect(slotIdx, assignedPokemon)}
+                                                            className="w-full py-1.5 text-gray-500 hover:text-gray-300 text-xs transition"
+                                                        >
+                                                            ↩️ Change move
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+
+                                    {/* Submit Button */}
+                                    <button
+                                        onClick={submitBattleLoadout}
+                                        disabled={!isBattleSetupComplete()}
+                                        className={`w-full py-4 rounded-xl font-bold text-lg transition shadow-lg ${
+                                            isBattleSetupComplete()
+                                                ? 'bg-gradient-to-r from-red-600 to-orange-500 hover:from-red-700 hover:to-orange-600 text-white battle-badge-glow'
+                                                : 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                                        }`}
+                                    >
+                                        {battleSetupRole === 'initiator' ? '📤 Send Battle Request' : '✅ Confirm Loadout'}
+                                    </button>
+
+                                    <div className="text-center text-gray-600 text-xs mt-3">
+                                        {isBattleSetupComplete() ? '✅ Loadout complete' : `${battleSetupSelection.orderedPokemonIds.filter(Boolean).length}/6 assigned · ${battleSetupSelection.slotMoves.filter(Boolean).length}/6 moves`}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* ⚔️ BATTLE SPECTATE SCREEN (Accepter watches live) */}
+                        {battleView === 'spectate' && currentBattle && (
+                            <div className="fixed inset-0 bg-gradient-to-br from-gray-950 via-slate-900 to-black z-[90] overflow-y-auto">
+                                <div className="min-h-screen p-5">
+                                    <div className="text-center mb-8">
+                                        <h2 className="text-3xl font-bold text-white mb-1">⚔️ Battle!</h2>
+                                        <div className="flex items-center justify-center gap-4 mt-3">
+                                            <div className="text-center">
+                                                <div className="w-10 h-10 rounded-full mx-auto flex items-center justify-center text-white font-bold text-sm" style={{ backgroundColor: currentBattle.initiatorBadgeColor }}>⚡</div>
+                                                <div className="text-xs text-gray-400 mt-1">{currentBattle.initiatorName}</div>
+                                            </div>
+                                            <div className="text-2xl font-black text-red-500">VS</div>
+                                            <div className="text-center">
+                                                <div className="w-10 h-10 rounded-full mx-auto flex items-center justify-center text-white font-bold text-sm" style={{ backgroundColor: currentBattle.accepterBadgeColor }}>⚡</div>
+                                                <div className="text-xs text-gray-400 mt-1">{currentBattle.accepterName}</div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {battleSpectateRunning && battleSpectateSlots.length === 0 && (
+                                        <div className="text-center py-12">
+                                            <div className="loader mx-auto mb-4"></div>
+                                            <div className="text-white text-lg">Battle starting...</div>
+                                        </div>
+                                    )}
+
+                                    <div className="space-y-4">
+                                        {battleSpectateSlots.map((slot, idx) => {
+                                            const anim = battleSlotAnimations[slot.slotIndex];
+                                            return (
+                                                <div key={slot.slotIndex} className={`bg-gray-800 rounded-2xl p-4 border-2 slot-reveal ${
+                                                    anim === 'awin' ? 'border-blue-500' : anim === 'bwin' ? 'border-orange-500' : 'border-gray-600'
+                                                }`} style={{ animationDelay: `${idx * 0.1}s` }}>
+                                                    <div className="flex items-center justify-between mb-3">
+                                                        <div className="text-gray-400 text-xs font-bold">SLOT {slot.slotIndex + 1}</div>
+                                                        {anim && (
+                                                            <div className={`text-xs font-bold px-2 py-0.5 rounded score-pop ${
+                                                                anim === 'awin' ? 'bg-blue-500 text-white' :
+                                                                anim === 'bwin' ? 'bg-orange-500 text-white' : 'bg-gray-600 text-gray-300'
+                                                            }`}>
+                                                                {anim === 'awin' ? `${currentBattle.initiatorName} wins` : anim === 'bwin' ? `${currentBattle.accepterName} wins` : 'TIE'}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    <div className="flex items-center justify-between">
+                                                        {/* Initiator side */}
+                                                        <div className={`flex flex-col items-center gap-1 ${anim === 'bwin' ? 'loser-fade' : anim === 'awin' ? 'winner-glow' : anim === 'tie' ? 'tie-shimmer' : ''}`}>
+                                                            {slot.pokemonASprite && <img src={slot.pokemonASprite} alt={slot.pokemonAName} className="w-14 h-14 pixelated" />}
+                                                            <div className="text-white text-xs font-bold capitalize">{slot.pokemonAName}</div>
+                                                            {anim && (
+                                                                <div className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
+                                                                    slot.moveA === 'QUICK' ? 'bg-yellow-500 text-black' :
+                                                                    slot.moveA === 'CHARGE' ? 'bg-red-500 text-white' : 'bg-purple-500 text-white'
+                                                                }`}>
+                                                                    {slot.moveA === 'QUICK' ? '⚡Q' : slot.moveA === 'CHARGE' ? '🔥C' : '🛡️Ct'}
+                                                                </div>
+                                                            )}
+                                                        </div>
+
+                                                        <div className="text-2xl font-black text-gray-600">VS</div>
+
+                                                        {/* Accepter side */}
+                                                        <div className={`flex flex-col items-center gap-1 ${anim === 'awin' ? 'loser-fade' : anim === 'bwin' ? 'winner-glow' : anim === 'tie' ? 'tie-shimmer' : ''}`}>
+                                                            {slot.pokemonBSprite && <img src={slot.pokemonBSprite} alt={slot.pokemonBName} className="w-14 h-14 pixelated" />}
+                                                            <div className="text-white text-xs font-bold capitalize">{slot.pokemonBName}</div>
+                                                            {anim && (
+                                                                <div className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
+                                                                    slot.moveB === 'QUICK' ? 'bg-yellow-500 text-black' :
+                                                                    slot.moveB === 'CHARGE' ? 'bg-red-500 text-white' : 'bg-purple-500 text-white'
+                                                                }`}>
+                                                                    {slot.moveB === 'QUICK' ? '⚡Q' : slot.moveB === 'CHARGE' ? '🔥C' : '🛡️Ct'}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+
+                                    {!battleSpectateRunning && battleSpectateSlots.length === 6 && (
+                                        <div className="mt-6 text-center">
+                                            <div className="loader mx-auto mb-2"></div>
+                                            <div className="text-gray-400 text-sm">Calculating result...</div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* ⚔️ BATTLE RESULTS SCREEN */}
+                        {battleView === 'results' && battleResults && currentBattle && (
+                            <div className="fixed inset-0 bg-gradient-to-br from-gray-950 via-slate-900 to-black z-[90] overflow-y-auto">
+                                <div className="min-h-screen p-5">
+                                    {/* Header */}
+                                    <div className="flex justify-between items-center mb-6">
+                                        <h2 className="text-2xl font-bold text-white">⚔️ Battle Results</h2>
+                                        <button
+                                            onClick={() => { setBattleView(null); setCurrentBattle(null); setBattleResults(null); }}
+                                            className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm font-medium transition"
+                                        >
+                                            Done
+                                        </button>
+                                    </div>
+
+                                    {/* Scoreboard */}
+                                    <div className="bg-gray-800 rounded-2xl p-5 border border-gray-700 mb-5">
+                                        <div className="flex items-center justify-between">
+                                            <div className="text-center flex-1">
+                                                <div className="w-12 h-12 rounded-full mx-auto flex items-center justify-center text-white font-bold mb-2" style={{ backgroundColor: currentBattle.initiatorBadgeColor }}>⚡</div>
+                                                <div className="text-white font-bold text-sm">{currentBattle.initiatorName}</div>
+                                                <div className={`text-4xl font-black mt-1 ${battleResults.matchOutcome === 'A_WIN' ? 'text-green-400' : 'text-gray-400'}`}>
+                                                    {battleResults.winsA}
+                                                </div>
+                                            </div>
+                                            <div className="text-center px-4">
+                                                <div className={`text-lg font-black mb-1 ${
+                                                    battleResults.matchOutcome === 'DRAW' ? 'text-yellow-400' :
+                                                    battleResults.matchOutcome === 'A_WIN' ? 'text-blue-400' : 'text-orange-400'
+                                                }`}>
+                                                    {battleResults.matchOutcome === 'DRAW' ? '🤝 DRAW' :
+                                                     battleResults.matchOutcome === 'A_WIN' ? '🏆 WIN' : '🏆 WIN'}
+                                                </div>
+                                                <div className="text-gray-500 text-xs">{battleResults.ties} tie{battleResults.ties !== 1 ? 's' : ''}</div>
+                                            </div>
+                                            <div className="text-center flex-1">
+                                                <div className="w-12 h-12 rounded-full mx-auto flex items-center justify-center text-white font-bold mb-2" style={{ backgroundColor: currentBattle.accepterBadgeColor }}>⚡</div>
+                                                <div className="text-white font-bold text-sm">{currentBattle.accepterName}</div>
+                                                <div className={`text-4xl font-black mt-1 ${battleResults.matchOutcome === 'B_WIN' ? 'text-green-400' : 'text-gray-400'}`}>
+                                                    {battleResults.winsB}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {battleResults.matchOutcome !== 'DRAW' && (
+                                            <div className="text-center mt-3 text-green-400 font-bold text-sm">
+                                                🏆 {battleResults.winnerUserId === currentBattle.initiatorId ? currentBattle.initiatorName : currentBattle.accepterName} wins!
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Slot-by-slot diagram */}
+                                    <div className="space-y-2 mb-6">
+                                        {battleResults.slotResults.map(slot => (
+                                            <div key={slot.slotIndex} className={`bg-gray-800 rounded-xl p-3 border ${
+                                                slot.outcome === 'A_WIN' ? 'border-blue-600' :
+                                                slot.outcome === 'B_WIN' ? 'border-orange-500' : 'border-gray-600'
+                                            }`}>
+                                                <div className="flex items-center">
+                                                    <div className={`flex items-center gap-2 flex-1 ${slot.outcome === 'B_WIN' ? 'opacity-40' : ''}`}>
+                                                        {slot.pokemonASprite && <img src={slot.pokemonASprite} alt={slot.pokemonAName} className="w-8 h-8 pixelated" />}
+                                                        <div>
+                                                            <div className="text-white text-xs font-bold capitalize">{slot.pokemonAName}</div>
+                                                            <div className={`text-[10px] px-1 rounded font-bold ${
+                                                                slot.moveA === 'QUICK' ? 'bg-yellow-500 text-black' :
+                                                                slot.moveA === 'CHARGE' ? 'bg-red-500 text-white' : 'bg-purple-500 text-white'
+                                                            }`}>
+                                                                {slot.moveA === 'QUICK' ? '⚡ Quick' : slot.moveA === 'CHARGE' ? '🔥 Charge' : '🛡️ Counter'}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="px-2 text-center">
+                                                        <div className={`text-xs font-black ${
+                                                            slot.outcome === 'A_WIN' ? 'text-blue-400' :
+                                                            slot.outcome === 'B_WIN' ? 'text-orange-400' : 'text-gray-500'
+                                                        }`}>
+                                                            {slot.outcome === 'TIE' ? '—' : slot.outcome === 'A_WIN' ? '◀' : '▶'}
+                                                        </div>
+                                                    </div>
+
+                                                    <div className={`flex items-center gap-2 flex-1 justify-end ${slot.outcome === 'A_WIN' ? 'opacity-40' : ''}`}>
+                                                        <div className="text-right">
+                                                            <div className="text-white text-xs font-bold capitalize">{slot.pokemonBName}</div>
+                                                            <div className={`text-[10px] px-1 rounded font-bold ${
+                                                                slot.moveB === 'QUICK' ? 'bg-yellow-500 text-black' :
+                                                                slot.moveB === 'CHARGE' ? 'bg-red-500 text-white' : 'bg-purple-500 text-white'
+                                                            }`}>
+                                                                {slot.moveB === 'QUICK' ? '⚡ Quick' : slot.moveB === 'CHARGE' ? '🔥 Charge' : '🛡️ Counter'}
+                                                            </div>
+                                                        </div>
+                                                        {slot.pokemonBSprite && <img src={slot.pokemonBSprite} alt={slot.pokemonBName} className="w-8 h-8 pixelated" />}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    {/* Pink Slip Ball button (winner only, when loot pending) */}
+                                    {battleResults.winnerUserId === firebaseManager.user?.uid &&
+                                     currentBattle.status === 'LOOT_PENDING' &&
+                                     !currentBattle.pinkSlipClaimedPokemonId && (
+                                        <button
+                                            onClick={() => setBattleView('pinkSlip')}
+                                            className="w-full py-4 bg-gradient-to-r from-pink-600 to-rose-500 hover:from-pink-700 hover:to-rose-600 text-white rounded-2xl font-bold text-lg transition shadow-2xl pink-slip-glow mb-4"
+                                        >
+                                            🎀 Use Pink Slip Ball
+                                        </button>
+                                    )}
+
+                                    {currentBattle.pinkSlipClaimedPokemonId && (
+                                        <div className="bg-pink-900 bg-opacity-40 border border-pink-600 rounded-xl p-3 text-center text-pink-300 text-sm font-bold mb-4">
+                                            🎀 Pink Slip already claimed
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* ⚔️ PINK SLIP PICK SCREEN */}
+                        {battleView === 'pinkSlip' && currentBattle && battleResults && (
+                            <div className="fixed inset-0 bg-gradient-to-br from-pink-950 via-rose-900 to-black z-[95] overflow-y-auto">
+                                <div className="min-h-screen p-5">
+                                    <div className="flex justify-between items-center mb-4">
+                                        <h2 className="text-2xl font-bold text-white">🎀 Pink Slip Ball</h2>
+                                        <button
+                                            onClick={() => setBattleView('results')}
+                                            className="w-10 h-10 bg-pink-800 hover:bg-pink-700 rounded-full flex items-center justify-center text-white text-lg transition"
+                                        >✕</button>
+                                    </div>
+
+                                    <div className="bg-pink-900 bg-opacity-40 border border-pink-600 rounded-xl p-4 mb-6 text-center">
+                                        <div className="text-4xl mb-2">🎀</div>
+                                        <p className="text-pink-200 text-sm font-bold">You won the battle!</p>
+                                        <p className="text-pink-300 text-xs mt-1">
+                                            Choose one of {battleResults.loserUserId === currentBattle.initiatorId ? currentBattle.initiatorName : currentBattle.accepterName}'s starters to claim.
+                                        </p>
+                                    </div>
+
+                                    {/* Opponent starters grid */}
+                                    {viewingFriendStarters.filter(Boolean).length === 0 && (
+                                        <div className="text-center py-6 text-pink-400 text-sm">
+                                            <div className="loader mx-auto mb-2"></div>
+                                            Loading opponent's starters...
+                                        </div>
+                                    )}
+                                    <div className="grid grid-cols-2 gap-3">
+                                        {viewingFriendStarters.filter(Boolean).map(pokemon => (
+                                            <button
+                                                key={pokemon.id}
+                                                onClick={() => {
+                                                    if (window.confirm(`Use the Pink Slip Ball on ${pokemon.pokemonName}? This will permanently transfer it to your PC.`)) {
+                                                        claimPinkSlip(pokemon);
+                                                    }
+                                                }}
+                                                disabled={pinkSlipAnimating}
+                                                className={`relative rounded-xl border-2 border-pink-600 bg-pink-900 bg-opacity-30 hover:bg-opacity-50 transition overflow-hidden ${pinkSlipAnimating ? 'opacity-50' : ''}`}
+                                            >
+                                                {pinkSlipAnimating && (
+                                                    <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-60 z-10">
+                                                        <div className={pinkSlipSuccess ? 'text-4xl' : 'pink-slip-throw text-4xl'}>🎀</div>
+                                                    </div>
+                                                )}
+                                                <PokemonCard pokemon={pokemon} />
+                                            </button>
+                                        ))}
+                                    </div>
+
+                                    {viewingFriendStarters.filter(Boolean).length === 0 && (
+                                        <div className="text-center py-12">
+                                            <div className="text-4xl mb-3">😮</div>
+                                            <div className="text-pink-300 font-bold">Opponent has no starters to claim</div>
                                         </div>
                                     )}
                                 </div>
