@@ -4085,82 +4085,40 @@
                 setIsSearching(true);
 
                 try {
-                    console.log('📡 Fetching all users from Firebase...');
+                    console.log('📡 Fetching profiles from Firebase...');
+                    // Read only the profiles index (lighter, and rules allow users/*/profile reads)
                     const usersSnapshot = await database.ref('users').once('value');
-                    const results = [];
                     const exactMatches = [];
                     const partialMatches = [];
-                    
-                    console.log('📊 Total users in database:', usersSnapshot.numChildren());
 
                     usersSnapshot.forEach(child => {
                         const uid = child.key;
-                        const userData = child.val();
-                        const profile = userData?.profile;
+                        const profile = child.val()?.profile;
+                        if (uid === firebaseManager.user.uid || !profile?.displayName) return;
 
-                        console.log(`👤 Checking user ${uid}:`, {
-                            hasProfile: !!profile,
-                            displayName: profile?.displayName,
-                            isSelf: uid === firebaseManager.user.uid
-                        });
-
-                        // Skip self
-                        if (uid === firebaseManager.user.uid || !profile || !profile.displayName) {
-                            return;
-                        }
-
-                        const displayName = profile.displayName;
+                        const nameLower = profile.displayName.toLowerCase();
                         const queryLower = query.toLowerCase();
-                        const nameLower = displayName.toLowerCase();
+                        const entry = {
+                            uid,
+                            displayName: profile.displayName,
+                            badgeColor: profile.badgeColor,
+                            isFriend: friends.includes(uid),
+                            hasPendingRequest: outgoingRequests.includes(uid),
+                        };
 
-                        // Exact match (case-insensitive)
-                        if (nameLower === queryLower) {
-                            console.log('✅ Exact match found:', displayName);
-                            exactMatches.push({
-                                uid,
-                                displayName: profile.displayName,
-                                badgeColor: profile.badgeColor,
-                                isFriend: friends.includes(uid),
-                                hasPendingRequest: outgoingRequests.includes(uid),
-                                matchType: 'exact'
-                            });
-                        }
-                        // Partial match - starts with query
-                        else if (nameLower.startsWith(queryLower)) {
-                            console.log('✅ Partial match (starts with):', displayName);
-                            partialMatches.push({
-                                uid,
-                                displayName: profile.displayName,
-                                badgeColor: profile.badgeColor,
-                                isFriend: friends.includes(uid),
-                                hasPendingRequest: outgoingRequests.includes(uid),
-                                matchType: 'partial'
-                            });
-                        }
-                        // Partial match - contains query
-                        else if (nameLower.includes(queryLower)) {
-                            console.log('✅ Partial match (contains):', displayName);
-                            partialMatches.push({
-                                uid,
-                                displayName: profile.displayName,
-                                badgeColor: profile.badgeColor,
-                                isFriend: friends.includes(uid),
-                                hasPendingRequest: outgoingRequests.includes(uid),
-                                matchType: 'contains'
-                            });
-                        }
+                        if (nameLower === queryLower) exactMatches.push({ ...entry, matchType: 'exact' });
+                        else if (nameLower.includes(queryLower)) partialMatches.push({ ...entry, matchType: nameLower.startsWith(queryLower) ? 'partial' : 'contains' });
                     });
 
-                    // Sort partial matches alphabetically
                     partialMatches.sort((a, b) => a.displayName.localeCompare(b.displayName));
-
-                    // Combine: exact matches first, then partials (max 10 total)
                     const allMatches = [...exactMatches, ...partialMatches].slice(0, 10);
-                    
-                    console.log(`🔍 Search complete: ${allMatches.length} results (${exactMatches.length} exact, ${partialMatches.length} partial)`);
+                    console.log(`🔍 Search complete: ${allMatches.length} results`);
                     setFriendSearchResults(allMatches);
                 } catch (error) {
                     console.error('❌ Search error:', error);
+                    if (error.message?.includes('permission')) {
+                        setFriendSearchResults([{ uid: '__error__', displayName: 'Search unavailable — Firebase rules need updating. See console.', badgeColor: '#ef4444', isFriend: false, hasPendingRequest: false, matchType: 'error' }]);
+                    }
                 } finally {
                     setIsSearching(false);
                 }
@@ -4477,35 +4435,40 @@
             const viewFriendStarters = async (friendId) => {
                 console.log('🔍 Loading friend profile:', friendId);
                 try {
-                    // Load friend's starters
-                    const startersSnapshot = await database.ref(`users/${friendId}/starters`).once('value');
-                    const starters = startersSnapshot.val() || [null, null, null, null, null, null];
-                    setViewingFriendStarters(Array.isArray(starters) ? starters : [null, null, null, null, null, null]);
-                    console.log('✅ Friend starters loaded:', starters.filter(s => s).length, 'filled');
-                    
-                    // Load friend's PC
-                    const pcSnapshot = await database.ref(`users/${friendId}/pc`).once('value');
-                    const pc = pcSnapshot.val();
-                    console.log('📦 Raw PC data from Firebase:', pc);
-                    
-                    if (!pc) {
-                        console.warn('⚠️ Friend PC is null/undefined in Firebase');
-                        setViewingFriendPC([]);
-                    } else if (!Array.isArray(pc)) {
-                        console.error('❌ Friend PC is not an array:', typeof pc, pc);
-                        setViewingFriendPC([]);
-                    } else {
-                        setViewingFriendPC(pc);
-                        console.log('✅ Friend PC loaded:', pc.length, 'Pokémon');
+                    // Load friend's starters (requires Firebase rules: users/$uid/starters readable by auth users)
+                    let starters = [null, null, null, null, null, null];
+                    try {
+                        const startersSnapshot = await database.ref(`users/${friendId}/starters`).once('value');
+                        const raw = startersSnapshot.val();
+                        if (Array.isArray(raw)) starters = raw;
+                    } catch (e) {
+                        console.warn('⚠️ Could not load friend starters (check Firebase rules):', e.message);
                     }
-                    
+                    setViewingFriendStarters(starters);
+
+                    // Load friend's PC
+                    let pc = [];
+                    try {
+                        const pcSnapshot = await database.ref(`users/${friendId}/pc`).once('value');
+                        const raw = pcSnapshot.val();
+                        if (Array.isArray(raw)) pc = raw;
+                    } catch (e) {
+                        console.warn('⚠️ Could not load friend PC (check Firebase rules):', e.message);
+                    }
+                    setViewingFriendPC(pc);
+
                     setViewingFriendId(friendId);
-                    setFriendProfileTab('starters'); // Default to starters tab
+                    setFriendProfileTab('starters');
                     setCurrentView('friendProfile');
                     console.log('✅ Switched to friendProfile view');
-                    
                 } catch (error) {
                     console.error('❌ Error loading friend data:', error);
+                    // Still navigate so the tile feels responsive
+                    setViewingFriendId(friendId);
+                    setViewingFriendStarters([null, null, null, null, null, null]);
+                    setViewingFriendPC([]);
+                    setFriendProfileTab('starters');
+                    setCurrentView('friendProfile');
                 }
             };
 
