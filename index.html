@@ -1237,15 +1237,21 @@
                     return profileSnapshot.val();
                 }
 
-                // Fetch all existing names to ensure uniqueness
-                const usersSnapshot = await database.ref('users').once('value');
+                // Try to fetch existing names for uniqueness — non-fatal if permission denied
                 const existingNames = [];
-                usersSnapshot.forEach(child => {
-                    const profile = child.val().profile;
-                    if (profile && profile.displayName) {
-                        existingNames.push(profile.displayName);
-                    }
-                });
+                try {
+                    const usersSnapshot = await database.ref('users').once('value');
+                    usersSnapshot.forEach(child => {
+                        const profile = child.val()?.profile;
+                        if (profile && profile.displayName) {
+                            existingNames.push(profile.displayName);
+                        }
+                    });
+                } catch (e) {
+                    // Firebase rules may block reading all users — that's fine, 
+                    // we'll still generate a name, just without full uniqueness check
+                    console.warn('⚠️ Could not fetch existing names (permission denied is OK):', e.message);
+                }
 
                 // Generate unique name
                 const { displayName, badgeColor } = generateUniqueTrainerName(existingNames);
@@ -3826,8 +3832,15 @@
                     setShowProfileMenu(true);
                     
                 } catch (error) {
-                    console.error('❌ Failed to create Firebase profile:', error);
-                    alert('Failed to create trainer profile. Please try again.');
+                    console.error('❌ Failed to create Firebase profile:', error.code, error.message, error);
+                    // Give a more specific message based on error type
+                    if (error.code === 'PERMISSION_DENIED' || error.message?.includes('permission')) {
+                        alert('Profile creation blocked by database rules. Check Firebase console → Realtime Database → Rules.');
+                    } else if (error.code === 'auth/network-request-failed' || error.message?.includes('network')) {
+                        alert('No internet connection. Please check your connection and try again.');
+                    } else {
+                        alert(`Failed to create trainer profile: ${error.message || error.code || 'Unknown error'}. Check the browser console for details.`);
+                    }
                 } finally {
                     setIsCreatingProfile(false);
                 }
@@ -7293,7 +7306,6 @@
                                         )}
                                     </div>
                                 )}
-                                {/* Exit live workout back to chooser */}
                                 {(workoutMode === 'requesting' || (workoutMode === 'live' && !workoutStarted)) && (
                                     <button onClick={() => { if (watchId !== null) navigator.geolocation.clearWatch(watchId); if (trackerRef.current.tickInterval) clearInterval(trackerRef.current.tickInterval); setWatchId(null); setIsTracking(false); setWorkoutMode(null); setWorkoutStarted(false); setCountdown(null); setGpsError(null); }}
                                         className="w-10 h-10 rounded-full bg-black bg-opacity-30 hover:bg-opacity-60 text-white text-sm flex items-center justify-center transition flex-shrink-0">✕</button>
@@ -7583,6 +7595,7 @@
                                 </div>
                             )}
                         </div>
+
 
                         {/* 🎯 CAPTURE SESSION UI */}
                         {captureSession && currentEncounter && (
