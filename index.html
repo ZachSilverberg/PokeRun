@@ -5919,46 +5919,56 @@
                     return;
                 }
                 setGpsError(null);
+                setWorkoutMode('requesting'); // show spinner, no flash
 
                 const threshold = getThresholdPace();
-                const now = Date.now();
-                trackerRef.current = {
-                    lastLat: null, lastLng: null, lastUpdateTime: now,
-                    samples: [], totalDistance: 0,
-                    peakPaceSec: null, peakMph: 0,
-                    pw: { thresholdPaceSec: threshold, isActive: false, startT: null, startDistMi: null,
-                          bestPaceSec: null, bestMph: null, sumPaceSec: 0, count: 0 }
-                };
 
-                setTrackingData({ startTime: now, pausedTime: 0, pauseStart: null,
-                    distance: 0, currentPace: '--:--', currentMph: 0,
-                    avgPace: '--:--', avgMph: 0, peakPace: '--:--', peakMph: 0, calories: 0 });
-                setPaceSamples([]);
-                setPeakWindow({ thresholdPaceSec: threshold, isActive: false,
-                    startT: null, startDistMi: null, bestPaceSec: null, bestMph: null,
-                    sumPaceSec: 0, count: 0, durationSec: null, distanceMi: null, avgPaceSec: null });
-                setTrackerElapsed(0);
-                setIsTracking(true);
-                setIsPaused(false);
-                setWorkoutMode('live');
+                // Use getCurrentPosition synchronously within the gesture to trigger
+                // the iOS permission prompt, then start watchPosition in the success cb.
+                navigator.geolocation.getCurrentPosition(
+                    (firstPos) => {
+                        // Permission granted — now set up tracking
+                        const now = Date.now();
+                        trackerRef.current = {
+                            lastLat: firstPos.coords.latitude,
+                            lastLng: firstPos.coords.longitude,
+                            lastUpdateTime: now,
+                            samples: [], totalDistance: 0,
+                            peakPaceSec: null, peakMph: 0,
+                            pw: { thresholdPaceSec: threshold, isActive: false, startT: null, startDistMi: null,
+                                  bestPaceSec: null, bestMph: null, sumPaceSec: 0, count: 0 }
+                        };
+                        trackerRef.current.startTime = now;
 
-                // Timer tick
-                const tickInterval = setInterval(() => {
-                    const ref = trackerRef.current;
-                    if (!ref.isPaused) {
-                        const elapsedSec = Math.round((Date.now() - ref.startTime - (ref.pausedTime || 0)) / 1000);
-                        setTrackerElapsed(elapsedSec);
-                    }
-                }, 1000);
-                trackerRef.current.tickInterval = tickInterval;
+                        setTrackingData({ startTime: now, pausedTime: 0, pauseStart: null,
+                            distance: 0, currentPace: '--:--', currentMph: 0,
+                            avgPace: '--:--', avgMph: 0, peakPace: '--:--', peakMph: 0, calories: 0 });
+                        setPaceSamples([]);
+                        setPeakWindow({ thresholdPaceSec: threshold, isActive: false,
+                            startT: null, startDistMi: null, bestPaceSec: null, bestMph: null,
+                            sumPaceSec: 0, count: 0, durationSec: null, distanceMi: null, avgPaceSec: null });
+                        setTrackerElapsed(0);
+                        setIsTracking(true);
+                        setIsPaused(false);
+                        setWorkoutMode('live'); // only transition now that GPS confirmed
 
-                // GPS watch
-                const id = navigator.geolocation.watchPosition(
-                    (pos) => {
-                        const ref = trackerRef.current;
-                        if (ref.isPaused) return;
-                        const { latitude: lat, longitude: lng, timestamp: ts } = pos.coords;
-                        if (ref.lastLat === null) { ref.lastLat = lat; ref.lastLng = lng; ref.lastUpdateTime = ts; return; }
+                        // Timer tick
+                        const tickInterval = setInterval(() => {
+                            const ref = trackerRef.current;
+                            if (!ref.isPaused) {
+                                const elapsedSec = Math.round((Date.now() - ref.startTime - (ref.pausedTime || 0)) / 1000);
+                                setTrackerElapsed(elapsedSec);
+                            }
+                        }, 1000);
+                        trackerRef.current.tickInterval = tickInterval;
+
+                        // Start continuous GPS watch
+                        const id = navigator.geolocation.watchPosition(
+                            (pos) => {
+                                const ref = trackerRef.current;
+                                if (ref.isPaused) return;
+                                const { latitude: lat, longitude: lng, timestamp: ts } = pos.coords;
+                                if (ref.lastLat === null) { ref.lastLat = lat; ref.lastLng = lng; ref.lastUpdateTime = ts; return; }
 
                         const deltaMi = calcHaversine(ref.lastLat, ref.lastLng, lat, lng);
                         const deltaSec = (ts - ref.lastUpdateTime) / 1000;
@@ -6023,19 +6033,28 @@
                         }
                     },
                     (err) => {
-                        if (err.code === 1) { // PERMISSION_DENIED
-                            setGpsError('Location access denied. On iOS: Settings → Safari → Location → Allow.');
-                            setWorkoutMode(null); setIsTracking(false);
-                        } else if (err.code === 2) {
-                            setGpsError('GPS signal lost. Move to an open area and try again.');
-                        } else {
-                            setGpsError('GPS error: ' + err.message);
+                        // watchPosition error (signal lost mid-workout)
+                        if (err.code === 2) {
+                            setGpsError('GPS signal lost. Move to an open area.');
                         }
                     },
-                    { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+                    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
                 );
-                trackerRef.current.startTime = now;
                 setWatchId(id);
+            }, // end getCurrentPosition success cb
+            (err) => {
+                // getCurrentPosition error — permission denied or unavailable
+                setWorkoutMode(null);
+                if (err.code === 1) {
+                    setGpsError('Location access denied. In Safari: Settings → Privacy → Location Services → Safari → While Using.');
+                } else if (err.code === 2) {
+                    setGpsError('Could not get GPS fix. Move to an open area and try again.');
+                } else {
+                    setGpsError('GPS error (' + err.code + '): ' + err.message);
+                }
+            },
+            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+            ); // end getCurrentPosition
             };
 
             const pauseLiveWorkout = () => {
@@ -7220,6 +7239,18 @@
                                                 </div>
                                             </div>
                                         </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* ── MODE: Requesting GPS ── */}
+                            {workoutMode === 'requesting' && (
+                                <div className="p-8 flex flex-col items-center justify-center gap-4">
+                                    <div className="w-14 h-14 rounded-full border-4 border-green-500 border-t-transparent animate-spin" />
+                                    <p className="text-white font-bold text-base">Getting GPS signal…</p>
+                                    <p className="text-gray-400 text-xs text-center">Allow location access when prompted</p>
+                                    {gpsError && (
+                                        <div className="mt-2 px-4 py-3 bg-red-900 border border-red-700 rounded-xl text-red-300 text-sm text-center">{gpsError}</div>
                                     )}
                                 </div>
                             )}
