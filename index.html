@@ -4756,6 +4756,31 @@
             // ⚔️ BATTLE FOR KEEPS SYSTEM
             // =========================
 
+            // =========================
+            // ⚔️ BATTLE RESOLUTION RULES
+            // =========================
+            // Rarity order: common(0) < uncommon(1) < rare(2) < epic(3) < legendary(4)
+            // Shiny = legendary-tier (4) unless shiny legendary (5)
+            // Shiny vs shiny = always TIE (overrides edge)
+            // Light always beats dark (regardless of edge/rarity)
+            // Trait bonus: light/dark pokemon get +1 edge (so common-dark = uncommon-edge)
+
+            const RARITY_EDGE = { common: 0, uncommon: 1, rare: 2, epic: 3, legendary: 4 };
+
+            const getPokemonEdge = (pokemon) => {
+                if (!pokemon) return 0;
+                const baseRarity = pokemon.rarity || 'common';
+                let edge = RARITY_EDGE[baseRarity] ?? 0;
+                // Shiny boost
+                if (pokemon.isShiny) {
+                    edge = Math.max(edge, 4); // at least legendary
+                    if (baseRarity === 'legendary') edge = 5; // shiny legendary is supreme
+                }
+                // Trait bonus: light/dark each get +1 edge class
+                if (pokemon.trait === 'light' || pokemon.trait === 'dark') edge += 1;
+                return edge;
+            };
+
             // RPS resolution
             const moveBeats = (a, b) => {
                 if (a === 'QUICK'   && b === 'CHARGE')  return true;
@@ -4764,10 +4789,41 @@
                 return false;
             };
 
-            const computeSlotOutcome = (moveA, moveB) => {
-                if (moveA === moveB) return 'TIE';
-                if (moveBeats(moveA, moveB)) return 'A_WIN';
-                return 'B_WIN';
+            // Returns outcome string + optional tiebreaker metadata
+            const computeSlotOutcome = (moveA, moveB, pokemonA, pokemonB) => {
+                // Standard RPS — different moves always resolve purely by RPS
+                if (moveA !== moveB) {
+                    return { outcome: moveBeats(moveA, moveB) ? 'A_WIN' : 'B_WIN', tiebreak: null };
+                }
+
+                // ── MOVE TIE ── apply fighter edge rules
+                const traitA = pokemonA?.trait || 'normal';
+                const traitB = pokemonB?.trait || 'normal';
+                const shinyA = !!pokemonA?.isShiny;
+                const shinyB = !!pokemonB?.isShiny;
+
+                // Rule 1: Shiny vs shiny = always tie
+                if (shinyA && shinyB) {
+                    return { outcome: 'TIE', tiebreak: 'shiny_mirror' };
+                }
+
+                // Rule 2: Light always beats dark (trait matchup, overrides edge)
+                if (traitA === 'light' && traitB === 'dark') {
+                    return { outcome: 'A_WIN', tiebreak: 'light_beats_dark' };
+                }
+                if (traitB === 'light' && traitA === 'dark') {
+                    return { outcome: 'B_WIN', tiebreak: 'light_beats_dark' };
+                }
+
+                // Rule 3: Edge comparison
+                const edgeA = getPokemonEdge(pokemonA);
+                const edgeB = getPokemonEdge(pokemonB);
+
+                if (edgeA > edgeB) return { outcome: 'A_WIN', tiebreak: 'edge', edgeA, edgeB };
+                if (edgeB > edgeA) return { outcome: 'B_WIN', tiebreak: 'edge', edgeA, edgeB };
+
+                // True tie
+                return { outcome: 'TIE', tiebreak: 'edge_equal', edgeA, edgeB };
             };
 
             // Start a battle request from friend profile starters tab
@@ -4970,7 +5026,9 @@
                 for (let i = 0; i < 6; i++) {
                     const moveA = selA.slotMoves[i];
                     const moveB = selB.slotMoves[i];
-                    const outcome = computeSlotOutcome(moveA, moveB);
+                    const pokemonA = selA.pokemonDetails?.[i] || null;
+                    const pokemonB = selB.pokemonDetails?.[i] || null;
+                    const { outcome, tiebreak, edgeA, edgeB } = computeSlotOutcome(moveA, moveB, pokemonA, pokemonB);
                     if (outcome === 'A_WIN') winsA++;
                     else if (outcome === 'B_WIN') winsB++;
                     else ties++;
@@ -4979,11 +5037,19 @@
                         slotIndex: i,
                         pokemonAId: selA.orderedPokemonIds[i],
                         pokemonBId: selB.orderedPokemonIds[i],
-                        pokemonAName: selA.pokemonDetails?.[i]?.pokemonName || '???',
-                        pokemonBName: selB.pokemonDetails?.[i]?.pokemonName || '???',
-                        pokemonASprite: selA.pokemonDetails?.[i]?.spriteUrl || '',
-                        pokemonBSprite: selB.pokemonDetails?.[i]?.spriteUrl || '',
-                        moveA, moveB, outcome
+                        pokemonAName: pokemonA?.pokemonName || '???',
+                        pokemonBName: pokemonB?.pokemonName || '???',
+                        pokemonASprite: pokemonA?.spriteUrl || '',
+                        pokemonBSprite: pokemonB?.spriteUrl || '',
+                        pokemonARarity: pokemonA?.rarity || 'common',
+                        pokemonBRarity: pokemonB?.rarity || 'common',
+                        pokemonAShiny: !!pokemonA?.isShiny,
+                        pokemonBShiny: !!pokemonB?.isShiny,
+                        pokemonATrait: pokemonA?.trait || 'normal',
+                        pokemonBTrait: pokemonB?.trait || 'normal',
+                        edgeA: edgeA ?? getPokemonEdge(pokemonA),
+                        edgeB: edgeB ?? getPokemonEdge(pokemonB),
+                        moveA, moveB, outcome, tiebreak
                     });
                 }
 
@@ -5213,6 +5279,48 @@
 
             const MOVE_LABELS = { QUICK: '⚡ Quick', CHARGE: '🔥 Charge', COUNTER: '🛡️ Counter' };
             const MOVE_DESC = { QUICK: 'Beats Charge', CHARGE: 'Beats Counter', COUNTER: 'Beats Quick' };
+
+            // Edge display helpers
+            const RARITY_LABEL = { common: 'COM', uncommon: 'UNC', rare: 'RARE', epic: 'EPIC', legendary: 'LEG' };
+            const RARITY_COLOR = { common: '#9ca3af', uncommon: '#4ade80', rare: '#60a5fa', epic: '#c084fc', legendary: '#fb923c' };
+            const TRAIT_ICON = { light: '☀️', dark: '🌙', normal: '' };
+
+            const EdgeBadge = ({ pokemon, size = 'sm' }) => {
+                if (!pokemon) return null;
+                const rarity = pokemon.rarity || 'common';
+                const trait = pokemon.trait || 'normal';
+                const isShiny = !!pokemon.isShiny;
+                const edge = getPokemonEdge(pokemon);
+                const color = isShiny ? '#facc15' : RARITY_COLOR[rarity] || '#9ca3af';
+                const small = size === 'sm';
+                return (
+                    <div className={'flex items-center gap-0.5 ' + (small ? 'text-[9px]' : 'text-[11px]')}>
+                        {isShiny && <span style={{ color: '#facc15' }}>{small ? '✨' : '✨'}</span>}
+                        {trait !== 'normal' && <span>{TRAIT_ICON[trait]}</span>}
+                        <span className="font-black" style={{ color }}>{RARITY_LABEL[rarity]}</span>
+                        <span className="text-gray-500 font-bold ml-0.5">E{edge}</span>
+                    </div>
+                );
+            };
+
+            const TiebreakLabel = ({ tiebreak, outcomeWasA, initiatorName, accepterName }) => {
+                if (!tiebreak || tiebreak === null) return null;
+                if (tiebreak === 'shiny_mirror') return (
+                    <div className="text-[10px] text-yellow-300 font-bold text-center mt-1">✨ Shiny mirror — true tie</div>
+                );
+                if (tiebreak === 'light_beats_dark') return (
+                    <div className="text-[10px] text-yellow-200 font-bold text-center mt-1">☀️ Light overpowers Dark</div>
+                );
+                if (tiebreak === 'edge') return (
+                    <div className="text-[10px] text-purple-300 font-bold text-center mt-1">
+                        ⚡ Edge advantage — {outcomeWasA ? initiatorName : accepterName} wins tiebreak
+                    </div>
+                );
+                if (tiebreak === 'edge_equal') return (
+                    <div className="text-[10px] text-gray-400 font-bold text-center mt-1">Equal edge — tie stands</div>
+                );
+                return null;
+            };
 
             // Get all starters in order for the setup screen
             const getBattleReadyStarters = () => starterTeam.filter(s => s !== null);
@@ -8562,10 +8670,28 @@
                                         >✕</button>
                                     </div>
 
-                                    <p className="text-gray-300 text-sm mb-5 bg-gray-800 rounded-xl p-4 border border-gray-700">
+                                    <p className="text-gray-300 text-sm mb-3 bg-gray-800 rounded-xl p-4 border border-gray-700">
                                         🎯 Assign all 6 of your starters to battle slots and pick a secret move for each one.
                                         Your opponent won't see your moves until the battle resolves!
                                     </p>
+
+                                    {/* Edge system legend */}
+                                    <div className="bg-gray-900 rounded-xl p-3 mb-5 border border-gray-700 text-[11px]">
+                                        <div className="text-gray-400 font-bold uppercase tracking-wide mb-2">⚡ Fighter Edge — tiebreaker on mirror moves</div>
+                                        <div className="grid grid-cols-2 gap-x-4 gap-y-1 mb-2">
+                                            <div className="flex items-center gap-1.5"><span style={{color:'#9ca3af'}}>●</span><span className="text-gray-400">Common</span><span className="text-gray-500 ml-auto">E0</span></div>
+                                            <div className="flex items-center gap-1.5"><span style={{color:'#4ade80'}}>●</span><span className="text-gray-400">Uncommon</span><span className="text-gray-500 ml-auto">E1</span></div>
+                                            <div className="flex items-center gap-1.5"><span style={{color:'#60a5fa'}}>●</span><span className="text-gray-400">Rare</span><span className="text-gray-500 ml-auto">E2</span></div>
+                                            <div className="flex items-center gap-1.5"><span style={{color:'#c084fc'}}>●</span><span className="text-gray-400">Epic</span><span className="text-gray-500 ml-auto">E3</span></div>
+                                            <div className="flex items-center gap-1.5"><span style={{color:'#fb923c'}}>●</span><span className="text-gray-400">Legendary</span><span className="text-gray-500 ml-auto">E4</span></div>
+                                            <div className="flex items-center gap-1.5"><span style={{color:'#facc15'}}>✨</span><span className="text-gray-400">Shiny</span><span className="text-gray-500 ml-auto">E4+</span></div>
+                                        </div>
+                                        <div className="border-t border-gray-700 pt-2 space-y-1">
+                                            <div className="text-gray-400">☀️ <span className="text-yellow-300 font-bold">Light</span> / 🌙 <span className="text-purple-300 font-bold">Dark</span> — adds <span className="text-white font-bold">+1 Edge</span> to base rarity</div>
+                                            <div className="text-gray-400">☀️ Light <span className="text-white font-bold">always beats</span> 🌙 Dark on ties</div>
+                                            <div className="text-gray-400">✨ Shiny vs ✨ Shiny — <span className="text-yellow-300 font-bold">always a true tie</span></div>
+                                        </div>
+                                    </div>
 
                                     {/* Slot Grid */}
                                     <div className="space-y-3 mb-6">
@@ -8588,8 +8714,9 @@
                                                                 <img src={assignedPokemon.spriteUrl} alt={assignedPokemon.pokemonName} className="w-10 h-10 pixelated" />
                                                                 <div className="flex-1">
                                                                     <div className="text-white font-bold text-sm capitalize">{assignedPokemon.pokemonName}</div>
+                                                                    <EdgeBadge pokemon={assignedPokemon} size="sm" />
                                                                     {assignedMove && (
-                                                                        <div className={`text-xs font-bold px-2 py-0.5 rounded inline-block move-reveal ${
+                                                                        <div className={`text-xs font-bold px-2 py-0.5 rounded inline-block move-reveal mt-0.5 ${
                                                                             assignedMove === 'QUICK' ? 'bg-yellow-500 text-black' :
                                                                             assignedMove === 'CHARGE' ? 'bg-red-500 text-white' : 'bg-purple-500 text-white'
                                                                         }`}>
@@ -8639,6 +8766,7 @@
                                                                     >
                                                                         <img src={poke.spriteUrl} alt={poke.pokemonName} className="w-10 h-10 pixelated" />
                                                                         <div className="text-white text-[10px] capitalize mt-1 font-bold">{poke.pokemonName}</div>
+                                                                        <EdgeBadge pokemon={poke} size="sm" />
                                                                     </button>
                                                                 ))}
                                                             </div>
@@ -8708,6 +8836,8 @@
                                     <div className="space-y-4" ref={battleScrollRef}>
                                         {battleSpectateSlots.map((slot, idx) => {
                                             const anim = battleSlotAnimations[slot.slotIndex];
+                                            const isTieBreak = anim && slot.tiebreak && slot.tiebreak !== null;
+                                            const outcomeWasA = slot.outcome === 'A_WIN';
                                             return (
                                                 <div key={slot.slotIndex} data-slot={slot.slotIndex} className={`bg-gray-800 rounded-2xl p-4 border-2 slot-reveal ${
                                                     anim === 'awin' ? 'border-blue-500' : anim === 'bwin' ? 'border-orange-500' : 'border-gray-600'
@@ -8720,6 +8850,7 @@
                                                                 anim === 'bwin' ? 'bg-orange-500 text-white' : 'bg-gray-600 text-gray-300'
                                                             }`}>
                                                                 {anim === 'awin' ? `${currentBattle.initiatorName} wins` : anim === 'bwin' ? `${currentBattle.accepterName} wins` : 'TIE'}
+                                                                {isTieBreak && slot.tiebreak !== 'edge_equal' && slot.tiebreak !== 'shiny_mirror' && ' ⚡'}
                                                             </div>
                                                         )}
                                                     </div>
@@ -8728,6 +8859,7 @@
                                                         <div className={`flex flex-col items-center gap-1 ${anim === 'bwin' ? 'loser-fade' : anim === 'awin' ? 'winner-glow' : anim === 'tie' ? 'tie-shimmer' : ''}`}>
                                                             {slot.pokemonASprite && <img src={slot.pokemonASprite} alt={slot.pokemonAName} className="w-14 h-14 pixelated" />}
                                                             <div className="text-white text-xs font-bold capitalize">{slot.pokemonAName}</div>
+                                                            <EdgeBadge pokemon={{ rarity: slot.pokemonARarity, isShiny: slot.pokemonAShiny, trait: slot.pokemonATrait }} />
                                                             {anim && (
                                                                 <div className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
                                                                     slot.moveA === 'QUICK' ? 'bg-yellow-500 text-black' :
@@ -8738,12 +8870,18 @@
                                                             )}
                                                         </div>
 
-                                                        <div className="text-2xl font-black text-gray-600">VS</div>
+                                                        <div className="flex flex-col items-center gap-1">
+                                                            <div className="text-2xl font-black text-gray-600">VS</div>
+                                                            {anim && slot.moveA === slot.moveB && (
+                                                                <div className="text-[9px] text-purple-400 font-bold text-center leading-tight">EDGE<br/>BREAK</div>
+                                                            )}
+                                                        </div>
 
                                                         {/* Accepter side */}
                                                         <div className={`flex flex-col items-center gap-1 ${anim === 'awin' ? 'loser-fade' : anim === 'bwin' ? 'winner-glow' : anim === 'tie' ? 'tie-shimmer' : ''}`}>
                                                             {slot.pokemonBSprite && <img src={slot.pokemonBSprite} alt={slot.pokemonBName} className="w-14 h-14 pixelated" />}
                                                             <div className="text-white text-xs font-bold capitalize">{slot.pokemonBName}</div>
+                                                            <EdgeBadge pokemon={{ rarity: slot.pokemonBRarity, isShiny: slot.pokemonBShiny, trait: slot.pokemonBTrait }} />
                                                             {anim && (
                                                                 <div className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
                                                                     slot.moveB === 'QUICK' ? 'bg-yellow-500 text-black' :
@@ -8754,6 +8892,7 @@
                                                             )}
                                                         </div>
                                                     </div>
+                                                    {anim && <TiebreakLabel tiebreak={slot.tiebreak} outcomeWasA={outcomeWasA} initiatorName={currentBattle.initiatorName} accepterName={currentBattle.accepterName} />}
                                                 </div>
                                             );
                                         })}
@@ -8839,17 +8978,34 @@
 
                                     {/* Slot-by-slot diagram */}
                                     <div className="space-y-2 mb-6">
-                                        {battleResults.slotResults.map(slot => (
+                                        {battleResults.slotResults.map(slot => {
+                                            const isTie = slot.moveA === slot.moveB;
+                                            const tieResolved = isTie && slot.outcome !== 'TIE';
+                                            return (
                                             <div key={slot.slotIndex} className={`bg-gray-800 rounded-xl p-3 border ${
                                                 slot.outcome === 'A_WIN' ? 'border-blue-600' :
-                                                slot.outcome === 'B_WIN' ? 'border-orange-500' : 'border-gray-600'
+                                                slot.outcome === 'B_WIN' ? 'border-orange-500' :
+                                                'border-gray-600'
                                             }`}>
+                                                {/* Tiebreak banner */}
+                                                {isTie && (
+                                                    <div className={`text-[10px] font-bold mb-2 text-center px-2 py-0.5 rounded ${
+                                                        tieResolved ? 'bg-purple-900 text-purple-300' : 'bg-gray-700 text-gray-400'
+                                                    }`}>
+                                                        {slot.tiebreak === 'light_beats_dark' && '☀️ Light overpowers Dark'}
+                                                        {slot.tiebreak === 'shiny_mirror' && '✨ Shiny mirror — true tie'}
+                                                        {slot.tiebreak === 'edge' && `⚡ Edge tiebreak — E${slot.outcome === 'A_WIN' ? slot.edgeA : slot.edgeB} beats E${slot.outcome === 'A_WIN' ? slot.edgeB : slot.edgeA}`}
+                                                        {slot.tiebreak === 'edge_equal' && `= Equal edge (E${slot.edgeA}) — tie`}
+                                                        {!slot.tiebreak && '— Move tie'}
+                                                    </div>
+                                                )}
                                                 <div className="flex items-center">
                                                     <div className={`flex items-center gap-2 flex-1 ${slot.outcome === 'B_WIN' ? 'opacity-40' : ''}`}>
                                                         {slot.pokemonASprite && <img src={slot.pokemonASprite} alt={slot.pokemonAName} className="w-8 h-8 pixelated" />}
                                                         <div>
                                                             <div className="text-white text-xs font-bold capitalize">{slot.pokemonAName}</div>
-                                                            <div className={`text-[10px] px-1 rounded font-bold ${
+                                                            <EdgeBadge pokemon={{ rarity: slot.pokemonARarity, isShiny: slot.pokemonAShiny, trait: slot.pokemonATrait }} />
+                                                            <div className={`text-[10px] px-1 rounded font-bold mt-0.5 ${
                                                                 slot.moveA === 'QUICK' ? 'bg-yellow-500 text-black' :
                                                                 slot.moveA === 'CHARGE' ? 'bg-red-500 text-white' : 'bg-purple-500 text-white'
                                                             }`}>
@@ -8858,19 +9014,25 @@
                                                         </div>
                                                     </div>
 
-                                                    <div className="px-2 text-center">
+                                                    <div className="px-2 text-center flex flex-col items-center gap-0.5">
                                                         <div className={`text-xs font-black ${
                                                             slot.outcome === 'A_WIN' ? 'text-blue-400' :
                                                             slot.outcome === 'B_WIN' ? 'text-orange-400' : 'text-gray-500'
                                                         }`}>
                                                             {slot.outcome === 'TIE' ? '—' : slot.outcome === 'A_WIN' ? '◀' : '▶'}
                                                         </div>
+                                                        {isTie && tieResolved && (
+                                                            <div className="text-[8px] text-purple-400 font-black leading-none">EDGE</div>
+                                                        )}
                                                     </div>
 
                                                     <div className={`flex items-center gap-2 flex-1 justify-end ${slot.outcome === 'A_WIN' ? 'opacity-40' : ''}`}>
                                                         <div className="text-right">
                                                             <div className="text-white text-xs font-bold capitalize">{slot.pokemonBName}</div>
-                                                            <div className={`text-[10px] px-1 rounded font-bold ${
+                                                            <div className="flex justify-end">
+                                                                <EdgeBadge pokemon={{ rarity: slot.pokemonBRarity, isShiny: slot.pokemonBShiny, trait: slot.pokemonBTrait }} />
+                                                            </div>
+                                                            <div className={`text-[10px] px-1 rounded font-bold mt-0.5 ${
                                                                 slot.moveB === 'QUICK' ? 'bg-yellow-500 text-black' :
                                                                 slot.moveB === 'CHARGE' ? 'bg-red-500 text-white' : 'bg-purple-500 text-white'
                                                             }`}>
@@ -8881,7 +9043,8 @@
                                                     </div>
                                                 </div>
                                             </div>
-                                        ))}
+                                            );
+                                        })}
                                     </div>
 
 {/* Pink Slip button moved to top */}
