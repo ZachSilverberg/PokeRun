@@ -3294,6 +3294,8 @@
             const [watchId, setWatchId] = useState(null);
             const [gpsError, setGpsError] = useState(null);
             const [liveWorkoutResult, setLiveWorkoutResult] = useState(null); // post-workout summary
+            const [workoutStarted, setWorkoutStarted] = useState(false); // false = show Begin btn, true = tracking live
+            const [countdown, setCountdown] = useState(null); // null | 3 | 2 | 1 | 0
             const trackerRef = React.useRef({});
 
             // ⏱️ Cooldown System
@@ -5952,10 +5954,10 @@
                         setIsPaused(false);
                         setWorkoutMode('live'); // only transition now that GPS confirmed
 
-                        // Timer tick
+                        // Timer tick — only counts after beginWorkout() flips ref.workoutStarted
                         const tickInterval = setInterval(() => {
                             const ref = trackerRef.current;
-                            if (!ref.isPaused) {
+                            if (ref.workoutStarted && !ref.isPaused) {
                                 const elapsedSec = Math.round((Date.now() - ref.startTime - (ref.pausedTime || 0)) / 1000);
                                 setTrackerElapsed(elapsedSec);
                             }
@@ -6057,6 +6059,27 @@
             ); // end getCurrentPosition
             };
 
+            const beginWorkout = () => {
+                setCountdown(3);
+                const tick = (n) => {
+                    if (n <= 0) {
+                        setCountdown(null);
+                        setWorkoutStarted(true);
+                        trackerRef.current.workoutStarted = true;
+                        // Reset start time to now (GPS was acquired earlier, timing starts here)
+                        const now = Date.now();
+                        trackerRef.current.startTime = now;
+                        trackerRef.current.pausedTime = 0;
+                        setTrackingData(prev => ({ ...prev, startTime: now, pausedTime: 0 }));
+                        setTrackerElapsed(0);
+                    } else {
+                        setCountdown(n);
+                        setTimeout(() => tick(n - 1), 1000);
+                    }
+                };
+                setTimeout(() => tick(2), 1000);
+            };
+
             const pauseLiveWorkout = () => {
                 const ref = trackerRef.current;
                 ref.isPaused = true;
@@ -6081,6 +6104,8 @@
                 setWatchId(null);
                 setIsTracking(false);
                 setIsPaused(false);
+                setWorkoutStarted(false);
+                setCountdown(null);
 
                 const ref = trackerRef.current;
                 const totalSec = Math.round((Date.now() - ref.startTime - (ref.pausedTime || 0)) / 1000);
@@ -6139,6 +6164,8 @@
             const resetLiveWorkout = () => {
                 setWorkoutMode(null);
                 setLiveWorkoutResult(null);
+                setWorkoutStarted(false);
+                setCountdown(null);
                 setTrackingData({ startTime: null, pausedTime: 0, pauseStart: null,
                     distance: 0, currentPace: '--:--', currentMph: 0,
                     avgPace: '--:--', avgMph: 0, peakPace: '--:--', peakMph: 0, calories: 0 });
@@ -7048,7 +7075,8 @@
                             <p className="text-sm text-gray-600">Track runs • Catch Pokémon • Complete journeys</p>
                         </div>
 
-                        {/* ── Home top bar: Trainer + Feed (left) | Stats (right) ── */}
+                        {/* ── Home top bar: hidden during live workout ── */}
+                        {!(['live','requesting','countdown'].includes(workoutMode)) && (
                         <div className="flex items-stretch justify-center gap-2 mb-5">
 
                             {/* LEFT COLUMN — shrinks to content width, both buttons match the wider one */}
@@ -7121,6 +7149,41 @@
                                 </div>
                             </div>
                         </div>
+                        )} {/* end top bar conditional */}
+
+                        {/* ── Live Workout Controls Bar (replaces top bar during workout) ── */}
+                        {(['live','requesting','countdown'].includes(workoutMode)) && (
+                            <div className="flex gap-3 mb-5">
+                                {workoutMode === 'live' && workoutStarted && (
+                                    <>
+                                        <button
+                                            onClick={isPaused ? resumeLiveWorkout : pauseLiveWorkout}
+                                            className={`flex-1 py-3 rounded-2xl font-bold text-base transition shadow-lg ${isPaused ? 'bg-green-600 hover:bg-green-700' : 'bg-yellow-500 hover:bg-yellow-600'} text-white`}
+                                        >
+                                            {isPaused ? '▶ Resume' : '⏸ Pause'}
+                                        </button>
+                                        <button
+                                            onClick={stopLiveWorkout}
+                                            className="flex-1 py-3 rounded-2xl font-bold text-base bg-red-600 hover:bg-red-700 text-white transition shadow-lg"
+                                        >
+                                            ■ End Workout
+                                        </button>
+                                    </>
+                                )}
+                                {(workoutMode === 'requesting' || !workoutStarted) && (
+                                    <div className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl bg-slate-800 border border-slate-600">
+                                        {workoutMode === 'requesting' ? (
+                                            <>
+                                                <div className="w-4 h-4 rounded-full border-2 border-green-400 border-t-transparent animate-spin" />
+                                                <span className="text-gray-400 text-sm font-medium">Getting GPS…</span>
+                                            </>
+                                        ) : (
+                                            <span className="text-gray-500 text-sm">Ready to begin</span>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        )}
 
                         {currentView === 'main' && (
                         <>
@@ -7258,13 +7321,12 @@
                             {/* ── MODE: Live GPS Tracking ── */}
                             {(workoutMode === 'live') && (
                                 <div className="p-5">
-                                    {/* Header */}
-                                    <div className="flex items-center justify-between mb-4">
-                                        <div className="flex items-center gap-2">
-                                            <div className={`w-2.5 h-2.5 rounded-full ${isPaused ? 'bg-yellow-400' : 'bg-green-400 animate-pulse'}`} />
-                                            <span className="text-white font-bold text-sm">{isPaused ? '⏸ Paused' : '⏱ Active Workout'}</span>
-                                        </div>
-                                        <button onClick={stopLiveWorkout} className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-sm font-bold transition">■ Stop</button>
+                                    {/* Header status dot */}
+                                    <div className="flex items-center gap-2 mb-4">
+                                        <div className={`w-2.5 h-2.5 rounded-full ${!workoutStarted ? 'bg-blue-400' : isPaused ? 'bg-yellow-400 animate-pulse' : 'bg-green-400 animate-pulse'}`} />
+                                        <span className="text-white font-bold text-sm">
+                                            {!workoutStarted ? 'GPS Ready' : isPaused ? '⏸ Paused' : '⏱ Active'}
+                                        </span>
                                     </div>
 
                                     {/* Big stats */}
@@ -7310,16 +7372,31 @@
 
                                     {gpsError && <div className="mb-3 px-3 py-2 bg-red-900 border border-red-700 rounded-xl text-red-300 text-xs">{gpsError}</div>}
 
-                                    {/* Controls */}
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <button onClick={isPaused ? resumeLiveWorkout : pauseLiveWorkout}
-                                            className={`py-3 rounded-xl font-bold text-base transition ${isPaused ? 'bg-green-600 hover:bg-green-700 text-white' : 'bg-yellow-600 hover:bg-yellow-700 text-white'}`}>
-                                            {isPaused ? '▶ Resume' : '⏸ Pause'}
+                                    {/* Begin / Countdown / Active controls */}
+                                    {!workoutStarted && countdown === null && (
+                                        <button
+                                            onClick={beginWorkout}
+                                            className="w-full py-5 rounded-2xl font-black text-xl bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-400 hover:to-emerald-500 text-white shadow-xl hover:shadow-green-500/40 transition-all"
+                                        >
+                                            🏃 Begin Workout
                                         </button>
-                                        <button onClick={stopLiveWorkout} className="py-3 rounded-xl font-bold text-base bg-red-600 hover:bg-red-700 text-white transition">
-                                            ■ End Workout
-                                        </button>
-                                    </div>
+                                    )}
+                                    {countdown !== null && (
+                                        <div className="w-full py-5 rounded-2xl bg-gradient-to-r from-green-800 to-emerald-900 border-2 border-green-500 text-center">
+                                            <div className="text-6xl font-black text-white leading-none"
+                                                style={{ textShadow: '0 0 30px rgba(74,222,128,0.8)' }}>
+                                                {countdown}
+                                            </div>
+                                            <div className="text-green-300 text-sm mt-1 font-medium">
+                                                {countdown > 0 ? 'Get ready…' : 'GO!'}
+                                            </div>
+                                        </div>
+                                    )}
+                                    {workoutStarted && (
+                                        <div className="text-center text-xs text-gray-500 pt-1">
+                                            Use controls above to pause or end workout
+                                        </div>
+                                    )}
                                 </div>
                             )}
 
