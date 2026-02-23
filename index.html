@@ -5913,16 +5913,12 @@
                 return null;
             };
 
-            const startLiveWorkout = async () => {
-                setGpsError(null);
-                try {
-                    await new Promise((resolve, reject) => {
-                        navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 8000 });
-                    });
-                } catch(e) {
-                    setGpsError('GPS permission denied. Please allow location access and try again.');
+            const startLiveWorkout = () => {
+                if (!navigator.geolocation) {
+                    setGpsError('GPS not available on this device.');
                     return;
                 }
+                setGpsError(null);
 
                 const threshold = getThresholdPace();
                 const now = Date.now();
@@ -6026,7 +6022,16 @@
                             setPeakWindow({ ...pw });
                         }
                     },
-                    (err) => { setGpsError('GPS signal lost: ' + err.message); },
+                    (err) => {
+                        if (err.code === 1) { // PERMISSION_DENIED
+                            setGpsError('Location access denied. On iOS: Settings → Safari → Location → Allow.');
+                            setWorkoutMode(null); setIsTracking(false);
+                        } else if (err.code === 2) {
+                            setGpsError('GPS signal lost. Move to an open area and try again.');
+                        } else {
+                            setGpsError('GPS error: ' + err.message);
+                        }
+                    },
                     { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
                 );
                 trackerRef.current.startTime = now;
