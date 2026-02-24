@@ -3058,11 +3058,16 @@
 
                             {/* 🔄 Trade Badge / Pink Slip Badge (top-right) */}
                             {activity.isPinkSlip && (
-                                <div className="absolute top-4 right-4 flex flex-col items-center">
+                                <div className="absolute top-4 right-4 flex flex-col items-end gap-1">
                                     <div className="bg-pink-600 bg-opacity-90 rounded-lg px-2 py-1 flex items-center gap-1 shadow-lg">
                                         <PinkSlipPokeballIcon size={16} />
                                         <span className="text-white text-xs font-bold">PINK SLIP</span>
                                     </div>
+                                    {activity.pinkSlippedFrom && (
+                                        <div className="bg-black bg-opacity-60 rounded-lg px-2 py-0.5">
+                                            <span className="text-pink-300 text-xs">from {activity.pinkSlippedFrom}</span>
+                                        </div>
+                                    )}
                                 </div>
                             )}
                             {activity.isTrade && !activity.isPinkSlip && (
@@ -4400,21 +4405,26 @@
                     const myUid = firebaseManager.user.uid;
 
                     const activityEntry = {
-                        type: 'catch',
+                        type: catchData.isPinkSlip ? 'pinkSlip' : 'catch',
                         trainerId: myUid,
                         trainerName: catchData.trainerName,
                         trainerBadgeColor: catchData.trainerBadgeColor,
                         pokemonId: catchData.pokemonId,
                         pokemonName: catchData.pokemonName,
                         spriteUrl: catchData.spriteUrl,
-                        isShiny: catchData.isShiny,
+                        isShiny: catchData.isShiny || false,
+                        trait: catchData.trait || 'normal',
                         rarity: catchData.rarity,
                         pace: catchData.pace,
                         distance: catchData.distance,
                         duration: catchData.duration,
+                        caloriesBurned: catchData.caloriesBurned || null,
+                        avgHR: catchData.avgHR || null,
+                        isPinkSlip: catchData.isPinkSlip || false,
+                        pinkSlippedFrom: catchData.pinkSlippedFrom || null,
                         timestamp: firebase.database.ServerValue.TIMESTAMP,
                         candyCount: 0,
-                        candyGivers: {} // For future: {userId: true}
+                        candyGivers: {}
                     };
 
                     // Save to user's activity feed
@@ -4505,19 +4515,20 @@
                                     pokemonName: poke.pokemonName || poke.name,
                                     spriteUrl: poke.spriteUrl,
                                     isShiny: poke.isShiny,
+                                    trait: poke.trait || 'normal',
                                     rarity: poke.rarity,
                                     pace: poke.pace,
                                     distance: poke.distance,
                                     duration: poke.duration,
                                     caloriesBurned: poke.caloriesBurned,
                                     avgHR: poke.avgHR,
-                                    timestamp: trade.completedAt - (senderPokemon.length - i), // slight offset for ordering
+                                    timestamp: trade.completedAt - (senderPokemon.length - i),
                                     candyCount: 0,
                                     candyGivers: {},
                                     isOwnCard: trade.from === myUid,
                                     isTrade: true,
                                     tradePartnerName: trade.toName || 'Trainer',
-                                    tradedTo: true // this pokemon was sent by sender
+                                    tradedTo: true
                                 });
                             });
                         }
@@ -4533,6 +4544,7 @@
                                     pokemonName: poke.pokemonName || poke.name,
                                     spriteUrl: poke.spriteUrl,
                                     isShiny: poke.isShiny,
+                                    trait: poke.trait || 'normal',
                                     rarity: poke.rarity,
                                     pace: poke.pace,
                                     distance: poke.distance,
@@ -4545,13 +4557,49 @@
                                     isOwnCard: trade.to === myUid,
                                     isTrade: true,
                                     tradePartnerName: trade.fromName || 'Trainer',
-                                    tradedTo: false // this pokemon was sent by recipient
+                                    tradedTo: false
                                 });
                             });
                         }
                     });
 
-                    // Re-sort after adding trades
+                    // Load pink slip activity from battle records (within 48hrs)
+                    try {
+                        const battlesSnap = await database.ref('battles').once('value');
+                        const allBattles = battlesSnap.val() || {};
+                        Object.values(allBattles).forEach(battle => {
+                            if (!battle || !battle.pinkSlipClaimedPokemonId || !battle.pinkSlipCompletedAt) return;
+                            if (battle.pinkSlipCompletedAt < fortyEightHoursAgo) return;
+                            // Show if I was winner or loser, or if winner/loser is a friend
+                            const winnerId = battle.result?.winnerUserId;
+                            const loserId = battle.result?.loserUserId;
+                            const isVisible = winnerId === myUid || loserId === myUid || friendSet.has(winnerId) || friendSet.has(loserId);
+                            if (!isVisible) return;
+                            // Find the pokemon data from the battle's starters snapshot if available
+                            // We use the stored fields on the battle record
+                            allActivities.push({
+                                id: `pinkslip_${battle.battleId}`,
+                                type: 'pinkSlip',
+                                trainerId: winnerId,
+                                trainerName: battle.pinkSlipWinnerName || 'Trainer',
+                                trainerBadgeColor: battle.initiatorId === winnerId ? battle.initiatorBadgeColor : battle.accepterBadgeColor,
+                                pokemonName: battle.pinkSlipClaimedPokemonName || 'Pokémon',
+                                spriteUrl: battle.pinkSlipClaimedSpriteUrl || null,
+                                isShiny: battle.pinkSlipClaimedIsShiny || false,
+                                trait: battle.pinkSlipClaimedTrait || 'normal',
+                                rarity: battle.pinkSlipClaimedRarity || 'common',
+                                pace: '--', distance: '--', duration: '--',
+                                isPinkSlip: true,
+                                pinkSlippedFrom: battle.pinkSlipLoserName || 'opponent',
+                                timestamp: battle.pinkSlipCompletedAt,
+                                candyCount: 0,
+                                candyGivers: {},
+                                isOwnCard: winnerId === myUid
+                            });
+                        });
+                    } catch (e) { console.warn('Pink slip feed load error:', e.message); }
+
+                    // Re-sort after adding trades + pink slips
                     allActivities.sort((a, b) => b.timestamp - a.timestamp);
 
                     console.log(`📸 Loaded ${allActivities.length} activity entries (last 48hrs)`);
@@ -5274,52 +5322,99 @@
                     const myUid = firebaseManager.user.uid;
                     const loserId = (battleResults && battleResults.loserUserId)
                         || (currentBattle.result && currentBattle.result.loserUserId);
-
-                    console.log('🎀 claimPinkSlip start', { myUid, loserId, battleId: currentBattle.battleId, pokemon: targetPokemon?.id });
+                    const loserName = loserId === currentBattle.initiatorId
+                        ? currentBattle.initiatorName : currentBattle.accepterName;
+                    const winnerName = firebaseProfile?.displayName || 'Trainer';
 
                     if (!loserId) {
-                        console.error('❌ loserId missing', { battleResults, currentBattleResult: currentBattle?.result });
                         alert('Could not determine battle loser. Please close and re-open the results screen.');
                         setPinkSlipAnimating(false);
                         return;
                     }
 
-                    // Start throw animation timer
                     const throwDelay = new Promise(r => setTimeout(r, 1000));
 
-                    // 1. Add to winner's own PC — winner can always write their own /users/$uid node
-                    const markedPokemon = { ...targetPokemon, isPinkSlip: true, isTrade: false, wonInBattle: currentBattle.battleId };
+                    // 1. Add to winner's PC with pink slip marker
+                    const markedPokemon = {
+                        ...targetPokemon,
+                        isPinkSlip: true,
+                        isTrade: false,
+                        wonInBattle: currentBattle.battleId,
+                        pinkSlippedFrom: loserName
+                    };
                     const updatedMyPC = [markedPokemon, ...pokemonPC];
                     setPokemonPC(updatedMyPC);
                     await window.storage.set('pokemon-pc', JSON.stringify(updatedMyPC));
-                    console.log('🎀 writing to my PC...');
                     await database.ref(`users/${myUid}/pc`).set(updatedMyPC);
-                    console.log('🎀 PC write OK');
 
-                    // 2. Mark battle as COMPLETED and record which pokemon was claimed.
-                    //    Also store pendingRemoval so the loser can process it on their own session.
-                    //    Winner can write the battle node (they wrote it originally, rules allow auth'd writes to /battles).
-                    console.log('🎀 updating battle record...');
+                    // 2. Remove from loser's PC and starters immediately
+                    try {
+                        const loserPCSnap = await database.ref(`users/${loserId}/pc`).once('value');
+                        const loserPC = loserPCSnap.val() || [];
+                        const updatedLoserPC = loserPC.filter(p => p && p.id !== targetPokemon.id);
+                        await database.ref(`users/${loserId}/pc`).set(updatedLoserPC);
+
+                        const loserStartersSnap = await database.ref(`users/${loserId}/starters`).once('value');
+                        const loserStarters = loserStartersSnap.val() || [];
+                        const updatedLoserStarters = loserStarters.map(s => (s && s.id === targetPokemon.id) ? null : s);
+                        await database.ref(`users/${loserId}/starters`).set(updatedLoserStarters);
+                    } catch (removeErr) {
+                        console.warn('⚠️ Could not immediately remove from loser — will use pendingRemoval fallback:', removeErr.message);
+                    }
+
+                    // 3. Update battle record with pink slip details for recap + feed
                     await database.ref(`battles/${currentBattle.battleId}`).update({
                         status: 'COMPLETED',
                         pinkSlipClaimedPokemonId: targetPokemon.id,
+                        pinkSlipClaimedPokemonName: targetPokemon.pokemonName,
+                        pinkSlipClaimedSpriteUrl: targetPokemon.spriteUrl || null,
+                        pinkSlipClaimedRarity: targetPokemon.rarity || 'common',
+                        pinkSlipClaimedIsShiny: targetPokemon.isShiny || false,
+                        pinkSlipClaimedTrait: targetPokemon.trait || 'normal',
+                        pinkSlipWinnerName: winnerName,
+                        pinkSlipLoserName: loserName,
                         pinkSlipCompletedAt: Date.now(),
-                        // Loser reads this on load and removes the pokemon from their own starters
                         pendingRemoval: {
                             pokemonId: targetPokemon.id,
                             processedByLoser: false
                         }
                     });
-                    console.log('🎀 battle record updated OK');
+
+                    // 4. Create activity feed entry for the pink slip claim
+                    if (firebaseProfile) {
+                        await createActivityFeedEntry({
+                            pokemonId: targetPokemon.pokemonId,
+                            pokemonName: targetPokemon.pokemonName,
+                            isShiny: targetPokemon.isShiny || false,
+                            trait: targetPokemon.trait || 'normal',
+                            rarity: targetPokemon.rarity,
+                            spriteUrl: targetPokemon.spriteUrl,
+                            pace: targetPokemon.pace || '--',
+                            distance: targetPokemon.distance || '--',
+                            duration: targetPokemon.duration || '--',
+                            caloriesBurned: targetPokemon.caloriesBurned || null,
+                            avgHR: targetPokemon.avgHR || null,
+                            isPinkSlip: true,
+                            pinkSlippedFrom: loserName,
+                            trainerName: winnerName,
+                            trainerBadgeColor: firebaseProfile.badgeColor
+                        });
+                    }
 
                     await throwDelay;
                     setPinkSlipSuccess(true);
                     await new Promise(r => setTimeout(r, 900));
                     setPinkSlipAnimating(false);
                     setPinkSlipSuccess(false);
-                    setCurrentBattle(prev => prev ? { ...prev, status: 'COMPLETED', pinkSlipClaimedPokemonId: targetPokemon.id } : prev);
+                    setCurrentBattle(prev => prev ? {
+                        ...prev,
+                        status: 'COMPLETED',
+                        pinkSlipClaimedPokemonId: targetPokemon.id,
+                        pinkSlipClaimedPokemonName: targetPokemon.pokemonName,
+                        pinkSlipWinnerName: winnerName,
+                        pinkSlipLoserName: loserName
+                    } : prev);
                     setBattleView('results');
-                    alert(`🎉 ${targetPokemon.pokemonName} was added to your PC!`);
                 } catch (err) {
                     console.error('❌ claimPinkSlip FAILED:', err.code, err.message, err);
                     setPinkSlipAnimating(false);
@@ -8175,54 +8270,90 @@
                                         <span>Search for Trainers</span>
                                     </button>
 
-                                    {/* ⚔️ Resolved Battles (initiator notification) */}
-                                    {resolvedBattlesForMe.length > 0 && (
-                                        <div className="mb-6">
-                                            <h3 className="text-lg font-bold text-white mb-3">⚔️ Battle Results ({resolvedBattlesForMe.length})</h3>
-                                            <div className="space-y-2">
-                                                {resolvedBattlesForMe.map(battle => {
-                                                    const iWon = battle.result.winnerUserId === firebaseManager.user?.uid;
-                                                    const isDraw = battle.result.matchOutcome === 'DRAW';
-                                                    return (
-                                                        <button
-                                                            key={battle.battleId}
-                                                            onClick={() => {
-                                                                setCurrentBattle(battle);
-                                                                setBattleResults(battle.result);
-                                                                // Load friend starters for pink slip
-                                                                if (iWon) {
-                                                                    const loserId = battle.result.loserUserId;
-                                                                    database.ref(`users/${loserId}/starters`).once('value').then(snap => {
-                                                                        const st = snap.val();
-                                                                        if (Array.isArray(st)) setViewingFriendStarters(st);
-                                                                    });
-                                                                }
-                                                                setBattleView('results');
-                                                            }}
-                                                            className={`w-full p-4 rounded-xl flex items-center justify-between transition shadow-lg ${
-                                                                iWon ? 'bg-green-900 bg-opacity-60 border-2 border-green-500' :
-                                                                isDraw ? 'bg-gray-800 border-2 border-gray-600' :
-                                                                'bg-red-900 bg-opacity-40 border-2 border-red-700'
-                                                            }`}
-                                                        >
-                                                            <div className="text-left">
-                                                                <div className="text-white font-bold text-sm">vs {battle.accepterName}</div>
-                                                                <div className={`text-xs font-bold mt-0.5 ${iWon ? 'text-green-400' : isDraw ? 'text-gray-400' : 'text-red-400'}`}>
-                                                                    {iWon ? '🏆 You won!' : isDraw ? '🤝 Draw' : '💀 You lost'}
-                                                                    {' '}· {battle.result.winsA}–{battle.result.winsB}
-                                                                </div>
-                                                            </div>
-                                                            {iWon && !battle.pinkSlipClaimedPokemonId && (
-                                                                <div className="bg-pink-600 text-white px-2 py-1 rounded-lg font-bold pink-slip-glow flex items-center gap-1 text-xs">
-                                                                    <PinkSlipPokeballIcon size={14} /> Claim
-                                                                </div>
-                                                            )}
-                                                        </button>
-                                                    );
-                                                })}
+                                    {/* ⚔️ Resolved Battles — today only + overall record */}
+                                    {(() => {
+                                        const myUid = firebaseManager.user?.uid;
+                                        const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+                                        const todayMs = todayStart.getTime();
+                                        const todayBattles = resolvedBattlesForMe.filter(b => {
+                                            const ts = b.pinkSlipCompletedAt || b.result?.resolvedAt || b.createdAt || 0;
+                                            return ts >= todayMs;
+                                        });
+                                        // Overall record across all resolved battles
+                                        let totalW = 0, totalL = 0, totalD = 0;
+                                        resolvedBattlesForMe.forEach(b => {
+                                            if (!b.result) return;
+                                            if (b.result.matchOutcome === 'DRAW') totalD++;
+                                            else if (b.result.winnerUserId === myUid) totalW++;
+                                            else totalL++;
+                                        });
+                                        return (
+                                            <div className="mb-6">
+                                                <div className="flex items-center justify-between mb-3">
+                                                    <h3 className="text-lg font-bold text-white">⚔️ Today's Battles</h3>
+                                                    <span className="text-xs font-bold px-2 py-1 rounded-lg bg-gray-800 border border-gray-600">
+                                                        <span className="text-green-400">{totalW}W</span>
+                                                        <span className="text-gray-500 mx-1">·</span>
+                                                        <span className="text-red-400">{totalL}L</span>
+                                                        <span className="text-gray-500 mx-1">·</span>
+                                                        <span className="text-yellow-400">{totalD}D</span>
+                                                    </span>
+                                                </div>
+                                                {todayBattles.length === 0 ? (
+                                                    <div className="text-gray-500 text-sm text-center py-3 bg-gray-800 rounded-xl border border-gray-700">No battles today yet</div>
+                                                ) : (
+                                                    <div className="space-y-2">
+                                                        {todayBattles.map(battle => {
+                                                            const iWon = battle.result.winnerUserId === myUid;
+                                                            const isDraw = battle.result.matchOutcome === 'DRAW';
+                                                            const oppName = battle.initiatorId === myUid ? battle.accepterName : battle.initiatorName;
+                                                            return (
+                                                                <button
+                                                                    key={battle.battleId}
+                                                                    onClick={() => {
+                                                                        setCurrentBattle(battle);
+                                                                        setBattleResults(battle.result);
+                                                                        if (iWon) {
+                                                                            const loserId = battle.result.loserUserId;
+                                                                            database.ref(`users/${loserId}/starters`).once('value').then(snap => {
+                                                                                const st = snap.val();
+                                                                                if (Array.isArray(st)) setViewingFriendStarters(st);
+                                                                            });
+                                                                        }
+                                                                        setBattleView('results');
+                                                                    }}
+                                                                    className={`w-full p-4 rounded-xl flex items-center justify-between transition shadow-lg ${
+                                                                        iWon ? 'bg-green-900 bg-opacity-60 border-2 border-green-500' :
+                                                                        isDraw ? 'bg-gray-800 border-2 border-gray-600' :
+                                                                        'bg-red-900 bg-opacity-40 border-2 border-red-700'
+                                                                    }`}
+                                                                >
+                                                                    <div className="text-left">
+                                                                        <div className="text-white font-bold text-sm">vs {oppName}</div>
+                                                                        <div className={`text-xs font-bold mt-0.5 ${iWon ? 'text-green-400' : isDraw ? 'text-gray-400' : 'text-red-400'}`}>
+                                                                            {iWon ? '🏆 You won!' : isDraw ? '🤝 Draw' : '💀 You lost'}
+                                                                            {' '}· {battle.result.winsA}–{battle.result.winsB}
+                                                                        </div>
+                                                                        {battle.pinkSlipClaimedPokemonName && (
+                                                                            <div className="flex items-center gap-1 mt-1">
+                                                                                <PinkSlipPokeballIcon size={11} />
+                                                                                <span className="text-pink-400 text-xs">{battle.pinkSlipWinnerName} claimed {battle.pinkSlipClaimedPokemonName}</span>
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                    {iWon && !battle.pinkSlipClaimedPokemonId && battle.status === 'LOOT_PENDING' && (
+                                                                        <div className="bg-pink-600 text-white px-2 py-1 rounded-lg font-bold pink-slip-glow flex items-center gap-1 text-xs">
+                                                                            <PinkSlipPokeballIcon size={14} /> Claim
+                                                                        </div>
+                                                                    )}
+                                                                </button>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                )}
                                             </div>
-                                        </div>
-                                    )}
+                                        );
+                                    })()}
 
                                     {/* Incoming Friend Requests */}
                                     {incomingRequests.length > 0 && (
@@ -9114,20 +9245,39 @@
                                         </button>
                                     </div>
 
-                                    {/* ── Pink Slip Ball button at TOP ── */}
+                                    {/* ── Pink Slip action area ── */}
                                     {battleResults.winnerUserId === firebaseManager.user?.uid &&
                                      currentBattle.status === 'LOOT_PENDING' &&
                                      !currentBattle.pinkSlipClaimedPokemonId && (
-                                        <button
-                                            onClick={() => setBattleView('pinkSlip')}
-                                            className="w-full py-4 bg-gradient-to-r from-pink-600 to-rose-500 hover:from-pink-700 hover:to-rose-600 text-white rounded-2xl font-bold text-lg transition shadow-2xl pink-slip-glow mb-5"
-                                        >
-                                            Use Pink Slip Ball
-                                        </button>
+                                        <div className="flex gap-3 mb-5">
+                                            <button
+                                                onClick={() => setBattleView('pinkSlip')}
+                                                className="flex-1 py-4 bg-gradient-to-r from-pink-600 to-rose-500 hover:from-pink-700 hover:to-rose-600 text-white rounded-2xl font-bold text-lg transition shadow-2xl pink-slip-glow flex items-center justify-center gap-2"
+                                            >
+                                                <PinkSlipPokeballIcon size={24} /> Use Pink Slip Ball
+                                            </button>
+                                            <button
+                                                onClick={async () => {
+                                                    await database.ref(`battles/${currentBattle.battleId}`).update({ status: 'RESOLVED' });
+                                                    setCurrentBattle(prev => prev ? { ...prev, status: 'RESOLVED' } : prev);
+                                                }}
+                                                className="px-5 py-4 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-2xl font-bold text-sm transition border border-gray-600"
+                                            >
+                                                Decline
+                                            </button>
+                                        </div>
                                     )}
                                     {currentBattle.pinkSlipClaimedPokemonId && (
-                                        <div className="bg-pink-900 bg-opacity-40 border border-pink-600 rounded-xl p-3 text-center text-pink-300 text-sm font-bold mb-5">
-                                            Pink Slip already claimed
+                                        <div className="bg-pink-900 bg-opacity-40 border border-pink-600 rounded-xl p-3 mb-5">
+                                            <div className="flex items-center gap-2 justify-center text-pink-300 text-sm font-bold">
+                                                <PinkSlipPokeballIcon size={18} />
+                                                {currentBattle.pinkSlipWinnerName || 'Winner'} pink-slipped {currentBattle.pinkSlipClaimedPokemonName || 'a Pokémon'} from {currentBattle.pinkSlipLoserName || 'the loser'}
+                                            </div>
+                                        </div>
+                                    )}
+                                    {currentBattle.status === 'RESOLVED' && !currentBattle.pinkSlipClaimedPokemonId && (
+                                        <div className="bg-gray-800 border border-gray-600 rounded-xl p-3 text-center text-gray-400 text-sm mb-5">
+                                            Pink Slip declined
                                         </div>
                                     )}
 
