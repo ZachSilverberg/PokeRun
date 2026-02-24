@@ -411,7 +411,7 @@
         const PokemonCard = ({ pokemon, onClick, showDelete, onDelete, className = "", showTradeBadge = false, enableInteractiveView = false }) => {
             const [cardImage, setCardImage] = useState(null);
             const [showInteractive, setShowInteractive] = useState(false);
-            const cacheKey = `${pokemon.id}-${pokemon.isShiny}-${pokemon.trait || 'normal'}-${pokemon.isTrade || false}`;
+            const cacheKey = `${pokemon.id}-${pokemon.isShiny}-${pokemon.trait || 'normal'}-${pokemon.isTrade || false}-${pokemon.isPinkSlip || false}`;
             
             // Helper: Draw star for rarity icons
             const drawStar = (ctx, cx, cy, spikes, outerRadius, innerRadius) => {
@@ -503,21 +503,60 @@
                 canvas.height = 500;
                 const ctx = canvas.getContext('2d');
 
-                // Background
-                ctx.fillStyle = '#F3F4F6';
-                ctx.fillRect(0, 0, 500, 500);
-
-                // Trait label (if light or dark) - above name, smaller font
-                if (pokemon.trait === 'light' || pokemon.trait === 'dark') {
-                    ctx.font = 'bold 26px Arial'; // 20% smaller than name (32px)
-                    ctx.textAlign = 'center';
-                    ctx.fillStyle = pokemon.trait === 'light' ? '#FCD34D' : '#A78BFA';
-                    const traitLabel = pokemon.trait === 'light' ? '☀️ LIGHT' : '🌙 DARK';
-                    ctx.fillText(traitLabel, 250, 25); // Above name
+                // Background — condition-aware
+                if (pokemon.isShiny) {
+                    // Shiny: warm gold shimmer
+                    const shinyGrad = ctx.createRadialGradient(250, 250, 60, 250, 250, 350);
+                    shinyGrad.addColorStop(0, '#FFF9C4');
+                    shinyGrad.addColorStop(0.5, '#FDE68A');
+                    shinyGrad.addColorStop(1, '#F59E0B22');
+                    ctx.fillStyle = shinyGrad;
+                } else if (pokemon.trait === 'light') {
+                    // Light: glowing blue/pearl
+                    const lightGrad = ctx.createRadialGradient(250, 250, 40, 250, 250, 320);
+                    lightGrad.addColorStop(0, '#EFF6FF');
+                    lightGrad.addColorStop(0.5, '#BFDBFE');
+                    lightGrad.addColorStop(1, '#93C5FD44');
+                    ctx.fillStyle = lightGrad;
+                } else if (pokemon.trait === 'dark') {
+                    // Dark: smoky dark grey with red tint
+                    const darkGrad = ctx.createRadialGradient(250, 250, 40, 250, 250, 320);
+                    darkGrad.addColorStop(0, '#2D2024');
+                    darkGrad.addColorStop(0.5, '#1C1518');
+                    darkGrad.addColorStop(1, '#3B0A0A');
+                    ctx.fillStyle = darkGrad;
+                } else {
+                    ctx.fillStyle = '#F3F4F6';
                 }
+                ctx.fillRect(0, 0, 500, 500);
+                // Add glow overlay for special conditions
+                if (pokemon.isShiny) {
+                    ctx.globalAlpha = 0.25;
+                    ctx.fillStyle = '#FCD34D';
+                    ctx.fillRect(0, 0, 500, 500);
+                    ctx.globalAlpha = 1;
+                } else if (pokemon.trait === 'light') {
+                    ctx.globalAlpha = 0.15;
+                    const glowGrad = ctx.createRadialGradient(250, 180, 20, 250, 180, 200);
+                    glowGrad.addColorStop(0, '#FFFFFF');
+                    glowGrad.addColorStop(1, 'transparent');
+                    ctx.fillStyle = glowGrad;
+                    ctx.fillRect(0, 0, 500, 500);
+                    ctx.globalAlpha = 1;
+                } else if (pokemon.trait === 'dark') {
+                    ctx.globalAlpha = 0.2;
+                    const smokeGrad = ctx.createRadialGradient(250, 250, 0, 250, 250, 300);
+                    smokeGrad.addColorStop(0, '#7F1D1D');
+                    smokeGrad.addColorStop(1, 'transparent');
+                    ctx.fillStyle = smokeGrad;
+                    ctx.fillRect(0, 0, 500, 500);
+                    ctx.globalAlpha = 1;
+                }
+
+                // (trait displayed as pill badge)
                 
-                // Pokemon name
-                ctx.fillStyle = '#1F2937';
+                // Pokemon name — white on dark bg
+                ctx.fillStyle = pokemon.trait === 'dark' ? '#F9FAFB' : '#1F2937';
                 ctx.font = 'bold 32px Arial';
                 ctx.textAlign = 'center';
                 const nameY = (pokemon.trait === 'light' || pokemon.trait === 'dark') ? 50 : 45;
@@ -541,62 +580,7 @@
                     ctx.imageSmoothingEnabled = false;
                     ctx.drawImage(img, spriteX, spriteY, spriteSize, spriteSize);
 
-                    // Shiny badge - clean icon in top left corner
-                    if (pokemon.isShiny) {
-                        // Draw rounded badge background
-                        const badgeSize = 50;
-                        const badgeX = 20;
-                        const badgeY = 80;
-                        
-                        ctx.fillStyle = '#FFD700';
-                        ctx.beginPath();
-                        ctx.arc(badgeX + badgeSize/2, badgeY + badgeSize/2, badgeSize/2, 0, Math.PI * 2);
-                        ctx.fill();
-                        
-                        // Draw star icon
-                        ctx.fillStyle = '#FFFFFF';
-                        ctx.font = 'bold 32px Arial';
-                        ctx.textAlign = 'center';
-                        ctx.textBaseline = 'middle';
-                        ctx.fillText('✨', badgeX + badgeSize/2, badgeY + badgeSize/2);
-                    }
-                    
-                    // Trait badges - clean icons in top left (below shiny if present)
-                    if (pokemon.trait === 'light') {
-                        const badgeSize = 50;
-                        const badgeX = 20;
-                        const badgeY = pokemon.isShiny ? 140 : 80; // Below shiny badge if present
-                        
-                        // Light blue background
-                        ctx.fillStyle = '#60A5FA';
-                        ctx.beginPath();
-                        ctx.arc(badgeX + badgeSize/2, badgeY + badgeSize/2, badgeSize/2, 0, Math.PI * 2);
-                        ctx.fill();
-                        
-                        // Sun icon
-                        ctx.fillStyle = '#FFFFFF';
-                        ctx.font = 'bold 32px Arial';
-                        ctx.textAlign = 'center';
-                        ctx.textBaseline = 'middle';
-                        ctx.fillText('☀️', badgeX + badgeSize/2, badgeY + badgeSize/2);
-                    } else if (pokemon.trait === 'dark') {
-                        const badgeSize = 50;
-                        const badgeX = 20;
-                        const badgeY = pokemon.isShiny ? 140 : 80; // Below shiny badge if present
-                        
-                        // Purple background
-                        ctx.fillStyle = '#A78BFA';
-                        ctx.beginPath();
-                        ctx.arc(badgeX + badgeSize/2, badgeY + badgeSize/2, badgeSize/2, 0, Math.PI * 2);
-                        ctx.fill();
-                        
-                        // Moon icon
-                        ctx.fillStyle = '#FFFFFF';
-                        ctx.font = 'bold 32px Arial';
-                        ctx.textAlign = 'center';
-                        ctx.textBaseline = 'middle';
-                        ctx.fillText('🌙', badgeX + badgeSize/2, badgeY + badgeSize/2);
-                    }
+                    // (badges now drawn as pills at bottom of canvas rendering)
 
                     // Rarity badge
                     const rarityColors = {
@@ -681,46 +665,76 @@
                         }
                     }
 
-                    // Trade badge (drawn on canvas for PC)
-                    if (pokemon.isTrade && showTradeBadge) {
-                        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-                        ctx.beginPath();
-                        ctx.roundRect(420, 10, 70, 24, 4);
-                        ctx.fill();
-                        
-                        ctx.fillStyle = 'white';
-                        ctx.font = 'bold 14px Arial';
-                        ctx.textAlign = 'center';
-                        ctx.fillText('🔄 TRADE', 455, 26);
-                        ctx.textAlign = 'left';
+                    // Trade / Pink Slip badge (drawn on canvas for PC)
+                    if (showTradeBadge) {
+                        if (pokemon.isPinkSlip) {
+                            // Pink Slip: draw pink pokeball shape + label
+                            const pbX = 10, pbY = 10, pbR = 14;
+                            // Bottom white half
+                            ctx.save();
+                            ctx.beginPath();
+                            ctx.arc(pbX + pbR, pbY + pbR, pbR, 0, Math.PI * 2);
+                            ctx.fillStyle = '#fff';
+                            ctx.fill();
+                            ctx.strokeStyle = '#000';
+                            ctx.lineWidth = 1.5;
+                            ctx.stroke();
+                            // Top pink half
+                            ctx.beginPath();
+                            ctx.arc(pbX + pbR, pbY + pbR, pbR - 1, Math.PI, 0);
+                            ctx.lineTo(pbX + pbR * 2 - 1, pbY + pbR);
+                            ctx.fillStyle = '#f472b6';
+                            ctx.fill();
+                            // Center line
+                            ctx.beginPath();
+                            ctx.moveTo(pbX + 2, pbY + pbR);
+                            ctx.lineTo(pbX + pbR * 2 - 2, pbY + pbR);
+                            ctx.strokeStyle = '#000';
+                            ctx.lineWidth = 1.5;
+                            ctx.stroke();
+                            // Center button
+                            ctx.beginPath();
+                            ctx.arc(pbX + pbR, pbY + pbR, 4, 0, Math.PI * 2);
+                            ctx.fillStyle = '#fce7f3';
+                            ctx.fill();
+                            ctx.strokeStyle = '#000';
+                            ctx.lineWidth = 1;
+                            ctx.stroke();
+                            ctx.restore();
+                        } else if (pokemon.isTrade) {
+                            ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                            ctx.beginPath();
+                            ctx.roundRect(420, 10, 70, 24, 4);
+                            ctx.fill();
+                            ctx.fillStyle = 'white';
+                            ctx.font = 'bold 14px Arial';
+                            ctx.textAlign = 'center';
+                            ctx.fillText('🔄 TRADE', 455, 26);
+                            ctx.textAlign = 'left';
+                        }
                     }
                     
-                    // Trait badge (Light/Dark - top left corner)
-                    const trait = pokemon.trait || 'normal';
-                    if (trait === 'light' || trait === 'dark') {
-                        const badgeY = 10;
-                        const badgeHeight = 24;
-                        const badgeWidth = 70;
-                        let badgeText = '';
-                        
-                        if (trait === 'light') {
-                            badgeText = '☀️ LIGHT';
-                            ctx.fillStyle = 'rgba(255, 215, 0, 0.9)';
-                        } else if (trait === 'dark') {
-                            badgeText = '🌙 DARK';
-                            ctx.fillStyle = 'rgba(75, 0, 130, 0.9)';
-                        }
-                        
+                    // Condition badges — top right corner, stacked
+                    let badgeStackY = 10;
+                    const drawPill = (label, bg, fg, y) => {
+                        const bW = 80, bH = 26, bX = 410;
+                        ctx.fillStyle = bg;
                         ctx.beginPath();
-                        ctx.roundRect(10, badgeY, badgeWidth, badgeHeight, 4);
+                        ctx.roundRect(bX, y, bW, bH, 8);
                         ctx.fill();
-                        
-                        ctx.fillStyle = 'white';
-                        ctx.font = 'bold 12px Arial';
+                        ctx.fillStyle = fg;
+                        ctx.font = 'bold 13px Arial';
                         ctx.textAlign = 'center';
-                        ctx.fillText(badgeText, 10 + badgeWidth/2, badgeY + 16);
+                        ctx.textBaseline = 'middle';
+                        ctx.fillText(label, bX + bW / 2, y + bH / 2);
+                        ctx.textBaseline = 'alphabetic';
                         ctx.textAlign = 'left';
-                    }
+                        return y + bH + 6;
+                    };
+                    if (pokemon.isShiny) badgeStackY = drawPill('✨ SHINY', '#FFD700', '#1a1a1a', badgeStackY);
+                    const trait = pokemon.trait || 'normal';
+                    if (trait === 'light') drawPill('☀️ LIGHT', 'rgba(147,197,253,0.92)', '#1e3a5f', badgeStackY);
+                    else if (trait === 'dark') drawPill('🌙 DARK', 'rgba(30,10,20,0.9)', '#f9a8d4', badgeStackY);
 
                     const dataUrl = canvas.toDataURL();
                     cardImageCache.set(cacheKey, dataUrl); // Cache it
@@ -802,7 +816,7 @@
                 <div className="fixed inset-0 bg-gradient-to-br from-pink-950 via-rose-900 to-black z-[95] overflow-y-auto">
                     <div className="min-h-screen p-5">
                         <div className="flex justify-between items-center mb-4">
-                            <h2 className="text-2xl font-bold text-white">🎀 Pink Slip Ball</h2>
+                            <h2 className="text-2xl font-bold text-white flex items-center gap-2"><PinkSlipPokeballIcon size={28} /> Pink Slip Ball</h2>
                             <button
                                 onClick={() => setBattleView('results')}
                                 className="w-10 h-10 bg-pink-800 hover:bg-pink-700 rounded-full flex items-center justify-center text-white text-lg transition"
@@ -810,7 +824,7 @@
                         </div>
 
                         <div className="bg-pink-900 bg-opacity-40 border border-pink-600 rounded-xl p-4 mb-6 text-center">
-                            <div className="text-4xl mb-2">🎀</div>
+                            <div className="flex justify-center mb-2"><PinkSlipPokeballIcon size={48} /></div>
                             <p className="text-pink-200 text-sm font-bold">You won the battle!</p>
                             <p className="text-pink-300 text-xs mt-1">
                                 Tap a card to magnify it, then throw the Pink Slip Ball to claim it from {loserName}.
@@ -850,7 +864,9 @@
                                 <PokemonCard pokemon={pinkSlipSelected} className="w-full shadow-2xl rounded-2xl" />
                                 {pinkSlipAnimating && (
                                     <div className="absolute inset-0 bg-black bg-opacity-60 rounded-2xl flex flex-col items-center justify-center z-10">
-                                        <div className={`text-6xl mb-3 ${pinkSlipSuccess ? '' : 'pink-slip-throw'}`}>🎀</div>
+                                        <div className="mb-3 flex justify-center">
+                                            <PinkSlipPokeballIcon size={72} animate={!pinkSlipSuccess} />
+                                        </div>
                                         <div className="text-white font-bold text-sm">
                                             {pinkSlipSuccess ? '✅ Caught!' : 'Throwing Pink Slip Ball...'}
                                         </div>
@@ -863,7 +879,7 @@
                                     onClick={() => claimPinkSlip(pinkSlipSelected)}
                                     className="mt-6 w-full max-w-xs py-4 bg-gradient-to-r from-pink-600 to-rose-500 hover:from-pink-700 hover:to-rose-600 text-white rounded-2xl font-bold text-lg shadow-2xl pink-slip-glow transition"
                                 >
-                                    🎀 Throw Pink Slip Ball!
+                                    Throw Pink Slip Ball!
                                 </button>
                             )}
 
@@ -2392,6 +2408,46 @@
         );
 
         // ========================================
+        // 🩷 PINK SLIP POKEBALL ICON (same as PokeballIcon but pink shell)
+        // ========================================
+        const PinkSlipPokeballIcon = ({ size = 20, className = "", animate = false }) => (
+            <svg
+                width={size}
+                height={size}
+                viewBox="0 0 24 24"
+                className={`${className} ${animate ? 'pink-slip-throw' : ''}`}
+                style={{ imageRendering: 'pixelated' }}
+            >
+                <defs>
+                    <clipPath id="psBottomHalf">
+                        <rect x="0" y="12" width="24" height="12"/>
+                    </clipPath>
+                    <clipPath id="psTopHalf">
+                        <rect x="0" y="0" width="24" height="12"/>
+                    </clipPath>
+                </defs>
+                {/* Bottom white half */}
+                <g clipPath="url(#psBottomHalf)">
+                    <circle cx="12" cy="12" r="11" fill="#fff" stroke="#000" strokeWidth="1"/>
+                    <circle cx="12" cy="12" r="10" fill="#fff"/>
+                </g>
+                {/* Black center line */}
+                <path d="M 2 12 L 22 12" stroke="#000" strokeWidth="2"/>
+                {/* Center button */}
+                <circle cx="12" cy="12" r="3" fill="#fff" stroke="#000" strokeWidth="1.5"/>
+                <circle cx="12" cy="12" r="2" fill="#fce7f3"/>
+                {/* Top half — pink */}
+                <g clipPath="url(#psTopHalf)">
+                    <circle cx="12" cy="12" r="11" fill="#f472b6" stroke="#000" strokeWidth="1"/>
+                    <circle cx="12" cy="12" r="10" fill="#f472b6"/>
+                    <circle cx="12" cy="12" r="6" fill="#ec4899"/>
+                    {/* Top highlight */}
+                    <rect x="11" y="1" width="2" height="3" fill="#fce7f3"/>
+                </g>
+            </svg>
+        );
+
+        // ========================================
         // 📸 ACTIVITY CARD STACK COMPONENT
         // ========================================
         const ActivityCardStack = ({ activities, onGiveCandy, currentUserId }) => {
@@ -2717,9 +2773,50 @@
                             ctx.restore();
                         };
 
-                        // Light gray background (like starter cards)
-                        ctx.fillStyle = '#F3F4F6'; // gray-100
-                        ctx.fillRect(0, 0, 1080, 1080);
+                        // Background — condition-aware
+                        if (activity.isShiny) {
+                            const shinyGrad = ctx.createRadialGradient(540, 540, 100, 540, 540, 700);
+                            shinyGrad.addColorStop(0, '#FFF9C4');
+                            shinyGrad.addColorStop(0.5, '#FDE68A');
+                            shinyGrad.addColorStop(1, '#F59E0B22');
+                            ctx.fillStyle = shinyGrad;
+                            ctx.fillRect(0, 0, 1080, 1080);
+                            ctx.globalAlpha = 0.2;
+                            ctx.fillStyle = '#FCD34D';
+                            ctx.fillRect(0, 0, 1080, 1080);
+                            ctx.globalAlpha = 1;
+                        } else if (activity.trait === 'light') {
+                            const lightGrad = ctx.createRadialGradient(540, 540, 80, 540, 540, 700);
+                            lightGrad.addColorStop(0, '#EFF6FF');
+                            lightGrad.addColorStop(0.5, '#BFDBFE');
+                            lightGrad.addColorStop(1, '#93C5FD44');
+                            ctx.fillStyle = lightGrad;
+                            ctx.fillRect(0, 0, 1080, 1080);
+                            ctx.globalAlpha = 0.12;
+                            const glowGrad = ctx.createRadialGradient(540, 400, 40, 540, 400, 400);
+                            glowGrad.addColorStop(0, '#FFFFFF');
+                            glowGrad.addColorStop(1, 'transparent');
+                            ctx.fillStyle = glowGrad;
+                            ctx.fillRect(0, 0, 1080, 1080);
+                            ctx.globalAlpha = 1;
+                        } else if (activity.trait === 'dark') {
+                            const darkGrad = ctx.createRadialGradient(540, 540, 80, 540, 540, 700);
+                            darkGrad.addColorStop(0, '#2D2024');
+                            darkGrad.addColorStop(0.5, '#1C1518');
+                            darkGrad.addColorStop(1, '#3B0A0A');
+                            ctx.fillStyle = darkGrad;
+                            ctx.fillRect(0, 0, 1080, 1080);
+                            ctx.globalAlpha = 0.2;
+                            const smokeGrad = ctx.createRadialGradient(540, 540, 0, 540, 540, 600);
+                            smokeGrad.addColorStop(0, '#7F1D1D');
+                            smokeGrad.addColorStop(1, 'transparent');
+                            ctx.fillStyle = smokeGrad;
+                            ctx.fillRect(0, 0, 1080, 1080);
+                            ctx.globalAlpha = 1;
+                        } else {
+                            ctx.fillStyle = '#F3F4F6';
+                            ctx.fillRect(0, 0, 1080, 1080);
+                        }
 
                         // Draw rarity icon at very top with more space
                         const iconSize = 70;
@@ -2727,11 +2824,11 @@
                         const iconY = 25;
                         drawRarityIcon(ctx, iconX, iconY, iconSize, activity.rarity);
 
-                        // Pokemon name below icon - moved down to prevent touching
-                        ctx.fillStyle = '#1F2937';
+                        // Pokemon name below icon
+                        ctx.fillStyle = activity.trait === 'dark' ? '#F9FAFB' : '#1F2937';
                         ctx.font = 'bold 56px sans-serif';
                         ctx.textAlign = 'center';
-                        ctx.fillText(activity.pokemonName.toUpperCase(), 540, 150); // Was 130, now 150
+                        ctx.fillText(activity.pokemonName.toUpperCase(), 540, 150);
                         ctx.textAlign = 'left';
 
                         // Load and draw Pokemon sprite first
@@ -2839,16 +2936,37 @@
                         
                         ctx.textAlign = 'left';
 
-                        // Shiny badge (if shiny) - small badge in top right corner
+                        // Shiny badge (if shiny) - circle in top right corner
                         if (activity.isShiny) {
                             const shinySize = 70;
-                            ctx.fillStyle = '#FCD34D'; // Yellow-300
+                            ctx.fillStyle = '#FFD700';
                             ctx.beginPath();
                             ctx.arc(1000, 80, shinySize / 2, 0, Math.PI * 2);
                             ctx.fill();
                             ctx.font = 'bold 42px sans-serif';
                             ctx.textAlign = 'center';
-                            ctx.fillText('✨', 1000, 92);
+                            ctx.textBaseline = 'middle';
+                            ctx.fillText('✨', 1000, 80);
+                            ctx.textBaseline = 'alphabetic';
+                            ctx.textAlign = 'left';
+                        }
+
+                        // Trait badge — pill in top left (below shiny if both present)
+                        if (activity.trait === 'light' || activity.trait === 'dark') {
+                            const isLight = activity.trait === 'light';
+                            const badgeX = 40;
+                            const badgeY = activity.isShiny ? 150 : 40;
+                            const badgeW = 180;
+                            const badgeH = 60;
+                            ctx.fillStyle = isLight ? 'rgba(147,197,253,0.92)' : 'rgba(30,10,20,0.88)';
+                            ctx.beginPath();
+                            ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 14);
+                            ctx.fill();
+                            ctx.font = 'bold 34px sans-serif';
+                            ctx.textAlign = 'center';
+                            ctx.textBaseline = 'middle';
+                            ctx.fillText(isLight ? '☀️ LIGHT' : '🌙 DARK', badgeX + badgeW / 2, badgeY + badgeH / 2);
+                            ctx.textBaseline = 'alphabetic';
                             ctx.textAlign = 'left';
                         }
 
@@ -2938,8 +3056,16 @@
                                 </button>
                             )}
 
-                            {/* 🔄 Trade Badge (top-right) */}
-                            {activity.isTrade && (
+                            {/* 🔄 Trade Badge / Pink Slip Badge (top-right) */}
+                            {activity.isPinkSlip && (
+                                <div className="absolute top-4 right-4 flex flex-col items-center">
+                                    <div className="bg-pink-600 bg-opacity-90 rounded-lg px-2 py-1 flex items-center gap-1 shadow-lg">
+                                        <PinkSlipPokeballIcon size={16} />
+                                        <span className="text-white text-xs font-bold">PINK SLIP</span>
+                                    </div>
+                                </div>
+                            )}
+                            {activity.isTrade && !activity.isPinkSlip && (
                                 <div className="absolute top-4 right-4 flex flex-col items-center">
                                     <div className="bg-black bg-opacity-70 rounded-lg px-2 py-1 flex items-center gap-1">
                                         <span className="text-lg">🔄</span>
@@ -2966,28 +3092,38 @@
         // 🎴 ENCOUNTER CARD SUB-COMPONENTS (Refactored for clean reveal control)
         
         // Card base - Background only (shown when rarity appears)
-        const EncounterCardBase = ({ trait, visible }) => {
-            const traitFilter = trait === 'light' 
-                ? 'brightness(1.25) saturate(1.15) drop-shadow(0 0 8px rgba(255, 215, 0, 0.4))' 
-                : trait === 'dark' 
-                ? 'brightness(0.75) contrast(1.25) saturate(1.1) hue-rotate(-15deg) drop-shadow(0 0 8px rgba(75, 0, 130, 0.4))' 
+        const EncounterCardBase = ({ trait, isShiny, visible }) => {
+            const bg = isShiny
+                ? 'radial-gradient(ellipse at center, #FFF9C4 0%, #FDE68A 50%, #F59E0B22 100%)'
+                : trait === 'light'
+                ? 'radial-gradient(ellipse at center, #EFF6FF 0%, #BFDBFE 55%, #93C5FD55 100%)'
+                : trait === 'dark'
+                ? 'radial-gradient(ellipse at center, #2D2024 0%, #1C1518 50%, #3B0A0A 100%)'
+                : '#C5C9B8';
+
+            const boxShadow = isShiny
+                ? 'inset 0 0 40px rgba(251,191,36,0.35)'
+                : trait === 'light'
+                ? 'inset 0 0 50px rgba(147,197,253,0.45)'
+                : trait === 'dark'
+                ? 'inset 0 0 50px rgba(127,29,29,0.5)'
                 : 'none';
-            
+
             return (
                 <div 
                     className="absolute inset-0 rounded-2xl transition-opacity duration-700" 
-                    style={{ 
-                        background: '#C5C9B8',
-                        filter: traitFilter,
-                        opacity: visible ? 1 : 0
-                    }}
+                    style={{ background: bg, boxShadow, opacity: visible ? 1 : 0 }}
                 />
             );
         };
 
         // Pokémon image section with sparkles (shows after rarity)
-        const PokemonImageSection = ({ spriteUrl, isShiny, pokemonName, visible }) => {
+        const PokemonImageSection = ({ spriteUrl, isShiny, trait, pokemonName, visible }) => {
             const [imageLoaded, setImageLoaded] = useState(false);
+            const hasCondition = isShiny || trait === 'light' || trait === 'dark';
+            // When a condition badge row is present the top header is taller — push sprite down more
+            const topOffset = hasCondition ? '152px' : '130px';
+            const spriteSize = hasCondition ? '132px' : '160px';
             
             return (
                 <div 
@@ -2995,8 +3131,8 @@
                     style={{ 
                         opacity: visible ? 1 : 0,
                         pointerEvents: visible ? 'auto' : 'none',
-                        top: '130px', // Push down much further to clear name (was 100px)
-                        bottom: '240px' // Pull up above badge/stats
+                        top: topOffset,
+                        bottom: '240px'
                     }}
                 >
                     <div className="relative">
@@ -3010,14 +3146,14 @@
                             </>
                         )}
                         
-                        {/* Pokémon sprite - smaller to prevent overlap */}
+                        {/* Pokémon sprite */}
                         <img 
                             src={spriteUrl}
                             alt={pokemonName}
                             className="pixelated"
                             style={{ 
-                                width: '160px',
-                                height: '160px',
+                                width: spriteSize,
+                                height: spriteSize,
                                 imageRendering: 'pixelated',
                                 filter: isShiny ? 'drop-shadow(0 0 12px rgba(255, 215, 0, 0.8))' : 'none'
                             }}
@@ -3072,19 +3208,33 @@
                         pointerEvents: visible ? 'auto' : 'none'
                     }}
                 >
-                    {/* Top section - Rarity icon, Trait label, and Name */}
+                    {/* Top section - Rarity icon, condition badges, Name */}
                     <div className="absolute top-0 left-0 right-0 flex flex-col items-center gap-0.5 pt-2">
                         <RarityIcon rarity={encounter.rarity} />
-                        {/* Trait label - 20% smaller than name */}
-                        {(encounter.trait === 'light' || encounter.trait === 'dark') && (
-                            <div className="text-xs font-semibold" style={{ 
-                                fontSize: '0.8rem',
-                                color: encounter.trait === 'light' ? '#FCD34D' : '#A78BFA'
-                            }}>
-                                {encounter.trait === 'light' ? '☀️ LIGHT' : '🌙 DARK'}
-                            </div>
-                        )}
-                        <h2 className="text-xl font-bold text-gray-900">{encounter.pokemonName.toUpperCase()}</h2>
+                        <div className="flex gap-1 items-center">
+                            {encounter.isShiny && (
+                                <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-xs font-bold"
+                                    style={{ background: '#FFD700', color: '#1a1a1a' }}>
+                                    ✨ SHINY
+                                </span>
+                            )}
+                            {encounter.trait === 'light' && (
+                                <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-xs font-bold"
+                                    style={{ background: 'rgba(147,197,253,0.9)', color: '#1e3a5f' }}>
+                                    ☀️ LIGHT
+                                </span>
+                            )}
+                            {encounter.trait === 'dark' && (
+                                <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-xs font-bold"
+                                    style={{ background: 'rgba(30,10,20,0.9)', color: '#f9a8d4' }}>
+                                    🌙 DARK
+                                </span>
+                            )}
+                        </div>
+                        <h2 className={encounter.trait === 'light' || encounter.trait === 'dark' || encounter.isShiny ? "text-base font-bold" : "text-xl font-bold"}
+                            style={{ color: encounter.trait === 'dark' ? '#F9FAFB' : '#111827' }}>
+                            {encounter.pokemonName.toUpperCase()}
+                        </h2>
                     </div>
 
                     {/* Bottom section - Rarity badge + Stats box */}
@@ -3199,7 +3349,7 @@
             return (
                 <div className="relative rounded-2xl overflow-hidden shadow-2xl" style={{ paddingTop: '100%' }}>
                     {/* Layer 1: Card background (shows with rarity) */}
-                    <EncounterCardBase trait={encounter.trait} visible={showRarity} />
+                    <EncounterCardBase trait={encounter.trait} isShiny={encounter.isShiny} visible={showRarity} />
                     
                     {/* Layer 2: Big centered rarity badge (shows first, hides when everything else shows) */}
                     {showRarity && !showEverythingElse && (
@@ -3232,6 +3382,7 @@
                     <PokemonImageSection 
                         spriteUrl={encounter.spriteUrl}
                         isShiny={encounter.isShiny}
+                        trait={encounter.trait}
                         pokemonName={encounter.pokemonName}
                         visible={showEverythingElse}
                     />
@@ -3345,6 +3496,9 @@
             
             // 👥 Friend System State
             const [showFriendSearch, setShowFriendSearch] = useState(false);
+            const [showStreakPopup, setShowStreakPopup] = useState(false);
+            const [traitPreviewEncounter, setTraitPreviewEncounter] = useState(null);
+            const [traitPreviewIndex, setTraitPreviewIndex] = useState(0);
             const [friendSearchQuery, setFriendSearchQuery] = useState('');
             const [friendSearchResults, setFriendSearchResults] = useState([]);
             const [isSearching, setIsSearching] = useState(false);
@@ -3753,6 +3907,17 @@
             };
 
             // 🔥 Handle Trainer Badge Click - Create Profile if First Time
+            // Lock body scroll when fullscreen overlays are open
+            useEffect(() => {
+                const shouldLock = currentView === 'friends' || currentView === 'friendProfile' || showStreakPopup;
+                if (shouldLock) {
+                    document.body.style.overflow = 'hidden';
+                } else {
+                    document.body.style.overflow = '';
+                }
+                return () => { document.body.style.overflow = ''; };
+            }, [currentView, showStreakPopup]);
+
             const handleTrainerBadgeClick = async () => {
                 console.log('👆 Trainer badge clicked', { 
                     hasProfile: !!firebaseProfile, 
@@ -5123,7 +5288,7 @@
                     const throwDelay = new Promise(r => setTimeout(r, 1000));
 
                     // 1. Add to winner's own PC — winner can always write their own /users/$uid node
-                    const markedPokemon = { ...targetPokemon, isTrade: true, wonInBattle: currentBattle.battleId };
+                    const markedPokemon = { ...targetPokemon, isPinkSlip: true, isTrade: false, wonInBattle: currentBattle.battleId };
                     const updatedMyPC = [markedPokemon, ...pokemonPC];
                     setPokemonPC(updatedMyPC);
                     await window.storage.set('pokemon-pc', JSON.stringify(updatedMyPC));
@@ -5391,6 +5556,7 @@
                     pokemonId: pokemonData.pokemonId,
                     pokemonName: pokemonData.name,
                     isShiny: pokemonData.isShiny,
+                    trait: pokemonData.trait || 'normal',
                     rarity: pokemonData.rarity,
                     timestamp: new Date().toISOString(),
                     spriteUrl: pokemonData.spriteUrl,
@@ -6298,6 +6464,35 @@
             };
 
             // Generate 5-encounter capture session
+            // ── DEV: Preview Light/Dark encounter cards ──
+            const launchTraitPreview = async () => {
+                const traits = ['light', 'dark'];
+                const trait = traits[traitPreviewIndex % 2];
+                setTraitPreviewIndex(i => i + 1);
+                // Use a fun recognisable pokemon for the preview
+                const previewIds = { light: 282, dark: 248 }; // Gardevoir / Tyranitar
+                const id = previewIds[trait];
+                try {
+                    const res = await fetch(`https://pokeapi.co/api/v2/pokemon/${id}`);
+                    const data = await res.json();
+                    const enc = {
+                        encounterId: `preview_${Date.now()}`,
+                        pokemonId: id,
+                        pokemonName: data.name,
+                        spriteUrl: data.sprites.front_default,
+                        rarity: trait === 'light' ? 'rare' : 'epic',
+                        isShiny: false,
+                        trait,
+                        status: 'active',
+                        attempts: 0
+                    };
+                    setTraitPreviewEncounter(enc);
+                    setCaptureSession({ workoutData: { workoutType: 'cardio', pace: '8:30', distance: '3.0', duration: '25:00' }, encounters: [enc], currentIndex: 0 });
+                    setCurrentEncounter(enc);
+                    setWorkoutMode('capture');
+                } catch(e) { console.error('Preview failed', e); }
+            };
+
             const generateCaptureSession = async (debugMode = false) => {
                 console.log('🎯 Generating 5-encounter capture session...');
                 
@@ -6756,6 +6951,12 @@
 
                     const fetchedPokemonData = await fetchPokemonData(pokemonId);
                     
+                    // Roll trait (light/dark/shiny/normal)
+                    const rolledTrait = rollTrait();
+                    const traitType = rolledTrait.type;
+                    const finalIsShiny = traitType === 'shiny' || isShiny;
+                    const finalSpriteUrl = finalIsShiny ? fetchedPokemonData?.sprites.front_shiny : fetchedPokemonData?.sprites.front_default;
+                    
                     const newRun = {
                         date: new Date().toISOString(),
                         pace: paceSeconds,
@@ -6765,7 +6966,8 @@
                         rarity: actualRarity,
                         pokemonId,
                         pokemonName: fetchedPokemonData?.name || 'unknown',
-                        isShiny,
+                        isShiny: finalIsShiny,
+                        trait: traitType,
                         newPRs: Object.keys(newPRs).filter(key => newPRs[key])
                     };
                     
@@ -6776,9 +6978,10 @@
                     await addPokemonToPC({
                         pokemonId,
                         name: fetchedPokemonData?.name || 'unknown',
-                        isShiny,
+                        isShiny: finalIsShiny,
+                        trait: traitType,
                         rarity: actualRarity,
-                        spriteUrl: isShiny ? fetchedPokemonData?.sprites.front_shiny : fetchedPokemonData?.sprites.front_default,
+                        spriteUrl: finalSpriteUrl,
                         pace: pace,
                         distance: distance,
                         duration: duration
@@ -6789,9 +6992,10 @@
                         await createActivityFeedEntry({
                             pokemonId,
                             pokemonName: fetchedPokemonData?.name || 'unknown',
-                            isShiny,
+                            isShiny: finalIsShiny,
+                            trait: traitType,
                             rarity: actualRarity,
-                            spriteUrl: isShiny ? fetchedPokemonData?.sprites.front_shiny : fetchedPokemonData?.sprites.front_default,
+                            spriteUrl: finalSpriteUrl,
                             pace: pace,
                             distance: distance,
                             duration: duration,
@@ -7166,23 +7370,23 @@
                         <div className="flex items-stretch justify-center gap-2 mb-5">
 
                             {/* LEFT COLUMN — min width so buttons fill space on iOS */}
-                            <div className="flex flex-col gap-2" style={{ minWidth: '200px' }} ref={profileMenuRef}>
+                            <div className="flex flex-col gap-2" style={{ minWidth: '240px' }} ref={profileMenuRef}>
 
                                 {/* Trainer Badge button */}
                                 <button
                                     onClick={handleTrainerBadgeClick}
                                     disabled={isCreatingProfile || isLoadingProfile}
-                                    className={`w-full flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl font-bold shadow-lg hover:shadow-xl transition-all whitespace-nowrap ${
+                                    className={`w-full flex items-center gap-2.5 px-4 py-3 rounded-xl font-bold shadow-lg hover:shadow-xl transition-all whitespace-nowrap ${
                                         hasNotifications ? 'notification-glow' : ''
                                     } ${isCreatingProfile || isLoadingProfile ? 'opacity-50 cursor-wait badge-loading' : ''} ${
                                         !isLoadingProfile && firebaseProfile ? 'badge-illuminate' : ''
-                                    } ${isLoadingProfile ? 'text-white' : 'text-gray-900'}`}
-                                    style={{ backgroundColor: isLoadingProfile ? '#6b7280' : '#ffffff' }}
+                                    } ${isLoadingProfile ? 'text-white' : firebaseProfile ? 'text-white' : 'text-gray-900'}`}
+                                    style={{ backgroundColor: isLoadingProfile ? '#6b7280' : firebaseProfile ? profileColor : '#ffffff' }}
                                 >
-                                    <span className="text-base">{isLoadingProfile ? '⏳' : '⚡'}</span>
+                                    <span className="text-lg">{isLoadingProfile ? '⏳' : '⚡'}</span>
                                     <div className="text-left">
-                                        <div className="text-[10px] opacity-75 font-medium leading-none mb-0.5 uppercase tracking-wide">Trainer</div>
-                                        <div className="text-sm font-bold leading-tight">
+                                        <div className="text-xs opacity-75 font-medium leading-none mb-0.5 uppercase tracking-wide">Trainer</div>
+                                        <div className="text-base font-bold leading-tight">
                                             {isLoadingProfile ? 'Loading...' : isCreatingProfile ? 'Creating...' : (firebaseProfile ? firebaseProfile.displayName : trainerName)}
                                         </div>
                                     </div>
@@ -7198,18 +7402,18 @@
                                 {firebaseProfile ? (
                                     <button
                                         onClick={() => setCurrentView('feed')}
-                                        className="w-full flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl font-bold text-gray-200 shadow-lg hover:shadow-xl transition-all whitespace-nowrap"
+                                        className="w-full flex items-center gap-2.5 px-4 py-3 rounded-xl font-bold text-gray-200 shadow-lg hover:shadow-xl transition-all whitespace-nowrap"
                                         style={{ backgroundColor: '#5a6070' }}
                                     >
-                                        <span className="text-base">📸</span>
+                                        <span className="text-lg">📸</span>
                                         <div className="text-left">
-                                            <div className="text-[10px] opacity-75 font-medium leading-none mb-0.5 uppercase tracking-wide">Community</div>
-                                            <div className="text-sm font-bold leading-tight">Activity Feed</div>
+                                            <div className="text-xs opacity-75 font-medium leading-none mb-0.5 uppercase tracking-wide">Community</div>
+                                            <div className="text-base font-bold leading-tight">Activity Feed</div>
                                         </div>
                                         <span className="text-gray-400 text-[10px] ml-1">›</span>
                                     </button>
                                 ) : (
-                                    <div className="w-full flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl opacity-40 whitespace-nowrap" style={{ backgroundColor: '#5a6070' }}>
+                                    <div className="w-full flex items-center gap-2.5 px-4 py-3 rounded-xl opacity-40 whitespace-nowrap" style={{ backgroundColor: '#5a6070' }}>
                                         <span className="text-base">📸</span>
                                         <div className="text-left">
                                             <div className="text-[10px] text-gray-300 font-medium leading-none mb-0.5 uppercase tracking-wide">Community</div>
@@ -7222,15 +7426,18 @@
 
                             {/* RIGHT COLUMN — 3 stat pills matching left column height */}
                             <div className="flex flex-col gap-2 flex-shrink-0">
-                                <div className="flex-1 flex items-center justify-center gap-1.5 px-4 rounded-xl font-bold text-xs text-white shadow-md bg-gradient-to-br from-red-600 to-red-700 min-w-[58px]">
+                                <div className="flex-1 flex items-center justify-center gap-1.5 px-5 rounded-xl font-bold text-xs text-white shadow-md bg-gradient-to-br from-red-600 to-red-700 min-w-[70px]">
                                     <PokeballIcon size={14} />
                                     <span>{storedPokeballs}</span>
                                 </div>
-                                <div className="flex-1 flex items-center justify-center gap-1.5 px-4 rounded-xl font-bold text-xs text-white shadow-md bg-gradient-to-br from-gray-700 to-gray-800 min-w-[58px]">
+                                <button
+                                    onClick={() => setShowStreakPopup(true)}
+                                    className="flex-1 flex items-center justify-center gap-1.5 px-5 rounded-xl font-bold text-xs text-white shadow-md bg-gradient-to-br from-orange-600 to-gray-800 min-w-[70px] transition hover:from-orange-500 cursor-pointer"
+                                >
                                     <span>🔥</span>
                                     <span>{currentStreak.days}d</span>
-                                </div>
-                                <div className="flex-1 flex items-center justify-center gap-1.5 px-4 rounded-xl font-bold text-xs text-white shadow-md bg-gradient-to-br from-gray-700 to-gray-800 min-w-[58px]">
+                                </button>
+                                <div className="flex-1 flex items-center justify-center gap-1.5 px-5 rounded-xl font-bold text-xs text-white shadow-md bg-gradient-to-br from-gray-700 to-gray-800 min-w-[70px]">
                                     <span>🏃</span>
                                     <span>{runHistory.length}</span>
                                 </div>
@@ -7316,6 +7523,13 @@
                                     {gpsError && (
                                         <div className="mt-3 px-4 py-2 bg-red-900 border border-red-700 rounded-xl text-red-300 text-xs text-center">{gpsError}</div>
                                     )}
+                                    {/* Dev trait preview — tap to cycle Light → Dark */}
+                                    <button
+                                        onClick={launchTraitPreview}
+                                        className="mt-4 w-full py-2 rounded-xl text-xs font-semibold transition opacity-40 hover:opacity-70 border border-dashed border-slate-600 text-slate-400"
+                                    >
+                                        {traitPreviewIndex % 2 === 0 ? '☀️ Preview Light Card' : '🌙 Preview Dark Card'}
+                                    </button>
                                 </div>
                             )}
 
@@ -7723,6 +7937,7 @@
                                                 setCurrentView('main');
                                                 setSelectingForSlot(null);
                                                 setDeleteMode(false);
+                                                setShowProfileMenu(true);
                                             }}
                                             className="px-4 py-2 bg-gray-800 hover:bg-gray-900 text-white rounded-lg text-sm font-medium transition"
                                         >
@@ -7803,7 +8018,7 @@
                                     <div className="flex justify-between items-center mb-6">
                                         <h2 className="text-2xl font-bold text-white">⭐ Starter Team</h2>
                                         <button
-                                            onClick={() => setCurrentView('main')}
+                                            onClick={() => { setCurrentView('main'); setShowProfileMenu(true); }}
                                             className="px-4 py-2 bg-white hover:bg-gray-100 text-gray-800 rounded-lg text-sm font-medium transition shadow-lg"
                                         >
                                             Back
@@ -7856,7 +8071,7 @@
                                     <div className="flex justify-between items-center mb-4">
                                         <h2 className="text-2xl font-bold text-white">📖 Pokédex</h2>
                                         <button
-                                            onClick={() => setCurrentView('main')}
+                                            onClick={() => { setCurrentView('main'); setShowProfileMenu(true); }}
                                             className="px-4 py-2 bg-white hover:bg-gray-100 text-gray-800 rounded-lg text-sm font-medium transition shadow-lg"
                                         >
                                             Back
@@ -7941,7 +8156,7 @@
                                     <div className="flex justify-between items-center mb-6">
                                         <h2 className="text-2xl font-bold text-white">👥 Friends</h2>
                                         <button
-                                            onClick={() => setCurrentView('main')}
+                                            onClick={() => { setCurrentView('main'); setShowProfileMenu(true); }}
                                             className="px-4 py-2 bg-white hover:bg-gray-100 text-gray-800 rounded-lg text-sm font-medium transition shadow-lg"
                                         >
                                             Back
@@ -7998,8 +8213,8 @@
                                                                 </div>
                                                             </div>
                                                             {iWon && !battle.pinkSlipClaimedPokemonId && (
-                                                                <div className="text-xs bg-pink-600 text-white px-2 py-1 rounded-lg font-bold pink-slip-glow">
-                                                                    🎀 Claim
+                                                                <div className="bg-pink-600 text-white px-2 py-1 rounded-lg font-bold pink-slip-glow flex items-center gap-1 text-xs">
+                                                                    <PinkSlipPokeballIcon size={14} /> Claim
                                                                 </div>
                                                             )}
                                                         </button>
@@ -8907,12 +9122,12 @@
                                             onClick={() => setBattleView('pinkSlip')}
                                             className="w-full py-4 bg-gradient-to-r from-pink-600 to-rose-500 hover:from-pink-700 hover:to-rose-600 text-white rounded-2xl font-bold text-lg transition shadow-2xl pink-slip-glow mb-5"
                                         >
-                                            🎀 Use Pink Slip Ball
+                                            Use Pink Slip Ball
                                         </button>
                                     )}
                                     {currentBattle.pinkSlipClaimedPokemonId && (
                                         <div className="bg-pink-900 bg-opacity-40 border border-pink-600 rounded-xl p-3 text-center text-pink-300 text-sm font-bold mb-5">
-                                            🎀 Pink Slip already claimed
+                                            Pink Slip already claimed
                                         </div>
                                     )}
 
@@ -9044,9 +9259,112 @@
                         )}
 
                         {/* Profile Modal */}
+                        {/* ── Streak Popup ── */}
+                        {showStreakPopup && (
+                            <div
+                                className="fixed inset-0 z-[90] flex items-center justify-center p-5"
+                                onClick={() => setShowStreakPopup(false)}
+                            >
+                                <div className="absolute inset-0 bg-black bg-opacity-60" />
+                                <div
+                                    className="relative bg-gradient-to-br from-gray-900 to-slate-900 rounded-2xl shadow-2xl border border-orange-500 border-opacity-50 w-full max-w-sm max-h-[80vh] overflow-y-auto"
+                                    onClick={e => e.stopPropagation()}
+                                >
+                                    {/* Header */}
+                                    <div className="flex items-center justify-between p-5 pb-3 border-b border-slate-700">
+                                        <div>
+                                            <h3 className="text-white font-black text-lg">🔥 Streak Rewards</h3>
+                                            <p className="text-orange-300 text-xs mt-0.5">Day {currentStreak.days} streak</p>
+                                        </div>
+                                        <button
+                                            onClick={() => setShowStreakPopup(false)}
+                                            className="w-8 h-8 rounded-full bg-slate-700 hover:bg-slate-600 flex items-center justify-center text-gray-400 hover:text-white transition text-sm"
+                                        >✕</button>
+                                    </div>
+
+                                    <div className="p-5 space-y-4">
+                                        {/* Gen unlock */}
+                                        <div className="bg-slate-800 rounded-xl p-4">
+                                            <div className="text-xs text-gray-400 uppercase tracking-wide mb-2 font-semibold">Pokémon Generations Unlocked</div>
+                                            {[
+                                                { days: 0, gen: 'Gen 1–2', region: 'Kanto + Johto', unlocked: currentStreak.days >= 0 },
+                                                { days: 2, gen: 'Gen 3', region: '+ Hoenn', unlocked: currentStreak.days >= 2 },
+                                                { days: 3, gen: 'Gen 4–5', region: '+ Sinnoh + Unova', unlocked: currentStreak.days >= 3 },
+                                                { days: 4, gen: 'Gen 6–7', region: '+ Kalos + Alola', unlocked: currentStreak.days >= 4 },
+                                                { days: 5, gen: 'Gen 8+', region: 'All generations', unlocked: currentStreak.days >= 5 },
+                                            ].map(({ days, gen, region, unlocked }) => (
+                                                <div key={days} className={'flex items-center justify-between py-1.5 ' + (unlocked ? '' : 'opacity-40')}>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-base">{unlocked ? '✅' : '🔒'}</span>
+                                                        <div>
+                                                            <span className={'text-sm font-bold ' + (unlocked ? 'text-white' : 'text-gray-500')}>{gen}</span>
+                                                            <span className="text-gray-400 text-xs ml-1.5">{region}</span>
+                                                        </div>
+                                                    </div>
+                                                    {!unlocked && (
+                                                        <span className="text-orange-400 text-xs font-semibold">Day {days}</span>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        {/* Rarity chances */}
+                                        <div className="bg-slate-800 rounded-xl p-4">
+                                            <div className="text-xs text-gray-400 uppercase tracking-wide mb-3 font-semibold">Current Encounter Odds</div>
+                                            {(() => {
+                                                const { chances } = calculateRarityChances(50, currentStreak, {});
+                                                const colors = { common: '#9ca3af', uncommon: '#4ade80', rare: '#60a5fa', epic: '#c084fc', legendary: '#fb923c' };
+                                                const emojis = { common: '⚪', uncommon: '🟢', rare: '🔵', epic: '🟣', legendary: '🟠' };
+                                                return Object.entries(chances).map(([tier, data]) => (
+                                                    <div key={tier} className="flex items-center justify-between py-1.5 border-b border-slate-700 last:border-0">
+                                                        <div className="flex items-center gap-2">
+                                                            <span>{emojis[tier]}</span>
+                                                            <span className="text-sm font-semibold" style={{ color: colors[tier] }}>{data.name}</span>
+                                                        </div>
+                                                        <span className="text-white text-sm font-bold">{(data.chance * 100).toFixed(1)}%</span>
+                                                    </div>
+                                                ));
+                                            })()}
+                                        </div>
+
+                                        {/* Shiny chance */}
+                                        <div className="bg-slate-800 rounded-xl p-4">
+                                            <div className="text-xs text-gray-400 uppercase tracking-wide mb-2 font-semibold">✨ Shiny Chance</div>
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-gray-300 text-sm">Per encounter</span>
+                                                <span className="text-yellow-300 font-black text-sm">
+                                                    {(Math.min(0.1, (1/4096) + currentStreak.days * (1/500)) * 100).toFixed(3)}%
+                                                </span>
+                                            </div>
+                                            <div className="text-gray-500 text-xs mt-1">Base 1/4096 + {currentStreak.days}/500 streak bonus</div>
+                                        </div>
+
+                                        {/* Next unlock */}
+                                        {currentStreak.days < 5 && (
+                                            <div className="bg-orange-900 bg-opacity-40 border border-orange-700 rounded-xl p-4 text-center">
+                                                <div className="text-orange-300 text-xs font-semibold uppercase tracking-wide mb-1">Next Unlock</div>
+                                                <div className="text-white font-bold text-sm">
+                                                    {currentStreak.days < 2 ? `${2 - currentStreak.days} day${2 - currentStreak.days !== 1 ? 's' : ''} until Gen 3 (Hoenn)` :
+                                                     currentStreak.days < 3 ? '1 day until Gen 4–5 (Sinnoh + Unova)' :
+                                                     currentStreak.days < 4 ? '1 day until Gen 6–7 (Kalos + Alola)' :
+                                                     '1 day until ALL generations!'}
+                                                </div>
+                                            </div>
+                                        )}
+                                        {currentStreak.days >= 5 && (
+                                            <div className="bg-green-900 bg-opacity-40 border border-green-700 rounded-xl p-4 text-center">
+                                                <div className="text-green-300 font-bold text-sm">🏆 All generations unlocked!</div>
+                                                <div className="text-gray-400 text-xs mt-1">Keep your streak for better rarity odds</div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
                         {showProfileMenu && (
-                            <div className="fixed inset-0 bg-black bg-opacity-60 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={(e) => { if (e.target === e.currentTarget) setShowProfileMenu(false); }}>
-                                <div className="bg-gray-900 rounded-t-3xl sm:rounded-3xl shadow-2xl w-full sm:max-w-sm border border-gray-700 flex flex-col max-h-[92vh]" onClick={(e) => e.stopPropagation()}>
+                            <div className="fixed inset-0 bg-black bg-opacity-60 z-[60] flex items-end justify-center p-0 sm:p-4" style={{ paddingBottom: '24vh' }} onClick={(e) => { if (e.target === e.currentTarget) setShowProfileMenu(false); }}>
+                                <div className="bg-gray-900 rounded-3xl shadow-2xl w-full max-w-sm border border-gray-700 flex flex-col mx-4" onClick={(e) => e.stopPropagation()}>
 
                                     {/* Profile header */}
                                     <div className="p-5 border-b border-gray-700">
@@ -9119,7 +9437,7 @@
                                     </div>
 
                                     {/* Main nav tabs */}
-                                    <div className="flex-1 overflow-y-auto">
+                                    <div className="flex-1">
                                         {!showWipeConfirmation ? (
                                             <div className="p-3 space-y-2">
                                                 {/* Friends */}
