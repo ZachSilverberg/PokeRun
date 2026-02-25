@@ -3523,6 +3523,8 @@
             const [viewingFriendId, setViewingFriendId] = useState(null);
             const [viewingFriendStarters, setViewingFriendStarters] = useState([]);
             const [viewingFriendPC, setViewingFriendPC] = useState([]);
+            // PC sort state: { key: 'rarity'|'abc'|'date', dir: 1|-1 }
+            const [pcSort, setPcSort] = useState({ key: 'date', dir: -1 }); // default: newest first
             const [friendProfileTab, setFriendProfileTab] = useState('starters'); // 'starters' or 'pc'
             
             // 🤝 Trading System State
@@ -5188,7 +5190,7 @@
 
                     await database.ref(`battles/${currentBattle.battleId}`).update({
                         status: finalStatus,
-                        result: resolved,
+                        result: { ...resolved, resolvedAt: Date.now() },
                     });
 
                     const finalBattle = { ...fullBattle, result: resolved, status: finalStatus };
@@ -5501,8 +5503,9 @@
                         if (b.accepterId === myUid && b.status === 'PENDING_ACCEPT' && Date.now() < b.expiresAt) {
                             pending[b.battleId] = b;
                         }
-                        // Notify initiator of resolved battles they haven't viewed
-                        if (b.initiatorId === myUid && (b.status === 'LOOT_PENDING' || b.status === 'RESOLVED') && b.result) {
+                        // Notify both initiator AND accepter of resolved battles
+                        const iAmInvolved = b.initiatorId === myUid || b.accepterId === myUid;
+                        if (iAmInvolved && (b.status === 'LOOT_PENDING' || b.status === 'RESOLVED' || b.status === 'COMPLETED') && b.result) {
                             resolvedForMe.push(b);
                         }
                     });
@@ -5512,6 +5515,43 @@
                 });
                 return () => battlesRef.off('value', listener);
             }, [firebaseProfile]);
+
+            // PC sort helper
+            const RARITY_ORDER = { legendary: 0, epic: 1, rare: 2, uncommon: 3, common: 4 };
+            const CONDITION_ORDER = (p) => {
+                if (p.isShiny) return 0;
+                if (p.trait === 'light') return 1;
+                if (p.trait === 'dark') return 2;
+                return 3;
+            };
+            const sortPC = (list, sort) => {
+                if (!list || !list.length) return list;
+                const arr = [...list];
+                const { key, dir } = sort;
+                arr.sort((a, b) => {
+                    if (key === 'rarity') {
+                        const condA = CONDITION_ORDER(a), condB = CONDITION_ORDER(b);
+                        if (condA !== condB) return (condA - condB) * dir;
+                        const rarA = RARITY_ORDER[a.rarity] ?? 5, rarB = RARITY_ORDER[b.rarity] ?? 5;
+                        return (rarA - rarB) * dir;
+                    }
+                    if (key === 'abc') {
+                        const na = (a.pokemonName || '').toLowerCase(), nb = (b.pokemonName || '').toLowerCase();
+                        return na < nb ? -dir : na > nb ? dir : 0;
+                    }
+                    // date (default)
+                    const ta = a.timestamp ? new Date(a.timestamp).getTime() : (a.id || 0);
+                    const tb = b.timestamp ? new Date(b.timestamp).getTime() : (b.id || 0);
+                    return (tb - ta) * dir;
+                });
+                return arr;
+            };
+            const handlePCSort = (key) => {
+                setPcSort(prev => {
+                    if (prev.key === key) return { key, dir: prev.dir * -1 }; // toggle
+                    return { key, dir: key === 'abc' ? 1 : -1 }; // fresh direction
+                });
+            };
 
             const MOVE_LABELS = { QUICK: '⚡ Quick', CHARGE: '🔥 Charge', COUNTER: '🛡️ Counter' };
             const MOVE_DESC = { QUICK: 'Beats Charge', CHARGE: 'Beats Counter', COUNTER: 'Beats Quick' };
@@ -8033,6 +8073,7 @@
                                                 setSelectingForSlot(null);
                                                 setDeleteMode(false);
                                                 setShowProfileMenu(true);
+                                                setPcSort({ key: 'date', dir: -1 });
                                             }}
                                             className="px-4 py-2 bg-gray-800 hover:bg-gray-900 text-white rounded-lg text-sm font-medium transition"
                                         >
@@ -8056,8 +8097,23 @@
                                                 </div>
                                             </div>
                                         )}
+                                        {/* Sort controls */}
+                                        <div className="flex gap-1.5 mb-3">
+                                            {[['rarity','★ Rarity'],['abc','A-Z'],['date','📅 Date']].map(([k,label]) => (
+                                                <button key={k}
+                                                    onClick={() => handlePCSort(k)}
+                                                    className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition border ${
+                                                        pcSort.key === k
+                                                            ? 'bg-indigo-600 text-white border-indigo-500'
+                                                            : 'bg-slate-700 text-gray-300 border-slate-600 hover:bg-slate-600'
+                                                    }`}
+                                                >
+                                                    {label}{pcSort.key === k ? (pcSort.dir === 1 ? ' ↑' : ' ↓') : ''}
+                                                </button>
+                                            ))}
+                                        </div>
                                         <div className="grid grid-cols-2 gap-3 max-h-96 overflow-y-auto">
-                                            {(Array.isArray(pokemonPC) ? pokemonPC : []).map((pokemon) => (
+                                            {sortPC(Array.isArray(pokemonPC) ? pokemonPC : [], pcSort).map((pokemon) => (
                                                 <div key={pokemon.id} className="relative">
                                                     <PokemonCard
                                                         pokemon={pokemon}
@@ -8276,7 +8332,7 @@
                                         const todayStart = new Date(); todayStart.setHours(0,0,0,0);
                                         const todayMs = todayStart.getTime();
                                         const todayBattles = resolvedBattlesForMe.filter(b => {
-                                            const ts = b.pinkSlipCompletedAt || b.result?.resolvedAt || b.createdAt || 0;
+                                            const ts = b.result?.resolvedAt || b.pinkSlipCompletedAt || b.createdAt || 0;
                                             return ts >= todayMs;
                                         });
                                         // Overall record across all resolved battles
@@ -8819,7 +8875,7 @@
                                                 <div className="mb-4 space-y-2">
                                                     <div className="flex gap-2">
                                                         <button
-                                                            onClick={() => setTradeView('their')}
+                                                            onClick={() => { setTradeView('their'); setPcSort({ key: 'date', dir: -1 }); }}
                                                             className={`flex-1 py-2 rounded-lg font-bold ${
                                                                 tradeView === 'their'
                                                                     ? 'bg-indigo-600 text-white'
@@ -8829,7 +8885,7 @@
                                                             {friendProfiles[viewingFriendId]?.displayName || 'Their'}'s PC ({selectedTheirPokemon.length}/3)
                                                         </button>
                                                         <button
-                                                            onClick={() => setTradeView('my')}
+                                                            onClick={() => { setTradeView('my'); setPcSort({ key: 'date', dir: -1 }); }}
                                                             className={`flex-1 py-2 rounded-lg font-bold ${
                                                                 tradeView === 'my'
                                                                     ? 'bg-indigo-600 text-white'
@@ -8850,6 +8906,21 @@
                                             )}
 
                                             {/* Pokemon Grid */}
+                                        {/* Sort controls */}
+                                        <div className="flex gap-1.5 mb-3">
+                                            {[['rarity','★ Rarity'],['abc','A-Z'],['date','📅 Date']].map(([k,label]) => (
+                                                <button key={k}
+                                                    onClick={() => handlePCSort(k)}
+                                                    className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition border ${
+                                                        pcSort.key === k
+                                                            ? 'bg-indigo-600 text-white border-indigo-500'
+                                                            : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'
+                                                    }`}
+                                                >
+                                                    {label}{pcSort.key === k ? (pcSort.dir === 1 ? ' ↑' : ' ↓') : ''}
+                                                </button>
+                                            ))}
+                                        </div>
                                             <div className="grid grid-cols-2 gap-3 max-h-96 overflow-y-auto">
                                                 {tradeView === 'their' ? (
                                                     viewingFriendPC.length === 0 ? (
@@ -8861,7 +8932,7 @@
                                                             </div>
                                                         </div>
                                                     ) : (
-                                                        viewingFriendPC.map((pokemon) => {
+                                                        sortPC(viewingFriendPC, pcSort).map((pokemon) => {
                                                             const isSelected = tradingWithFriend && selectedTheirPokemon.find(p => p.id === pokemon.id);
                                                             return (
                                                                 <div
@@ -8893,7 +8964,7 @@
                                                             <div>Your PC is empty</div>
                                                         </div>
                                                     ) : (
-                                                        pokemonPC.map((pokemon) => {
+                                                        sortPC(pokemonPC, pcSort).map((pokemon) => {
                                                             const isSelected = selectedMyPokemon.find(p => p.id === pokemon.id);
                                                             return (
                                                                 <div
