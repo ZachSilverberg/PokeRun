@@ -3437,6 +3437,9 @@
             const [workoutTab, setWorkoutTab] = useState('cardio');
             const [hasExchanged, setHasExchanged] = useState(false);
             const [workoutMode, setWorkoutMode] = useState(null); // null | 'enter' | 'live'
+            const [showWorkout, setShowWorkout] = useState(false); // controls Get Pokeballs expanded panel
+            const [lastDailyPokeballs, setLastDailyPokeballs] = useState(0); // timestamp of last daily claim
+            const DAILY_POKEBALL_COOLDOWN = 12 * 60 * 60 * 1000; // 12 hours
 
             // 🏃 Live Activity Tracker State
             const [isTracking, setIsTracking] = useState(false);
@@ -3542,6 +3545,7 @@
             // ⚔️ BATTLE SYSTEM STATE
             const [pendingBattles, setPendingBattles] = useState({}); // battleId -> battleData
             const [battleBadgeCount, setBattleBadgeCount] = useState(0);
+            const viewedBattleIds = React.useRef(new Set());
             const [currentBattle, setCurrentBattle] = useState(null);
             const [battleSetupSelection, setBattleSetupSelection] = useState(
                 { orderedPokemonIds: [null,null,null,null,null,null], slotMoves: [null,null,null,null,null,null] }
@@ -3883,9 +3887,22 @@
                                 if (pcSnap.exists()) {
                                     const pc = pcSnap.val();
                                     if (Array.isArray(pc)) {
-                                        setPokemonPC(pc);
-                                        await window.storage.set('pokemon-pc', JSON.stringify(pc));
-                                        console.log(`✅ Loaded ${pc.length} Pokémon from Firebase PC`);
+                                        // Deduplicate by id — fixes any corruption from prior sync bug
+                                        const seen = new Set();
+                                        const dedupedPC = pc.filter(p => {
+                                            if (!p || !p.id) return false;
+                                            if (seen.has(p.id)) return false;
+                                            seen.add(p.id);
+                                            return true;
+                                        });
+                                        setPokemonPC(dedupedPC);
+                                        await window.storage.set('pokemon-pc', JSON.stringify(dedupedPC));
+                                        // Write deduped version back to Firebase if we removed any
+                                        if (dedupedPC.length !== pc.length) {
+                                            await database.ref(`users/${user.uid}/pc`).set(dedupedPC);
+                                            console.log(`🧹 Deduped PC: ${pc.length} → ${dedupedPC.length}`);
+                                        }
+                                        console.log(`✅ Loaded ${dedupedPC.length} Pokémon from Firebase PC`);
                                     }
                                 }
 
@@ -4666,7 +4683,15 @@
                     try {
                         const pcSnapshot = await database.ref(`users/${friendId}/pc`).once('value');
                         const raw = pcSnapshot.val();
-                        if (Array.isArray(raw)) pc = raw;
+                        if (Array.isArray(raw)) {
+                            const seen = new Set();
+                            pc = raw.filter(p => {
+                                if (!p || !p.id) return false;
+                                if (seen.has(p.id)) return false;
+                                seen.add(p.id);
+                                return true;
+                            });
+                        }
                     } catch (e) {
                         console.warn('⚠️ Could not load friend PC (check Firebase rules):', e.message);
                     }
@@ -4941,7 +4966,7 @@
                     syncPCToFirebase();
                     syncStartersToFirebase();
                 }
-            }, [firebaseProfile, pokemonPC, starterTeam]);
+            }, [firebaseProfile]); // intentionally omit pokemonPC/starterTeam — individual mutations sync themselves
 
             // =========================
             // ⚔️ BATTLE FOR KEEPS SYSTEM
@@ -5295,6 +5320,11 @@
                 setBattleSpectateRunning(false);
                 setBattleResults(result);
                 setBattleView('results');
+                // Auto-mark viewed since they just watched the battle live
+                if (currentBattle?.battleId) {
+                    viewedBattleIds.current.add(currentBattle.battleId);
+                    window.storage.set('viewed-battle-ids', JSON.stringify([...viewedBattleIds.current])).catch(() => {});
+                }
             };
 
             // Open battle results from notification tap
@@ -5309,6 +5339,10 @@
                     setCurrentBattle(battle);
                     setBattleResults(battle.result);
                     setBattleView('results');
+                    // Mark as viewed
+                    viewedBattleIds.current.add(battleId);
+                    window.storage.set('viewed-battle-ids', JSON.stringify([...viewedBattleIds.current])).catch(() => {});
+                    setBattleBadgeCount(prev => Math.max(0, prev - 1));
                 } catch (err) {
                     console.error('❌ Error loading battle results:', err);
                 }
@@ -5429,20 +5463,32 @@
                 if (!firebaseManager.user) return;
                 try {
                     const myUid = firebaseManager.user.uid;
-                    // Find battles where I was the loser and pendingRemoval hasn't been processed
                     const snap = await database.ref('battles')
                         .orderByChild('result/loserUserId').equalTo(myUid).once('value');
                     const battles = snap.val() || {};
                     for (const battle of Object.values(battles)) {
                         if (battle.pendingRemoval && !battle.pendingRemoval.processedByLoser && battle.pinkSlipClaimedPokemonId) {
-                            // Remove the claimed pokemon from MY OWN starters
+                            const pokemonId = battle.pinkSlipClaimedPokemonId;
+
+                            // Remove from MY OWN PC (loser has write access to their own node)
+                            const myPCSnap = await database.ref(`users/${myUid}/pc`).once('value');
+                            const myPC = myPCSnap.val() || [];
+                            const updatedPC = myPC.filter(p => p && p.id !== pokemonId);
+                            await database.ref(`users/${myUid}/pc`).set(updatedPC);
+                            // Sync local state
+                            setPokemonPC(updatedPC);
+                            await window.storage.set('pokemon-pc', JSON.stringify(updatedPC));
+
+                            // Remove from MY OWN starters
                             const myStartersSnap = await database.ref(`users/${myUid}/starters`).once('value');
                             const myStarters = myStartersSnap.val() || [];
-                            const updated = myStarters.map(s => (s && s.id === battle.pinkSlipClaimedPokemonId) ? null : s);
-                            await database.ref(`users/${myUid}/starters`).set(updated);
-                            // Mark as processed so we don't repeat
+                            const updatedStarters = myStarters.map(s => (s && s.id === pokemonId) ? null : s);
+                            await database.ref(`users/${myUid}/starters`).set(updatedStarters);
+                            setStarterTeam(updatedStarters);
+
+                            // Mark processed
                             await database.ref(`battles/${battle.battleId}/pendingRemoval/processedByLoser`).set(true);
-                            console.log('✅ Processed battle loss — removed', battle.pinkSlipClaimedPokemonId, 'from starters');
+                            console.log('✅ Pink slip processed — removed', pokemonId, 'from PC and starters');
                         }
                     }
                 } catch (err) {
@@ -5490,6 +5536,7 @@
 
             // Listen for incoming battles in real-time
             const [resolvedBattlesForMe, setResolvedBattlesForMe] = useState([]);
+            const processedPinkSlips = React.useRef(new Set());
             useEffect(() => {
                 if (!firebaseProfile || !firebaseManager.user) return;
                 const myUid = firebaseManager.user.uid;
@@ -5508,10 +5555,45 @@
                         if (iAmInvolved && (b.status === 'LOOT_PENDING' || b.status === 'RESOLVED' || b.status === 'COMPLETED') && b.result) {
                             resolvedForMe.push(b);
                         }
+
+                        // ── Real-time pink slip removal for the LOSER ──
+                        // Fires the moment the winner claims — no app restart needed
+                        const iAmLoser = b.result && b.result.loserUserId === myUid;
+                        const needsRemoval = b.pendingRemoval &&
+                            !b.pendingRemoval.processedByLoser &&
+                            b.pinkSlipClaimedPokemonId;
+                        const alreadyHandled = processedPinkSlips.current.has(b.battleId);
+
+                        if (iAmLoser && needsRemoval && !alreadyHandled) {
+                            processedPinkSlips.current.add(b.battleId);
+                            const pokemonId = b.pinkSlipClaimedPokemonId;
+
+                            // Remove from local PC state immediately
+                            setPokemonPC(prev => {
+                                const updated = prev.filter(p => p && p.id !== pokemonId);
+                                // Persist to storage + Firebase in background
+                                window.storage.set('pokemon-pc', JSON.stringify(updated)).catch(() => {});
+                                database.ref(`users/${myUid}/pc`).set(updated).catch(() => {});
+                                return updated;
+                            });
+
+                            // Remove from local starters state immediately
+                            setStarterTeam(prev => {
+                                const updated = prev.map(s => (s && s.id === pokemonId) ? null : s);
+                                database.ref(`users/${myUid}/starters`).set(updated).catch(() => {});
+                                return updated;
+                            });
+
+                            // Mark processed on Firebase so it doesn't repeat across sessions
+                            database.ref(`battles/${b.battleId}/pendingRemoval/processedByLoser`)
+                                .set(true).catch(() => {});
+                            console.log('🎀 Pink slip — removed', pokemonId, 'from your PC in real-time');
+                        }
                     });
                     setPendingBattles(pending);
                     setResolvedBattlesForMe(resolvedForMe);
-                    setBattleBadgeCount(Object.keys(pending).length + resolvedForMe.length);
+                    const unviewedBattles = resolvedForMe.filter(b => !viewedBattleIds.current.has(b.battleId));
+                    setBattleBadgeCount(Object.keys(pending).length + unviewedBattles.length);
                 });
                 return () => battlesRef.off('value', listener);
             }, [firebaseProfile]);
@@ -5526,7 +5608,14 @@
             };
             const sortPC = (list, sort) => {
                 if (!list || !list.length) return list;
-                const arr = [...list];
+                // Deduplicate by id first — guards against Firebase sync duplicates
+                const seen = new Set();
+                const arr = list.filter(p => {
+                    if (!p || !p.id) return false;
+                    if (seen.has(p.id)) return false;
+                    seen.add(p.id);
+                    return true;
+                });
                 const { key, dir } = sort;
                 arr.sort((a, b) => {
                     if (key === 'rarity') {
@@ -6642,13 +6731,17 @@
                       }
                     : lastWorkoutIntensity;
                 
-                if (!workoutIntensity) {
-                    alert('No workout intensity data. Please do a Pokéball Exchange first.');
-                    return;
-                }
+                // If no workout data, use existing calculateRarityChances at intensity=0
+                // so only the streak multipliers apply (no workout intensity boost)
+                const streakBaseChances = calculateRarityChances(0, currentStreak, {}).chances;
+
+                const effectiveIntensity = workoutIntensity || {
+                    workoutType: 'free',
+                    chances: streakBaseChances
+                };
                 
                 const encounters = [];
-                const { chances } = workoutIntensity;
+                const { chances } = effectiveIntensity;
                 
                 // Generate 5 Pokémon using the same intensity
                 for (let i = 0; i < 5; i++) {
@@ -6685,18 +6778,20 @@
                     encounters,
                     currentIndex: 0,
                     createdAt: Date.now(),
-                    workoutData: workoutIntensity.workoutType === 'lift' 
+                    workoutData: effectiveIntensity.workoutType === 'lift'
                         ? {
                             workoutType: 'lift',
-                            liftDuration: workoutIntensity.liftDuration,
-                            caloriesBurned: workoutIntensity.caloriesBurned,
-                            avgHR: workoutIntensity.avgHR
+                            liftDuration: effectiveIntensity.liftDuration,
+                            caloriesBurned: effectiveIntensity.caloriesBurned,
+                            avgHR: effectiveIntensity.avgHR
                           }
+                        : effectiveIntensity.workoutType === 'free'
+                        ? { workoutType: 'free' }
                         : {
                             workoutType: 'cardio',
-                            pace: workoutIntensity.pace,
-                            distance: workoutIntensity.distance,
-                            duration: workoutIntensity.duration
+                            pace: effectiveIntensity.pace,
+                            distance: effectiveIntensity.distance,
+                            duration: effectiveIntensity.duration
                           }
                 };
                 
@@ -6729,7 +6824,22 @@
             // Load existing session from storage
             const loadCaptureSession = async () => {
                 try {
-                    const result = await window.storage.get('capture-session');
+                    // Load viewed battle IDs
+                try {
+                    const viewedResult = await window.storage.get('viewed-battle-ids');
+                    if (viewedResult && viewedResult.value) {
+                        const ids = JSON.parse(viewedResult.value);
+                        if (Array.isArray(ids)) ids.forEach(id => viewedBattleIds.current.add(id));
+                    }
+                } catch(e) {}
+
+                // Load daily pokeball timestamp
+                try {
+                    const dailyResult = await window.storage.get('last-daily-pokeballs');
+                    if (dailyResult && dailyResult.value) setLastDailyPokeballs(parseInt(dailyResult.value) || 0);
+                } catch(e) {}
+
+                const result = await window.storage.get('capture-session');
                     if (result && result.value && result.value !== 'null') {
                         const session = JSON.parse(result.value);
                         setCaptureSession(session);
@@ -7525,9 +7635,9 @@
                                             {isLoadingProfile ? 'Loading...' : isCreatingProfile ? 'Creating...' : (firebaseProfile ? firebaseProfile.displayName : trainerName)}
                                         </div>
                                     </div>
-                                    {(Object.keys(pendingTrades).length + battleBadgeCount) > 0 && (
+                                    {(Object.keys(pendingTrades).length + battleBadgeCount + incomingRequests.length) > 0 && (
                                         <span className="w-4 h-4 bg-red-500 text-white rounded-full text-[10px] flex items-center justify-center font-bold ml-1">
-                                            {Object.keys(pendingTrades).length + battleBadgeCount}
+                                            {Object.keys(pendingTrades).length + battleBadgeCount + incomingRequests.length}
                                         </span>
                                     )}
                                     <span className="text-white opacity-40 text-[10px] ml-1">▼</span>
@@ -7620,53 +7730,107 @@
 
                         {currentView === 'main' && (
                         <>
-                        {/* ── Your Workout Section ── */}
-                        <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl shadow-2xl mb-6 border border-slate-700 overflow-hidden">
+                        {/* ── Go Train! Panel ── */}
+                        <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl shadow-2xl mb-4 border border-slate-700 overflow-hidden">
                             <div ref={profileMenuRef} className="hidden" />
+                            <div className="p-6">
+                                <h2 className="text-xl font-bold text-white text-center mb-5">Go Train!</h2>
+                                <div className="flex flex-col gap-3">
 
-                            {/* ── MODE: Chooser (default) ── */}
-                            {workoutMode === null && (
-                                <div className="p-6">
-                                    <h2 className="text-xl font-bold text-white text-center mb-5">Your Workout</h2>
-                                    <div className="flex flex-col gap-3">
-                                        {/* Start Workout — live GPS tracker */}
-                                        <button
-                                            onClick={startLiveWorkout}
-                                            disabled={isTracking}
-                                            className="w-full flex items-center gap-4 px-5 py-4 bg-gradient-to-r from-green-600 to-emerald-700 hover:from-green-500 hover:to-emerald-600 rounded-2xl text-white font-bold shadow-lg hover:shadow-green-500/30 transition-all"
-                                        >
-                                            <span className="text-3xl">🏃</span>
-                                            <div className="text-left">
-                                                <div className="text-base font-bold">Start Workout</div>
-                                                <div className="text-xs text-green-200 font-normal">GPS live tracking • auto-generates Pokéballs</div>
-                                            </div>
-                                            <span className="ml-auto text-green-300 text-lg">›</span>
-                                        </button>
-                                        {/* Enter Workout — manual input */}
-                                        <button
-                                            onClick={() => setWorkoutMode('enter')}
-                                            className="w-full flex items-center gap-4 px-5 py-4 bg-gradient-to-r from-slate-700 to-slate-600 hover:from-slate-600 hover:to-slate-500 rounded-2xl text-white font-bold shadow-lg transition-all border border-slate-500"
-                                        >
-                                            <span className="text-3xl">📝</span>
-                                            <div className="text-left">
-                                                <div className="text-base font-bold">Enter Workout</div>
-                                                <div className="text-xs text-gray-400 font-normal">Manually log distance, pace &amp; duration</div>
-                                            </div>
-                                            <span className="ml-auto text-gray-400 text-lg">›</span>
-                                        </button>
-                                    </div>
-                                    {gpsError && (
-                                        <div className="mt-3 px-4 py-2 bg-red-900 border border-red-700 rounded-xl text-red-300 text-xs text-center">{gpsError}</div>
-                                    )}
-                                    {/* Dev trait preview — tap to cycle Light → Dark */}
+                                    {/* Get Pokéballs — toggles workout panel */}
                                     <button
-                                        onClick={launchTraitPreview}
-                                        className="mt-4 w-full py-2 rounded-xl text-xs font-semibold transition opacity-40 hover:opacity-70 border border-dashed border-slate-600 text-slate-400"
+                                        onClick={() => {
+                                            setShowWorkout(v => !v);
+                                            if (!showWorkout) setWorkoutMode(null);
+                                        }}
+                                        className={`w-full flex items-center gap-4 px-5 py-4 rounded-2xl text-white font-bold shadow-lg transition-all ${
+                                            showWorkout
+                                                ? 'bg-gradient-to-r from-emerald-700 to-green-800 border-2 border-green-500'
+                                                : 'bg-gradient-to-r from-green-600 to-emerald-700 hover:from-green-500 hover:to-emerald-600 hover:shadow-green-500/30'
+                                        }`}
                                     >
-                                        {traitPreviewIndex % 2 === 0 ? '☀️ Preview Light Card' : '🌙 Preview Dark Card'}
+                                        <PokeballIcon size={32} className="flex-shrink-0" />
+                                        <div className="text-left">
+                                            <div className="text-base font-bold">Get Pokéballs</div>
+                                            <div className="text-xs text-green-200 font-normal">Log a workout to earn Pokéballs</div>
+                                        </div>
+                                        <span className="ml-auto text-green-300 text-lg">{showWorkout ? '∨' : '›'}</span>
                                     </button>
-                                </div>
-                            )}
+
+                                    {/* Nested Your Workout — shown when Get Pokéballs is expanded */}
+                                    {showWorkout && (
+                                        <div className="rounded-xl border border-slate-600 overflow-hidden">
+
+                                            {/* Chooser */}
+                                            {workoutMode === null && (
+                                                <div className="p-4 bg-slate-900">
+                                                    <div className="flex flex-col gap-3">
+                                                        <button
+                                                            onClick={startLiveWorkout}
+                                                            disabled={isTracking}
+                                                            className="w-full flex items-center gap-4 px-5 py-4 bg-gradient-to-r from-green-600 to-emerald-700 hover:from-green-500 hover:to-emerald-600 rounded-2xl text-white font-bold shadow-lg hover:shadow-green-500/30 transition-all"
+                                                        >
+                                                            <span className="text-3xl">🏃</span>
+                                                            <div className="text-left">
+                                                                <div className="text-base font-bold">Start Workout</div>
+                                                                <div className="text-xs text-green-200 font-normal">GPS live tracking • auto-generates Pokéballs</div>
+                                                            </div>
+                                                            <span className="ml-auto text-green-300 text-lg">›</span>
+                                                        </button>
+                                                        <button
+                                                            onClick={() => setWorkoutMode('enter')}
+                                                            className="w-full flex items-center gap-4 px-5 py-4 bg-gradient-to-r from-slate-700 to-slate-600 hover:from-slate-600 hover:to-slate-500 rounded-2xl text-white font-bold shadow-lg transition-all border border-slate-500"
+                                                        >
+                                                            <span className="text-3xl">📝</span>
+                                                            <div className="text-left">
+                                                                <div className="text-base font-bold">Enter Workout</div>
+                                                                <div className="text-xs text-gray-400 font-normal">Manually log distance, pace &amp; duration</div>
+                                                            </div>
+                                                            <span className="ml-auto text-gray-400 text-lg">›</span>
+                                                        </button>
+
+                                                        {/* Daily Pokéballs ×10 */}
+                                                        {(() => {
+                                                            const now = Date.now();
+                                                            const canClaim = now - lastDailyPokeballs >= DAILY_POKEBALL_COOLDOWN;
+                                                            const remaining = DAILY_POKEBALL_COOLDOWN - (now - lastDailyPokeballs);
+                                                            const hrs  = Math.floor(remaining / 3600000);
+                                                            const mins = Math.floor((remaining % 3600000) / 60000);
+                                                            return (
+                                                                <button
+                                                                    onClick={async () => {
+                                                                        if (!canClaim) return;
+                                                                        const ts = Date.now();
+                                                                        setLastDailyPokeballs(ts);
+                                                                        await window.storage.set('last-daily-pokeballs', String(ts));
+                                                                        const newTotal = storedPokeballs + 10;
+                                                                        setStoredPokeballs(newTotal);
+                                                                        await window.storage.set('stored-pokeballs', String(newTotal));
+                                                                    }}
+                                                                    disabled={!canClaim}
+                                                                    className={`w-full flex items-center gap-4 px-5 py-4 rounded-2xl font-bold shadow-lg transition-all ${
+                                                                        canClaim
+                                                                            ? 'bg-gradient-to-r from-yellow-500 to-amber-500 hover:from-yellow-400 hover:to-amber-400 text-black hover:shadow-yellow-500/30'
+                                                                            : 'bg-slate-700 text-gray-500 cursor-not-allowed opacity-60 border border-slate-600'
+                                                                    }`}
+                                                                >
+                                                                    <PokeballIcon size={32} className="flex-shrink-0" />
+                                                                    <div className="text-left">
+                                                                        <div className="text-base font-bold">Daily Pokéballs ×10</div>
+                                                                        <div className={`text-xs font-normal ${canClaim ? 'text-yellow-900' : 'text-gray-500'}`}>
+                                                                            {canClaim ? 'Claim your free daily Pokéballs!' : `Ready in ${hrs}h ${mins}m`}
+                                                                        </div>
+                                                                    </div>
+                                                                    <span className={`ml-auto text-lg ${canClaim ? 'text-yellow-900' : 'text-gray-600'}`}>{canClaim ? '›' : '⏳'}</span>
+                                                                </button>
+                                                            );
+                                                        })()}
+                                                    </div>
+                                                    {gpsError && (
+                                                        <div className="mt-3 px-4 py-2 bg-red-900 border border-red-700 rounded-xl text-red-300 text-xs text-center">{gpsError}</div>
+                                                    )}
+                                                </div>
+                                            )}
 
                             {/* ── MODE: Enter Workout (manual) ── */}
                             {workoutMode === 'enter' && (
@@ -7906,7 +8070,50 @@
                                     </div>
                                 </div>
                             )}
+                        
+
+                                        </div>
+                                    )}
+                                    {/* Go Capture — always visible on home screen */}
+                                    <button
+                                        onClick={() => {
+                                            if (storedPokeballs > 0) {
+                                                if (!captureSession) {
+                                                    generateCaptureSession();
+                                                    setTimeout(() => {
+                                                        document.getElementById('encounter-view')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                                    }, 300);
+                                                } else {
+                                                    document.getElementById('encounter-view')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                                }
+                                            }
+                                        }}
+                                        disabled={storedPokeballs === 0}
+                                        className={`w-full flex items-center gap-4 px-5 py-4 rounded-2xl font-bold shadow-lg transition-all ${
+                                            storedPokeballs > 0
+                                                ? 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white hover:shadow-purple-500/30'
+                                                : 'bg-slate-700 text-gray-500 cursor-not-allowed opacity-50 border border-slate-600'
+                                        }`}
+                                    >
+                                        <span className="text-3xl flex-shrink-0">🎯</span>
+                                        <div className="text-left">
+                                            <div className="text-base font-bold">
+                                                {captureSession ? 'Session Active' : 'Go Capture'}
+                                            </div>
+                                            <div className={`text-xs font-normal ${storedPokeballs > 0 ? 'text-pink-200' : 'text-gray-500'}`}>
+                                                {storedPokeballs > 0
+                                                    ? `${storedPokeballs} Pokéball${storedPokeballs !== 1 ? 's' : ''} ready`
+                                                    : 'No Pokéballs — log a workout first'}
+                                            </div>
+                                        </div>
+                                        <span className={`ml-auto text-lg ${storedPokeballs > 0 ? 'text-pink-300' : 'text-gray-600'}`}>›</span>
+                                    </button>
+
+
+                                </div>
+                            </div>
                         </div>
+
 
 
                         {/* 🎯 CAPTURE SESSION UI */}
@@ -8377,6 +8584,13 @@
                                                                             });
                                                                         }
                                                                         setBattleView('results');
+                                                                        // Mark as viewed — removes from badge
+                                                                        if (battle.battleId) {
+                                                                            viewedBattleIds.current.add(battle.battleId);
+                                                                            window.storage.set('viewed-battle-ids', JSON.stringify([...viewedBattleIds.current])).catch(() => {});
+                                                                            // Recalculate badge
+                                                                            setBattleBadgeCount(prev => Math.max(0, prev - 1));
+                                                                        }
                                                                     }}
                                                                     className={`w-full p-4 rounded-xl flex items-center justify-between transition shadow-lg ${
                                                                         iWon ? 'bg-green-900 bg-opacity-60 border-2 border-green-500' :
@@ -9669,9 +9883,9 @@
                                                     >
                                                         <span className="text-xl">👥</span>
                                                         <span className="flex-1 text-left">Friends</span>
-                                                        {(Object.keys(pendingTrades).length + battleBadgeCount) > 0 && (
+                                                        {(Object.keys(pendingTrades).length + battleBadgeCount + incomingRequests.length) > 0 && (
                                                             <span className="w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center font-bold">
-                                                                {Object.keys(pendingTrades).length + battleBadgeCount}
+                                                                {Object.keys(pendingTrades).length + battleBadgeCount + incomingRequests.length}
                                                             </span>
                                                         )}
                                                         <span className="text-gray-500">›</span>
