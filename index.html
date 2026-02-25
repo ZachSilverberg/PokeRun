@@ -2452,201 +2452,130 @@
         // ========================================
         const ActivityCardStack = ({ activities, onGiveCandy, currentUserId }) => {
             const [currentIndex, setCurrentIndex] = useState(0);
-            const [dragState, setDragState] = useState({ x: 0, y: 0, rotation: 0, isDragging: false });
-            const [touchStart, setTouchStart] = useState(null);
-            const cardRef = React.useRef(null);
+            const [flipState, setFlipState] = useState('idle'); // 'idle' | 'flipping-next' | 'flipping-prev'
+            const touchStart = React.useRef(null);
+            const isAnimating = React.useRef(false);
+            const FLIP_MS = 90;
 
-            const currentActivity = activities[currentIndex];
-            const progress = `${currentIndex + 1} / ${activities.length}`;
+            const goToNext = React.useCallback(() => {
+                if (isAnimating.current || currentIndex >= activities.length - 1) return;
+                isAnimating.current = true;
+                setFlipState('flipping-next');
+                setTimeout(() => {
+                    setCurrentIndex(i => i + 1);
+                    setFlipState('idle');
+                    isAnimating.current = false;
+                }, FLIP_MS);
+            }, [currentIndex, activities.length]);
 
-            // Handle touch start
-            const handleTouchStart = (e) => {
-                const touch = e.touches[0];
-                setTouchStart({ x: touch.clientX, y: touch.clientY });
-                setDragState(prev => ({ ...prev, isDragging: true }));
-            };
-
-            // Handle touch move
-            const handleTouchMove = (e) => {
-                if (!touchStart) return;
-                const touch = e.touches[0];
-                const deltaX = touch.clientX - touchStart.x;
-                const deltaY = touch.clientY - touchStart.y;
-                const rotation = deltaX * 0.1; // Rotation based on horizontal drag
-
-                setDragState({
-                    x: deltaX,
-                    y: deltaY,
-                    rotation: rotation,
-                    isDragging: true
-                });
-            };
-
-            // Handle touch end
-            const handleTouchEnd = () => {
-                const threshold = 100;
-                const fastSwipeThreshold = 50;
-                const velocity = Math.abs(dragState.x);
-
-                // Fast swipe or threshold reached
-                if (velocity > fastSwipeThreshold || Math.abs(dragState.x) > threshold) {
-                    if (dragState.x > 0) {
-                        // Swiped right - go to previous
-                        goToPrevious();
-                    } else {
-                        // Swiped left - go to next
-                        goToNext();
-                    }
-                } else {
-                    // Spring back to center
-                    setDragState({ x: 0, y: 0, rotation: 0, isDragging: false });
-                }
-                setTouchStart(null);
-            };
-
-            // Navigation functions
-            const goToNext = () => {
-                if (currentIndex < activities.length - 1) {
-                    // Animate out to left
-                    setDragState({ x: -500, y: 0, rotation: -30, isDragging: false });
-                    setTimeout(() => {
-                        setCurrentIndex(prev => prev + 1);
-                        setDragState({ x: 0, y: 0, rotation: 0, isDragging: false });
-                    }, 300);
-                } else {
-                    // Bounce at the end
-                    setDragState({ x: 0, y: 0, rotation: 0, isDragging: false });
-                }
-            };
-
-            const goToPrevious = () => {
-                if (currentIndex > 0) {
-                    // Animate out to right
-                    setDragState({ x: 500, y: 0, rotation: 30, isDragging: false });
-                    setTimeout(() => {
-                        setCurrentIndex(prev => prev - 1);
-                        setDragState({ x: 0, y: 0, rotation: 0, isDragging: false });
-                    }, 300);
-                } else {
-                    // Bounce at the start
-                    setDragState({ x: 0, y: 0, rotation: 0, isDragging: false });
-                }
-            };
-
-            // Keyboard controls
-            React.useEffect(() => {
-                const handleKeyDown = (e) => {
-                    if (e.key === 'ArrowLeft') goToPrevious();
-                    if (e.key === 'ArrowRight') goToNext();
-                };
-                window.addEventListener('keydown', handleKeyDown);
-                return () => window.removeEventListener('keydown', handleKeyDown);
+            const goToPrevious = React.useCallback(() => {
+                if (isAnimating.current || currentIndex <= 0) return;
+                isAnimating.current = true;
+                setFlipState('flipping-prev');
+                setTimeout(() => {
+                    setCurrentIndex(i => i - 1);
+                    setFlipState('idle');
+                    isAnimating.current = false;
+                }, FLIP_MS);
             }, [currentIndex]);
 
-            if (!currentActivity) return null;
+            const handleTouchStart = (e) => {
+                const t = e.touches[0];
+                touchStart.current = { x: t.clientX, y: t.clientY };
+            };
+
+            const handleTouchEnd = (e) => {
+                if (!touchStart.current) return;
+                const t = e.changedTouches[0];
+                const dx = t.clientX - touchStart.current.x;
+                const dy = t.clientY - touchStart.current.y;
+                touchStart.current = null;
+                const absDx = Math.abs(dx), absDy = Math.abs(dy);
+                if (absDx < 30 && absDy < 30) return;
+                if (absDy >= absDx) {
+                    if (dy < 0) goToNext(); else goToPrevious();
+                } else {
+                    if (dx < 0) goToNext(); else goToPrevious();
+                }
+            };
+
+            React.useEffect(() => {
+                const onKey = (e) => {
+                    if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') goToPrevious();
+                    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') goToNext();
+                };
+                window.addEventListener('keydown', onKey);
+                return () => window.removeEventListener('keydown', onKey);
+            }, [goToNext, goToPrevious]);
+
+            if (!activities[currentIndex]) return null;
+
+            const topStyle = flipState === 'flipping-next'
+                ? { transform: 'translateY(-115%) scale(0.93)', opacity: 1, transition: `transform ${FLIP_MS}ms cubic-bezier(0.4,0,1,1)`, zIndex: 10 }
+                : flipState === 'flipping-prev'
+                ? { transform: 'translateY(115%) scale(0.93)', opacity: 1, transition: `transform ${FLIP_MS}ms cubic-bezier(0.4,0,1,1)`, zIndex: 10 }
+                : { transform: 'translateY(0) scale(1)', opacity: 1, transition: 'none', zIndex: 10 };
+
+            const behindIndex = currentIndex + 1 < activities.length ? currentIndex + 1
+                              : currentIndex - 1 >= 0 ? currentIndex - 1 : null;
 
             return (
-                <div className="flex-1 flex flex-col items-center justify-center p-4 relative">
-                    {/* Progress Dots */}
-                    <div className="absolute top-4 left-0 right-0 flex justify-center gap-2 z-20">
-                        {activities.map((_, index) => (
-                            <div
-                                key={index}
-                                className={`w-2 h-2 rounded-full transition-all ${
-                                    index === currentIndex 
-                                        ? 'bg-white w-8' 
-                                        : index < currentIndex 
-                                        ? 'bg-white bg-opacity-50' 
-                                        : 'bg-white bg-opacity-20'
-                                }`}
-                            />
+                <div className="flex-1 flex flex-col items-center justify-center p-4 relative select-none">
+                    {/* Progress dots */}
+                    <div className="absolute top-4 left-0 right-0 flex justify-center gap-1.5 z-20 flex-wrap px-4">
+                        {activities.map((_, i) => (
+                            <div key={i} className={`h-1.5 rounded-full transition-all duration-150 ${
+                                i === currentIndex ? 'bg-white w-6' : i < currentIndex ? 'bg-white opacity-40 w-1.5' : 'bg-white opacity-20 w-1.5'
+                            }`} />
                         ))}
                     </div>
 
-                    {/* Card Counter */}
-                    <div className="absolute top-12 left-0 right-0 text-center z-20">
-                        <div className="text-white text-sm font-medium opacity-75">{progress}</div>
+                    <div className="absolute top-10 left-0 right-0 text-center z-20">
+                        <span className="text-white text-xs font-medium opacity-60">{currentIndex + 1} / {activities.length}</span>
                     </div>
 
-                    {/* Background Card (next one only) */}
-                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                        {[1].map(offset => {
-                            const index = currentIndex + offset;
-                            if (index >= activities.length) return null;
-                            const activity = activities[index];
-                            return (
-                                <div
-                                    key={index}
-                                    className="absolute"
-                                    style={{
-                                        transform: `scale(${1 - offset * 0.05}) translateY(${offset * 10}px)`,
-                                        opacity: 0.4,
-                                        zIndex: -offset
-                                    }}
-                                >
-                                    <ActivityCard 
-                                        activity={activity}
-                                        onGiveCandy={onGiveCandy}
-                                        currentUserId={currentUserId}
-                                        isInteractive={false}
-                                    />
-                                </div>
-                            );
-                        })}
-                    </div>
-
-                    {/* Main Card */}
-                    <div
-                        ref={cardRef}
-                        className="relative z-10 cursor-grab active:cursor-grabbing"
-                        style={{
-                            transform: `translateX(${dragState.x}px) translateY(${dragState.y}px) rotate(${dragState.rotation}deg)`,
-                            transition: dragState.isDragging ? 'none' : 'transform 0.3s ease-out'
-                        }}
+                    <div className="relative" style={{ touchAction: 'none' }}
                         onTouchStart={handleTouchStart}
-                        onTouchMove={handleTouchMove}
                         onTouchEnd={handleTouchEnd}
                     >
-                        <ActivityCard 
-                            activity={currentActivity}
-                            onGiveCandy={onGiveCandy}
-                            currentUserId={currentUserId}
-                            isInteractive={true}
-                        />
-                    </div>
-
-                    {/* Navigation Buttons */}
-                    <div className="absolute bottom-8 left-0 right-0 flex justify-center gap-4 z-20">
-                        <button
-                            onClick={goToPrevious}
-                            disabled={currentIndex === 0}
-                            className={`w-16 h-16 rounded-full flex items-center justify-center text-2xl font-bold shadow-lg transition ${
-                                currentIndex === 0 
-                                    ? 'bg-gray-400 text-gray-600 opacity-50 cursor-not-allowed' 
-                                    : 'bg-white text-purple-600 hover:bg-gray-100'
-                            }`}
-                        >
-                            ←
-                        </button>
-                        <button
-                            onClick={goToNext}
-                            disabled={currentIndex === activities.length - 1}
-                            className={`w-16 h-16 rounded-full flex items-center justify-center text-2xl font-bold shadow-lg transition ${
-                                currentIndex === activities.length - 1 
-                                    ? 'bg-gray-400 text-gray-600 opacity-50 cursor-not-allowed' 
-                                    : 'bg-white text-purple-600 hover:bg-gray-100'
-                            }`}
-                        >
-                            →
-                        </button>
-                    </div>
-
-                    {/* Swipe Hint (show on first card, moved lower to avoid overlap) */}
-                    {currentIndex === 0 && (
-                        <div className="absolute bottom-2 left-0 right-0 text-center z-20 animate-pulse">
-                            <div className="text-white text-sm font-medium drop-shadow-lg">
-                                ← Swipe or tap arrows →
+                        {/* Card behind — sits behind and slightly below, no bleed through */}
+                        {behindIndex !== null && (
+                            <div className="absolute inset-0 pointer-events-none"
+                                style={{ transform: 'translateY(8px) scale(0.96)', zIndex: 1, transformOrigin: 'bottom center' }}>
+                                <ActivityCard
+                                    activity={activities[behindIndex]}
+                                    onGiveCandy={onGiveCandy}
+                                    currentUserId={currentUserId}
+                                    isInteractive={false}
+                                />
                             </div>
+                        )}
+                        {/* Top card — fully opaque, blocks card behind entirely */}
+                        <div style={{ ...topStyle, position: 'relative', zIndex: 10, isolation: 'isolate' }}>
+                            <ActivityCard
+                                activity={activities[currentIndex]}
+                                onGiveCandy={onGiveCandy}
+                                currentUserId={currentUserId}
+                                isInteractive={flipState === 'idle'}
+                            />
+                        </div>
+                    </div>
+
+                    {/* Nav buttons */}
+                    <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-3 z-20">
+                        <button onClick={goToPrevious} disabled={currentIndex === 0}
+                            className={`w-12 h-12 rounded-full flex items-center justify-center text-xl font-bold shadow-lg ${currentIndex === 0 ? 'opacity-25 cursor-not-allowed bg-gray-500 text-white' : 'bg-white text-purple-600 hover:bg-gray-100 active:scale-95 transition-transform'}`}>
+                            &#x2191;
+                        </button>
+                        <button onClick={goToNext} disabled={currentIndex === activities.length - 1}
+                            className={`w-12 h-12 rounded-full flex items-center justify-center text-xl font-bold shadow-lg ${currentIndex === activities.length - 1 ? 'opacity-25 cursor-not-allowed bg-gray-500 text-white' : 'bg-white text-purple-600 hover:bg-gray-100 active:scale-95 transition-transform'}`}>
+                            &#x2193;
+                        </button>
+                    </div>
+
+                    {currentIndex === 0 && activities.length > 1 && (
+                        <div className="absolute bottom-1 left-0 right-0 text-center z-20">
+                            <span className="text-white text-xs opacity-40">swipe or tap arrows</span>
                         </div>
                     )}
                 </div>
@@ -2936,39 +2865,7 @@
                         
                         ctx.textAlign = 'left';
 
-                        // Shiny badge (if shiny) - circle in top right corner
-                        if (activity.isShiny) {
-                            const shinySize = 70;
-                            ctx.fillStyle = '#FFD700';
-                            ctx.beginPath();
-                            ctx.arc(1000, 80, shinySize / 2, 0, Math.PI * 2);
-                            ctx.fill();
-                            ctx.font = 'bold 42px sans-serif';
-                            ctx.textAlign = 'center';
-                            ctx.textBaseline = 'middle';
-                            ctx.fillText('✨', 1000, 80);
-                            ctx.textBaseline = 'alphabetic';
-                            ctx.textAlign = 'left';
-                        }
-
-                        // Trait badge — pill in top left (below shiny if both present)
-                        if (activity.trait === 'light' || activity.trait === 'dark') {
-                            const isLight = activity.trait === 'light';
-                            const badgeX = 40;
-                            const badgeY = activity.isShiny ? 150 : 40;
-                            const badgeW = 180;
-                            const badgeH = 60;
-                            ctx.fillStyle = isLight ? 'rgba(147,197,253,0.92)' : 'rgba(30,10,20,0.88)';
-                            ctx.beginPath();
-                            ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 14);
-                            ctx.fill();
-                            ctx.font = 'bold 34px sans-serif';
-                            ctx.textAlign = 'center';
-                            ctx.textBaseline = 'middle';
-                            ctx.fillText(isLight ? '☀️ LIGHT' : '🌙 DARK', badgeX + badgeW / 2, badgeY + badgeH / 2);
-                            ctx.textBaseline = 'alphabetic';
-                            ctx.textAlign = 'left';
-                        }
+                        // Shiny/Trait badges are now HTML overlays (see JSX) — not drawn on canvas
 
                         setCardImageUrl(canvas.toDataURL());
                         setIsLoadingCard(false);
@@ -3003,7 +2900,7 @@
             };
 
             return (
-                <div className="relative w-full max-w-md aspect-square">
+                <div className="relative w-full max-w-md aspect-square rounded-2xl bg-gray-900" style={{ isolation: 'isolate' }}>
                     {/* Loading State */}
                     {isLoadingCard && (
                         <div className="absolute inset-0 flex items-center justify-center bg-gray-100 rounded-2xl border-4 border-purple-600">
@@ -3083,6 +2980,28 @@
                                     </div>
                                 </div>
                             )}
+
+                            {/* ✨ Shiny/Light/Dark badge — top-right normally, bottom-right if trade/pinkslip occupies top-right */}
+                            {(activity.isShiny || activity.trait === 'light' || activity.trait === 'dark') && (() => {
+                                const hasTopRightBadge = activity.isPinkSlip || activity.isTrade;
+                                const pos = hasTopRightBadge ? 'absolute bottom-4 right-4' : 'absolute top-4 right-4';
+                                if (activity.isShiny) return (
+                                    <div className={pos}>
+                                        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-bold shadow-lg bg-yellow-400 text-gray-900">✨ SHINY</span>
+                                    </div>
+                                );
+                                if (activity.trait === 'light') return (
+                                    <div className={pos}>
+                                        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-bold shadow-lg" style={{ background: 'rgba(147,197,253,0.95)', color: '#1e3a5f' }}>☀️ LIGHT</span>
+                                    </div>
+                                );
+                                if (activity.trait === 'dark') return (
+                                    <div className={pos}>
+                                        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-bold shadow-lg" style={{ background: 'rgba(20,5,15,0.92)', color: '#f9a8d4' }}>🌙 DARK</span>
+                                    </div>
+                                );
+                                return null;
+                            })()}
                         </div>
                     )}
                 </div>
