@@ -310,6 +310,11 @@
         .move-reveal {
             animation: moveReveal 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
         }
+        .move-reveal-delayed {
+            animation: moveReveal 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+            animation-delay: 0.3s;
+            opacity: 0;
+        }
 
         @keyframes pinkSlipBall {
             0% { transform: translateY(0) scale(1); }
@@ -3500,6 +3505,7 @@
             const [showDeletePrompt, setShowDeletePrompt] = useState(null); // Pokemon ID to delete
             const [selectingForSlot, setSelectingForSlot] = useState(null); // Which starter slot is being filled
             const [deleteMode, setDeleteMode] = useState(false); // Delete mode for PC
+            const [starterDeleteMode, setStarterDeleteMode] = useState(false); // Delete mode for Starters
             
             // 8 evenly-spaced vibrant Pantone-inspired colors (45° apart on color wheel)
             const PROFILE_COLORS = [
@@ -5215,8 +5221,9 @@
 
                 for (let i = 0; i < result.slotResults.length; i++) {
                     const slot = result.slotResults[i];
+                    const animVal = slot.outcome === 'TIE' ? 'tie' : slot.outcome === 'A_WIN' ? 'awin' : 'bwin';
 
-                    // Step 1 — add card in 'sprites' phase (no outcome yet)
+                    // Phase 1 — sprites appear, no moves yet
                     await new Promise(r => setTimeout(r, 700));
                     setBattleSpectateSlots(prev => [...prev, { ...slot, phase: 'sprites' }]);
 
@@ -5228,17 +5235,27 @@
                         if (last) last.scrollIntoView({ behavior: 'smooth', block: 'center' });
                     }
 
-                    // Step 2 — reveal outcome by mutating THAT slot's phase in-place
-                    // Single state update → single render → no re-animation of previous cards
-                    await new Promise(r => setTimeout(r, 1000));
+                    // Phase 2 — left move (initiator) fades in
+                    await new Promise(r => setTimeout(r, 600));
                     setBattleSpectateSlots(prev => prev.map((s, idx) =>
-                        idx === i
-                            ? { ...s, phase: 'revealed', anim: slot.outcome === 'TIE' ? 'tie' : slot.outcome === 'A_WIN' ? 'awin' : 'bwin' }
-                            : s
+                        idx === i ? { ...s, phase: 'moveA' } : s
                     ));
 
-                    // Let win/loss animation finish
-                    await new Promise(r => setTimeout(r, 600));
+                    // Phase 3 — right move (accepter) appears (no outcome yet)
+                    await new Promise(r => setTimeout(r, 500));
+                    setBattleSpectateSlots(prev => prev.map((s, idx) =>
+                        idx === i ? { ...s, phase: 'moveB' } : s
+                    ));
+
+                    // Phase 4 — outcome reveals 300ms after moveB fully illuminates
+                    // move-reveal = 0.35s, so total wait = 350ms + 300ms = 650ms
+                    await new Promise(r => setTimeout(r, 650));
+                    setBattleSpectateSlots(prev => prev.map((s, idx) =>
+                        idx === i ? { ...s, phase: 'revealed', anim: animVal } : s
+                    ));
+
+                    // Let win/loss animation finish before next slot
+                    await new Promise(r => setTimeout(r, 700));
                 }
 
                 await new Promise(r => setTimeout(r, 1400));
@@ -8337,12 +8354,24 @@
                                 <div className="min-h-screen p-6">
                                     <div className="flex justify-between items-center mb-6">
                                         <h2 className="text-2xl font-bold text-white">⭐ Starter Team</h2>
-                                        <button
-                                            onClick={() => { setCurrentView('main'); setShowProfileMenu(true); }}
-                                            className="px-4 py-2 bg-white hover:bg-gray-100 text-gray-800 rounded-lg text-sm font-medium transition shadow-lg"
-                                        >
-                                            Back
-                                        </button>
+                                        <div className="flex gap-2">
+                                            <button
+                                                onClick={() => setStarterDeleteMode(v => !v)}
+                                                className={`px-3 py-2 rounded-lg text-sm font-medium transition shadow-lg ${
+                                                    starterDeleteMode
+                                                        ? 'bg-red-500 hover:bg-red-600 text-white'
+                                                        : 'bg-white bg-opacity-20 hover:bg-opacity-30 text-white border border-white border-opacity-30'
+                                                }`}
+                                            >
+                                                🗑️
+                                            </button>
+                                            <button
+                                                onClick={() => { setCurrentView('main'); setShowProfileMenu(true); setStarterDeleteMode(false); }}
+                                                className="px-4 py-2 bg-white hover:bg-gray-100 text-gray-800 rounded-lg text-sm font-medium transition shadow-lg"
+                                            >
+                                                Back
+                                            </button>
+                                        </div>
                                     </div>
 
                                     <div className="grid grid-cols-2 gap-4 max-w-md mx-auto">
@@ -8358,12 +8387,14 @@
                                                         className="p-0"
                                                         enableInteractiveView={true}
                                                     />
-                                                    <button
-                                                        onClick={() => removeFromStarters(index)}
-                                                        className="absolute top-2 right-2 w-7 h-7 bg-red-500 hover:bg-red-600 text-white rounded-full text-sm font-bold shadow-lg z-10"
-                                                    >
-                                                        ×
-                                                    </button>
+                                                    {starterDeleteMode && (
+                                                        <button
+                                                            onClick={() => removeFromStarters(index)}
+                                                            className="absolute top-2 right-2 w-7 h-7 bg-red-500 hover:bg-red-600 text-white rounded-full text-sm font-bold shadow-lg z-10 flex items-center justify-center"
+                                                        >
+                                                            ×
+                                                        </button>
+                                                    )}
                                                 </div>
                                             ) : (
                                                 <button
@@ -9430,6 +9461,7 @@
                                                     }`}
                                                     style={{ animationDuration: '0.4s', animationFillMode: 'both' }}
                                                 >
+                                                    {/* Slot header */}
                                                     <div className="flex items-center justify-between mb-3">
                                                         <div className="text-gray-400 text-xs font-bold">SLOT {slot.slotIndex + 1}</div>
                                                         {revealed && (
@@ -9443,8 +9475,10 @@
                                                             </div>
                                                         )}
                                                     </div>
+
+                                                    {/* Sprites row */}
                                                     <div className="flex items-center justify-between">
-                                                        {/* Initiator side */}
+                                                        {/* Initiator pokemon */}
                                                         <div className={`flex flex-col items-center gap-1 ${
                                                             revealed
                                                                 ? anim === 'bwin' ? 'loser-fade'
@@ -9455,24 +9489,46 @@
                                                             {slot.pokemonASprite && <img src={slot.pokemonASprite} alt={slot.pokemonAName} className="w-14 h-14 pixelated" />}
                                                             <div className="text-white text-xs font-bold capitalize">{slot.pokemonAName}</div>
                                                             <EdgeBadge pokemon={{ rarity: slot.pokemonARarity, isShiny: slot.pokemonAShiny, trait: slot.pokemonATrait }} />
-                                                            {revealed && (
-                                                                <div className={`text-[10px] px-1.5 py-0.5 rounded font-bold move-reveal ${
-                                                                    slot.moveA === 'QUICK' ? 'bg-yellow-500 text-black' :
-                                                                    slot.moveA === 'CHARGE' ? 'bg-red-500 text-white' : 'bg-purple-500 text-white'
-                                                                }`}>
-                                                                    {slot.moveA === 'QUICK' ? '⚡Q' : slot.moveA === 'CHARGE' ? '🔥C' : '🛡️Ct'}
+                                                        </div>
+
+                                                        {/* VS + moves flanking it */}
+                                                        <div className="flex flex-col items-center gap-1 min-w-[90px]">
+                                                            {/* Move row: [moveA] VS [moveB] */}
+                                                            <div className="flex items-center gap-3">
+                                                                {/* Left move — fades in on phase moveA */}
+                                                                <div className="w-14 flex justify-end">
+                                                                    {(slot.phase === 'moveA' || slot.phase === 'moveB' || revealed) && (
+                                                                        <div className={`text-[10px] px-1.5 py-0.5 rounded font-bold move-reveal text-center ${
+                                                                            slot.moveA === 'QUICK' ? 'bg-yellow-500 text-black' :
+                                                                            slot.moveA === 'CHARGE' ? 'bg-red-500 text-white' : 'bg-purple-500 text-white'
+                                                                        }`}>
+                                                                            {slot.moveA === 'QUICK' ? '⚡ Quick' : slot.moveA === 'CHARGE' ? '🔥 Charge' : '🛡️ Counter'}
+                                                                        </div>
+                                                                    )}
                                                                 </div>
-                                                            )}
-                                                        </div>
 
-                                                        <div className="flex flex-col items-center gap-1">
-                                                            <div className="text-2xl font-black text-gray-600">VS</div>
+                                                                <div className="text-lg font-black text-gray-500 leading-none">VS</div>
+
+                                                                {/* Right move — fades in on moveB phase (timing controlled by JS, not CSS delay) */}
+                                                                <div className="w-14 flex justify-start">
+                                                                    {(slot.phase === 'moveB' || revealed) && (
+                                                                        <div className={`text-[10px] px-1.5 py-0.5 rounded font-bold move-reveal text-center ${
+                                                                            slot.moveB === 'QUICK' ? 'bg-yellow-500 text-black' :
+                                                                            slot.moveB === 'CHARGE' ? 'bg-red-500 text-white' : 'bg-purple-500 text-white'
+                                                                        }`}>
+                                                                            {slot.moveB === 'QUICK' ? '⚡ Quick' : slot.moveB === 'CHARGE' ? '🔥 Charge' : '🛡️ Counter'}
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+
+                                                            {/* Edge break label */}
                                                             {revealed && slot.moveA === slot.moveB && (
-                                                                <div className="text-[9px] text-purple-400 font-bold text-center leading-tight">EDGE<br/>BREAK</div>
+                                                                <div className="text-[9px] text-purple-400 font-bold text-center leading-tight">EDGE BREAK</div>
                                                             )}
                                                         </div>
 
-                                                        {/* Accepter side */}
+                                                        {/* Accepter pokemon */}
                                                         <div className={`flex flex-col items-center gap-1 ${
                                                             revealed
                                                                 ? anim === 'awin' ? 'loser-fade'
@@ -9483,16 +9539,9 @@
                                                             {slot.pokemonBSprite && <img src={slot.pokemonBSprite} alt={slot.pokemonBName} className="w-14 h-14 pixelated" />}
                                                             <div className="text-white text-xs font-bold capitalize">{slot.pokemonBName}</div>
                                                             <EdgeBadge pokemon={{ rarity: slot.pokemonBRarity, isShiny: slot.pokemonBShiny, trait: slot.pokemonBTrait }} />
-                                                            {revealed && (
-                                                                <div className={`text-[10px] px-1.5 py-0.5 rounded font-bold move-reveal ${
-                                                                    slot.moveB === 'QUICK' ? 'bg-yellow-500 text-black' :
-                                                                    slot.moveB === 'CHARGE' ? 'bg-red-500 text-white' : 'bg-purple-500 text-white'
-                                                                }`}>
-                                                                    {slot.moveB === 'QUICK' ? '⚡Q' : slot.moveB === 'CHARGE' ? '🔥C' : '🛡️Ct'}
-                                                                </div>
-                                                            )}
                                                         </div>
                                                     </div>
+
                                                     {revealed && <TiebreakLabel tiebreak={slot.tiebreak} outcomeWasA={outcomeWasA} initiatorName={currentBattle.initiatorName} accepterName={currentBattle.accepterName} />}
                                                 </div>
                                             );
