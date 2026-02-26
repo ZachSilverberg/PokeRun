@@ -3412,7 +3412,6 @@
             const [isShiny, setIsShiny] = useState(false);
             
             // 🔥 Firebase Profile State
-            const [firebaseUser, setFirebaseUser] = useState(null);
             const [firebaseProfile, setFirebaseProfile] = useState(null);
             const [isCreatingProfile, setIsCreatingProfile] = useState(false);
             const [hasNotifications, setHasNotifications] = useState(false); // For future friend requests
@@ -3424,8 +3423,6 @@
             // 👥 Friend System State
             const [showFriendSearch, setShowFriendSearch] = useState(false);
             const [showStreakPopup, setShowStreakPopup] = useState(false);
-            const [traitPreviewEncounter, setTraitPreviewEncounter] = useState(null);
-            const [traitPreviewIndex, setTraitPreviewIndex] = useState(0);
             const [friendSearchQuery, setFriendSearchQuery] = useState('');
             const [friendSearchResults, setFriendSearchResults] = useState([]);
             const [isSearching, setIsSearching] = useState(false);
@@ -3641,11 +3638,9 @@
             const [journeyHistory, setJourneyHistory] = useState([]);
             const [showJourneyModal, setShowJourneyModal] = useState(false);
             const [completedJourney, setCompletedJourney] = useState(null);
-            const [isLoading, setIsLoading] = useState(false);
             
             const canvasRef = useRef(null);
             const imageGenerationRef = useRef(0); // Track generation to prevent stale draws
-            const journeyCanvasRef = useRef(null);
             const profileMenuRef = useRef(null);
 
             useEffect(() => {
@@ -3793,7 +3788,6 @@
 
                     if (user) {
                         firebaseManager.user = user;
-                        setFirebaseUser(user);
                         const profile = await firebaseManager.getProfile();
                         if (profile) {
                             setFirebaseProfile(profile);
@@ -6673,33 +6667,6 @@
 
             // Generate 5-encounter capture session
             // ── DEV: Preview Light/Dark encounter cards ──
-            const launchTraitPreview = async () => {
-                const traits = ['light', 'dark'];
-                const trait = traits[traitPreviewIndex % 2];
-                setTraitPreviewIndex(i => i + 1);
-                // Use a fun recognisable pokemon for the preview
-                const previewIds = { light: 282, dark: 248 }; // Gardevoir / Tyranitar
-                const id = previewIds[trait];
-                try {
-                    const res = await fetch(`https://pokeapi.co/api/v2/pokemon/${id}`);
-                    const data = await res.json();
-                    const enc = {
-                        encounterId: `preview_${Date.now()}`,
-                        pokemonId: id,
-                        pokemonName: data.name,
-                        spriteUrl: data.sprites.front_default,
-                        rarity: trait === 'light' ? 'rare' : 'epic',
-                        isShiny: false,
-                        trait,
-                        status: 'active',
-                        attempts: 0
-                    };
-                    setTraitPreviewEncounter(enc);
-                    setCaptureSession({ workoutData: { workoutType: 'cardio', pace: '8:30', distance: '3.0', duration: '25:00' }, encounters: [enc], currentIndex: 0 });
-                    setCurrentEncounter(enc);
-                    setWorkoutMode('capture');
-                } catch(e) { console.error('Preview failed', e); }
-            };
 
             const generateCaptureSession = async (debugMode = false) => {
                 console.log('🎯 Generating 5-encounter capture session...');
@@ -6806,6 +6773,19 @@
             }, [currentEncounter?.encounterId]); // Trigger on new encounter
 
             // Load existing session from storage
+
+            // Shared: start a capture session and scroll to encounter view
+            const startCaptureAndScroll = () => {
+                if (storedPokeballs <= 0) return;
+                if (!captureSession) {
+                    generateCaptureSession();
+                    setTimeout(() => document.getElementById('encounter-view')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 300);
+                } else {
+                    document.getElementById('encounter-view')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            };
+
+
             const loadCaptureSession = async () => {
                 try {
                     // Load viewed battle IDs
@@ -8046,7 +8026,7 @@
                                             ← Back
                                         </button>
                                         <button
-                                            onClick={() => { generateCaptureSession(); setTimeout(() => { document.getElementById('encounter-view')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 300); }}
+                                            onClick={startCaptureAndScroll}
                                             disabled={storedPokeballs === 0}
                                             className="flex-2 flex-grow py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-xl font-bold text-base shadow-lg transition disabled:opacity-50">
                                             🎯 Go Capture!
@@ -8058,20 +8038,9 @@
 
                                         </div>
                                     )}
-                                    {/* Go Capture — always visible on home screen */}
-                                    <button
-                                        onClick={() => {
-                                            if (storedPokeballs > 0) {
-                                                if (!captureSession) {
-                                                    generateCaptureSession();
-                                                    setTimeout(() => {
-                                                        document.getElementById('encounter-view')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                                                    }, 300);
-                                                } else {
-                                                    document.getElementById('encounter-view')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                                                }
-                                            }
-                                        }}
+                                    {/* Go Capture — hidden when inside a workout mode to avoid duplication */}
+                                    {!(showWorkout && workoutMode !== null) && <button
+                                        onClick={startCaptureAndScroll}
                                         disabled={storedPokeballs === 0}
                                         className={`w-full flex items-center gap-4 px-5 py-4 rounded-2xl font-bold shadow-lg transition-all ${
                                             storedPokeballs > 0
@@ -8091,7 +8060,7 @@
                                             </div>
                                         </div>
                                         <span className={`ml-auto text-lg ${storedPokeballs > 0 ? 'text-pink-300' : 'text-gray-600'}`}>›</span>
-                                    </button>
+                                    </button>}
 
 
                                 </div>
