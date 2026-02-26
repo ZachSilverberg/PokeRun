@@ -3928,7 +3928,6 @@
                     
                     // Sign in anonymously
                     await firebaseManager.signInAnonymously();
-                    setFirebaseUser(firebaseManager.user);
                     
                     // Create profile
                     const profile = await firebaseManager.createTrainerProfile();
@@ -4042,7 +4041,6 @@
                     console.log('✅ localStorage cleared');
                     
                     // Reset all state
-                    setFirebaseUser(null);
                     setFirebaseProfile(null);
                     setTrainerName('Trainer');
                     setProfileColor('#FF6B6B');
