@@ -3778,7 +3778,10 @@
             };
 
             // 🔥 Check Firebase Auth State
+            const authInitRef = React.useRef(false);
             const checkFirebaseAuth = async () => {
+                if (authInitRef.current) return; // Prevent double-init
+                authInitRef.current = true;
                 try {
                     // Wait for auth state to be determined
                     const user = await new Promise((resolve) => {
@@ -3798,10 +3801,12 @@
                             setProfileColor(profile.badgeColor);
                             console.log('✅ Firebase profile loaded:', profile.displayName);
                             
-                            // 🔥 Load PC and Starters from Firebase
+                            // 🔥 Load PC and Starters from Firebase in parallel
                             try {
-                                const pcSnap = await database.ref(`users/${user.uid}/pc`).once('value');
-                                const startersSnap = await database.ref(`users/${user.uid}/starters`).once('value');
+                                const [pcSnap, startersSnap] = await Promise.all([
+                                    database.ref(`users/${user.uid}/pc`).once('value'),
+                                    database.ref(`users/${user.uid}/starters`).once('value')
+                                ]);
 
                                 if (pcSnap.exists()) {
                                     const pc = pcSnap.val();
@@ -8562,14 +8567,15 @@
                                                                                 if (Array.isArray(st)) setViewingFriendStarters(st);
                                                                             });
                                                                         }
-                                                                        setBattleView('results');
                                                                         // Mark as viewed — removes from badge
                                                                         if (battle.battleId) {
                                                                             viewedBattleIds.current.add(battle.battleId);
                                                                             window.storage.set('viewed-battle-ids', JSON.stringify([...viewedBattleIds.current])).catch(() => {});
-                                                                            // Recalculate badge
                                                                             setBattleBadgeCount(prev => Math.max(0, prev - 1));
                                                                         }
+                                                                        // Play full battle spectate, then auto-advance to results
+                                                                        setBattleView('spectate');
+                                                                        runBattleSpectate(battle.result, battle);
                                                                     }}
                                                                     className={`w-full p-4 rounded-xl flex items-center justify-between transition shadow-lg ${
                                                                         iWon ? 'bg-green-900 bg-opacity-60 border-2 border-green-500' :
