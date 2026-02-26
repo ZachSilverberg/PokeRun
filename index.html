@@ -271,7 +271,9 @@
             100% { opacity: 1; transform: scale(1) translateY(0); }
         }
         .slot-reveal {
-            animation: slotReveal 0.4s ease-out forwards;
+            /* Animation is applied inline on the element so React key controls re-trigger.
+               Existing cards are already in the DOM — no re-animation on sibling updates. */
+            animation: slotReveal 0.4s ease-out both;
         }
 
         @keyframes loserFade {
@@ -3472,8 +3474,9 @@
             const [battleResults, setBattleResults] = useState(null);
             const [pinkSlipAnimating, setPinkSlipAnimating] = useState(false);
             const [pinkSlipSuccess, setPinkSlipSuccess] = useState(false);
-            const [battleSlotAnimations, setBattleSlotAnimations] = useState({});
+            // Slots now carry their own phase: 'sprites' (just appeared) | 'revealed' (outcome shown)
             const [battleSpectateSlots, setBattleSpectateSlots] = useState([]);
+            // battleSlotAnimations kept as alias-free inline — removed
             const [battleSpectateRunning, setBattleSpectateRunning] = useState(false);
 
             // 🐛 DEBUG: Log friends state changes
@@ -5209,28 +5212,32 @@
             const runBattleSpectate = async (result, battle) => {
                 setBattleSpectateRunning(true);
                 setBattleSpectateSlots([]);
-                setBattleSlotAnimations({});
 
                 for (let i = 0; i < result.slotResults.length; i++) {
                     const slot = result.slotResults[i];
-                    // Brief pause between slots
+
+                    // Step 1 — add card in 'sprites' phase (no outcome yet)
                     await new Promise(r => setTimeout(r, 700));
-                    // Show the sprites
-                    setBattleSpectateSlots(prev => [...prev, slot]);
-                    // Scroll newest slot into view
-                    await new Promise(r => setTimeout(r, 150));
+                    setBattleSpectateSlots(prev => [...prev, { ...slot, phase: 'sprites' }]);
+
+                    // Scroll into view after paint
+                    await new Promise(r => setTimeout(r, 100));
                     if (battleScrollRef.current) {
                         const cards = battleScrollRef.current.querySelectorAll('[data-slot]');
                         const last = cards[cards.length - 1];
                         if (last) last.scrollIntoView({ behavior: 'smooth', block: 'center' });
                     }
-                    // Wait 1 full second for sprites to land, then reveal result
+
+                    // Step 2 — reveal outcome by mutating THAT slot's phase in-place
+                    // Single state update → single render → no re-animation of previous cards
                     await new Promise(r => setTimeout(r, 1000));
-                    setBattleSlotAnimations(prev => ({
-                        ...prev,
-                        [i]: slot.outcome === 'TIE' ? 'tie' : slot.outcome === 'A_WIN' ? 'awin' : 'bwin'
-                    }));
-                    // Short pause to let win/loss animation play before next slot
+                    setBattleSpectateSlots(prev => prev.map((s, idx) =>
+                        idx === i
+                            ? { ...s, phase: 'revealed', anim: slot.outcome === 'TIE' ? 'tie' : slot.outcome === 'A_WIN' ? 'awin' : 'bwin' }
+                            : s
+                    ));
+
+                    // Let win/loss animation finish
                     await new Promise(r => setTimeout(r, 600));
                 }
 
@@ -5238,7 +5245,6 @@
                 setBattleSpectateRunning(false);
                 setBattleResults(result);
                 setBattleView('results');
-                // Auto-mark viewed since they just watched the battle live
                 if (currentBattle?.battleId) {
                     viewedBattleIds.current.add(currentBattle.battleId);
                     window.storage.set('viewed-battle-ids', JSON.stringify([...viewedBattleIds.current])).catch(() => {});
@@ -5774,12 +5780,14 @@
             const addToStarters = async (slotIndex, pcEntry) => {
                 const updatedStarters = [...(Array.isArray(starterTeam) ? starterTeam : [null, null, null, null, null, null])];
                 
-                // Check if this Pokemon is already in another slot
+                // Already in this exact slot — nothing to do, stay in selecting mode
+                if (updatedStarters[slotIndex]?.id === pcEntry.id) return;
+
+                // Already in a different slot — alert but stay in selecting mode so user can pick another
                 const existingSlotIndex = updatedStarters.findIndex(starter => starter?.id === pcEntry.id);
-                if (existingSlotIndex !== -1 && existingSlotIndex !== slotIndex) {
-                    alert(`${pcEntry.pokemonName} is already in slot ${existingSlotIndex + 1}!`);
-                    setSelectingForSlot(null);
-                    return;
+                if (existingSlotIndex !== -1) {
+                    alert(`${pcEntry.pokemonName} is already in slot ${existingSlotIndex + 1}! Pick a different Pokémon.`);
+                    return; // selectingForSlot stays active
                 }
                 
                 updatedStarters[slotIndex] = pcEntry;
@@ -5796,6 +5804,7 @@
                     }
                 }
                 
+                // Success — go back to starters view
                 setSelectingForSlot(null);
                 setCurrentView('starters');
             };
@@ -9226,7 +9235,12 @@
                                             </p>
                                         </div>
                                         <button
-                                            onClick={() => { setBattleView(null); setCurrentBattle(null); }}
+                                            onClick={() => {
+                                                // Close the setup overlay without cancelling the battle.
+                                                // The request stays in Firebase — they can re-open it from the battle notification.
+                                                setBattleView(null);
+                                                // Keep currentBattle so notification badge can re-open it.
+                                            }}
                                             className="w-10 h-10 bg-gray-700 hover:bg-gray-600 rounded-full flex items-center justify-center text-white text-lg transition"
                                         >✕</button>
                                     </div>
@@ -9291,10 +9305,12 @@
                                                         )}
                                                     </div>
 
-                                                    {/* Move picker (shown when slot has a pokemon but no move yet) */}
-                                                    {isFlipped && (
+                                                    {/* Move picker — shown whenever slot has a pokemon but no move (isFlipped OR orphaned incomplete slot) */}
+                                                    {assignedId && !assignedMove && (
                                                         <div className="px-3 pb-3">
-                                                            <p className="text-gray-400 text-xs mb-2">Choose a move for this Pokémon:</p>
+                                                            <p className={`text-xs mb-2 font-semibold ${isFlipped ? 'text-gray-400' : 'text-yellow-400'}`}>
+                                                                {isFlipped ? 'Choose a move for this Pokémon:' : '⚠️ Pick a move to complete this slot:'}
+                                                            </p>
                                                             <div className="grid grid-cols-3 gap-2">
                                                                 {['QUICK','CHARGE','COUNTER'].map(move => (
                                                                     <button
@@ -9315,7 +9331,7 @@
                                                     )}
 
                                                     {/* Pokemon picker (shown when slot is empty) */}
-                                                    {!assignedId && !isFlipped && (
+                                                    {!assignedId && (
                                                         <div className="px-3 pb-3">
                                                             <p className="text-gray-500 text-xs mb-2">Pick a starter for this slot:</p>
                                                             <div className="grid grid-cols-3 gap-2">
@@ -9396,33 +9412,51 @@
 
                                     <div className="space-y-4" ref={battleScrollRef}>
                                         {battleSpectateSlots.map((slot, idx) => {
-                                            const anim = battleSlotAnimations[slot.slotIndex];
-                                            const isTieBreak = anim && slot.tiebreak && slot.tiebreak !== null;
+                                            // anim and phase are now co-located on the slot object
+                                            const anim = slot.anim; // 'awin' | 'bwin' | 'tie' | undefined
+                                            const revealed = slot.phase === 'revealed';
+                                            const isTieBreak = revealed && slot.tiebreak && slot.tiebreak !== null;
                                             const outcomeWasA = slot.outcome === 'A_WIN';
                                             return (
-                                                <div key={slot.slotIndex} data-slot={slot.slotIndex} className={`bg-gray-800 rounded-2xl p-4 border-2 slot-reveal ${
-                                                    anim === 'awin' ? 'border-blue-500' : anim === 'bwin' ? 'border-orange-500' : 'border-gray-600'
-                                                }`} style={{ animationDelay: `${idx * 0.1}s` }}>
+                                                <div
+                                                    key={slot.slotIndex}
+                                                    data-slot={slot.slotIndex}
+                                                    // slot-reveal uses animationFillMode=both + no delay on existing cards
+                                                    // We pass style animationName keyed to slot so it only fires once on mount
+                                                    className={`bg-gray-800 rounded-2xl p-4 border-2 slot-reveal ${
+                                                        anim === 'awin' ? 'border-blue-500' :
+                                                        anim === 'bwin' ? 'border-orange-500' :
+                                                        'border-gray-600'
+                                                    }`}
+                                                    style={{ animationDuration: '0.4s', animationFillMode: 'both' }}
+                                                >
                                                     <div className="flex items-center justify-between mb-3">
                                                         <div className="text-gray-400 text-xs font-bold">SLOT {slot.slotIndex + 1}</div>
-                                                        {anim && (
+                                                        {revealed && (
                                                             <div className={`text-xs font-bold px-2 py-0.5 rounded score-pop ${
                                                                 anim === 'awin' ? 'bg-blue-500 text-white' :
                                                                 anim === 'bwin' ? 'bg-orange-500 text-white' : 'bg-gray-600 text-gray-300'
                                                             }`}>
-                                                                {anim === 'awin' ? `${currentBattle.initiatorName} wins` : anim === 'bwin' ? `${currentBattle.accepterName} wins` : 'TIE'}
+                                                                {anim === 'awin' ? `${currentBattle.initiatorName} wins` :
+                                                                 anim === 'bwin' ? `${currentBattle.accepterName} wins` : 'TIE'}
                                                                 {isTieBreak && slot.tiebreak !== 'edge_equal' && slot.tiebreak !== 'shiny_mirror' && ' ⚡'}
                                                             </div>
                                                         )}
                                                     </div>
                                                     <div className="flex items-center justify-between">
                                                         {/* Initiator side */}
-                                                        <div className={`flex flex-col items-center gap-1 ${anim === 'bwin' ? 'loser-fade' : anim === 'awin' ? 'winner-glow' : anim === 'tie' ? 'tie-shimmer' : ''}`}>
+                                                        <div className={`flex flex-col items-center gap-1 ${
+                                                            revealed
+                                                                ? anim === 'bwin' ? 'loser-fade'
+                                                                : anim === 'awin' ? 'winner-glow'
+                                                                : 'tie-shimmer'
+                                                                : ''
+                                                        }`}>
                                                             {slot.pokemonASprite && <img src={slot.pokemonASprite} alt={slot.pokemonAName} className="w-14 h-14 pixelated" />}
                                                             <div className="text-white text-xs font-bold capitalize">{slot.pokemonAName}</div>
                                                             <EdgeBadge pokemon={{ rarity: slot.pokemonARarity, isShiny: slot.pokemonAShiny, trait: slot.pokemonATrait }} />
-                                                            {anim && (
-                                                                <div className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
+                                                            {revealed && (
+                                                                <div className={`text-[10px] px-1.5 py-0.5 rounded font-bold move-reveal ${
                                                                     slot.moveA === 'QUICK' ? 'bg-yellow-500 text-black' :
                                                                     slot.moveA === 'CHARGE' ? 'bg-red-500 text-white' : 'bg-purple-500 text-white'
                                                                 }`}>
@@ -9433,18 +9467,24 @@
 
                                                         <div className="flex flex-col items-center gap-1">
                                                             <div className="text-2xl font-black text-gray-600">VS</div>
-                                                            {anim && slot.moveA === slot.moveB && (
+                                                            {revealed && slot.moveA === slot.moveB && (
                                                                 <div className="text-[9px] text-purple-400 font-bold text-center leading-tight">EDGE<br/>BREAK</div>
                                                             )}
                                                         </div>
 
                                                         {/* Accepter side */}
-                                                        <div className={`flex flex-col items-center gap-1 ${anim === 'awin' ? 'loser-fade' : anim === 'bwin' ? 'winner-glow' : anim === 'tie' ? 'tie-shimmer' : ''}`}>
+                                                        <div className={`flex flex-col items-center gap-1 ${
+                                                            revealed
+                                                                ? anim === 'awin' ? 'loser-fade'
+                                                                : anim === 'bwin' ? 'winner-glow'
+                                                                : 'tie-shimmer'
+                                                                : ''
+                                                        }`}>
                                                             {slot.pokemonBSprite && <img src={slot.pokemonBSprite} alt={slot.pokemonBName} className="w-14 h-14 pixelated" />}
                                                             <div className="text-white text-xs font-bold capitalize">{slot.pokemonBName}</div>
                                                             <EdgeBadge pokemon={{ rarity: slot.pokemonBRarity, isShiny: slot.pokemonBShiny, trait: slot.pokemonBTrait }} />
-                                                            {anim && (
-                                                                <div className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
+                                                            {revealed && (
+                                                                <div className={`text-[10px] px-1.5 py-0.5 rounded font-bold move-reveal ${
                                                                     slot.moveB === 'QUICK' ? 'bg-yellow-500 text-black' :
                                                                     slot.moveB === 'CHARGE' ? 'bg-red-500 text-white' : 'bg-purple-500 text-white'
                                                                 }`}>
@@ -9453,7 +9493,7 @@
                                                             )}
                                                         </div>
                                                     </div>
-                                                    {anim && <TiebreakLabel tiebreak={slot.tiebreak} outcomeWasA={outcomeWasA} initiatorName={currentBattle.initiatorName} accepterName={currentBattle.accepterName} />}
+                                                    {revealed && <TiebreakLabel tiebreak={slot.tiebreak} outcomeWasA={outcomeWasA} initiatorName={currentBattle.initiatorName} accepterName={currentBattle.accepterName} />}
                                                 </div>
                                             );
                                         })}
