@@ -4030,13 +4030,14 @@
                             await database.ref(`users/${friendId}/friends/${uid}`).remove();
                         }
 
-                        // 🧹 Clean up all friendRequests involving this user
-                        const allReqSnap = await database.ref('friendRequests').once('value');
-                        const allReqs = allReqSnap.val() || {};
-                        for (const [key, req] of Object.entries(allReqs)) {
-                            if (req && (req.from === uid || req.to === uid)) {
-                                await database.ref(`friendRequests/${key}`).remove();
-                            }
+                        // 🧹 Clean up friendRequests — query only this user's own records (rules don't allow full scan)
+                        const [sentSnap, receivedSnap] = await Promise.all([
+                            database.ref('friendRequests').orderByChild('from').equalTo(uid).once('value'),
+                            database.ref('friendRequests').orderByChild('to').equalTo(uid).once('value'),
+                        ]);
+                        const toDelete = Object.assign({}, sentSnap.val() || {}, receivedSnap.val() || {});
+                        for (const key of Object.keys(toDelete)) {
+                            await database.ref(`friendRequests/${key}`).remove();
                         }
 
                         // Delete own Firebase data
