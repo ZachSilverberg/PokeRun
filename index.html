@@ -3856,6 +3856,13 @@
                             setTrainerName(profile.displayName);
                             setProfileColor(profile.badgeColor);
                             console.log('✅ Firebase profile loaded:', profile.displayName);
+
+                            // Backfill profiles/ index — ensures existing users appear in friend search
+                            // Safe to run every load; it's a cheap write to their own node
+                            database.ref(`profiles/${user.uid}`).set({
+                                displayName: profile.displayName,
+                                badgeColor: profile.badgeColor
+                            }).catch(() => {});
                             
                             // 🔥 Load PC and Starters from Firebase in parallel
                             try {
@@ -4262,7 +4269,7 @@
 
                     usersSnapshot.forEach(child => {
                         const uid = child.key;
-                        const profile = child.val()?.profile;
+                        const profile = child.val();
                         if (uid === firebaseManager.user.uid || !profile?.displayName) return;
 
                         const nameLower = profile.displayName.toLowerCase();
