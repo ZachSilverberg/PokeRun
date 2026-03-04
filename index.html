@@ -5569,9 +5569,10 @@
                         const isResolved = (b.status === 'LOOT_PENDING' || b.status === 'RESOLVED' || b.status === 'COMPLETED') && b.result;
                         const viewedByFirebase = b.viewedBy && b.viewedBy[myUid];
                         const viewedLocally = viewedBattleIds.current.has(b.battleId);
-                        const battleAge = now - (b.createdAt || b.pinkSlipCompletedAt || 0);
-                        const tooOld = battleAge > 7 * 24 * 60 * 60 * 1000; // ignore battles older than 7 days
-                        if (iAmInvolved && isResolved && !viewedByFirebase && !viewedLocally && !tooOld) {
+                        const knownTs = b.createdAt || b.pinkSlipCompletedAt;
+                        const battleAge = knownTs ? now - knownTs : 0;
+                        const isTooOld = knownTs && battleAge > 7 * 24 * 60 * 60 * 1000; // ignore battles older than 7 days
+                        if (iAmInvolved && isResolved && !viewedByFirebase && !viewedLocally && !isTooOld) {
                             resolvedForMe.push(b);
                         }
 
@@ -5621,8 +5622,9 @@
                         const iAmInvolved = b.initiatorId === myUid || b.accepterId === myUid;
                         const isResolved = (b.status === 'LOOT_PENDING' || b.status === 'RESOLVED' || b.status === 'COMPLETED') && b.result;
                         const alreadyViewed = (b.viewedBy && b.viewedBy[myUid]) || viewedBattleIds.current.has(b.battleId);
-                        const battleAge = now - (b.createdAt || b.pinkSlipCompletedAt || 0);
-                        const tooOld = battleAge > 7 * 24 * 60 * 60 * 1000;
+                        const knownTimestamp = b.createdAt || b.pinkSlipCompletedAt; // only use if we have a real timestamp
+                        const battleAge = knownTimestamp ? now - knownTimestamp : 0;
+                        const tooOld = knownTimestamp && battleAge > 7 * 24 * 60 * 60 * 1000;
                         if (iAmInvolved && isResolved && !alreadyViewed && tooOld) {
                             viewedBattleIds.current.add(b.battleId);
                             database.ref(`battles/${b.battleId}/viewedBy/${myUid}`).set(true).catch(() => {});
