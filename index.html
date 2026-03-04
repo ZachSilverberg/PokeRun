@@ -5544,6 +5544,7 @@
 
             // Listen for incoming battles in real-time
             const [resolvedBattlesForMe, setResolvedBattlesForMe] = useState([]);
+            const [allResolvedBattles, setAllResolvedBattles] = useState([]); // all resolved — for display
             const processedPinkSlips = React.useRef(new Set());
             useEffect(() => {
                 if (!firebaseProfile || !firebaseManager.user) return;
@@ -5556,7 +5557,8 @@
                 const processBattles = () => {
                     const all = Object.assign({}, battlesCache.asAccepter, battlesCache.asInitiator);
                     const pending = {};
-                    const resolvedForMe = [];
+                    const unviewedResolved = []; // badge count only
+                    const allResolved = [];      // display — all resolved battles
                     const now = Date.now();
                     Object.values(all).forEach(b => {
                         if (!b) return;
@@ -5564,16 +5566,21 @@
                         if (b.accepterId === myUid && b.status === 'PENDING_ACCEPT' && now < b.expiresAt) {
                             pending[b.battleId] = b;
                         }
-                        // Resolved: only count if not yet viewed — check Firebase flag AND local ref (fallback for old battles)
                         const iAmInvolved = b.initiatorId === myUid || b.accepterId === myUid;
                         const isResolved = (b.status === 'LOOT_PENDING' || b.status === 'RESOLVED' || b.status === 'COMPLETED') && b.result;
-                        const viewedByFirebase = b.viewedBy && b.viewedBy[myUid];
-                        const viewedLocally = viewedBattleIds.current.has(b.battleId);
-                        const knownTs = b.createdAt || b.pinkSlipCompletedAt;
-                        const battleAge = knownTs ? now - knownTs : 0;
-                        const isTooOld = knownTs && battleAge > 7 * 24 * 60 * 60 * 1000; // ignore battles older than 7 days
-                        if (iAmInvolved && isResolved && !viewedByFirebase && !viewedLocally && !isTooOld) {
-                            resolvedForMe.push(b);
+
+                        if (iAmInvolved && isResolved) {
+                            allResolved.push(b); // always include for display
+
+                            // Badge: only count if not yet viewed and not too old
+                            const viewedByFirebase = b.viewedBy && b.viewedBy[myUid];
+                            const viewedLocally = viewedBattleIds.current.has(b.battleId);
+                            const knownTs = b.createdAt || b.pinkSlipCompletedAt;
+                            const battleAge = knownTs ? now - knownTs : 0;
+                            const isTooOld = knownTs && battleAge > 7 * 24 * 60 * 60 * 1000;
+                            if (!viewedByFirebase && !viewedLocally && !isTooOld) {
+                                unviewedResolved.push(b);
+                            }
                         }
 
                         // ── Real-time pink slip removal for the LOSER ──
@@ -5613,8 +5620,9 @@
                         }
                     });
                     setPendingBattles(pending);
-                    setResolvedBattlesForMe(resolvedForMe);
-                    setBattleBadgeCount(Object.keys(pending).length + resolvedForMe.length);
+                    setResolvedBattlesForMe(unviewedResolved);   // badge only
+                    setAllResolvedBattles(allResolved);           // display
+                    setBattleBadgeCount(Object.keys(pending).length + unviewedResolved.length);
 
                     // Auto-mark battles older than 7 days as viewed on Firebase so they never re-appear
                     Object.values(all).forEach(b => {
@@ -9708,13 +9716,13 @@
                                         const myUid = firebaseManager.user?.uid;
                                         const todayStart = new Date(); todayStart.setHours(0,0,0,0);
                                         const todayMs = todayStart.getTime();
-                                        const todayBattles = resolvedBattlesForMe.filter(b => {
+                                        const todayBattles = allResolvedBattles.filter(b => {
                                             const ts = b.result?.resolvedAt || b.pinkSlipCompletedAt || b.createdAt || 0;
                                             return ts >= todayMs;
                                         });
                                         // Overall record across all resolved battles
                                         let totalW = 0, totalL = 0, totalD = 0;
-                                        resolvedBattlesForMe.forEach(b => {
+                                        allResolvedBattles.forEach(b => {
                                             if (!b.result) return;
                                             if (b.result.matchOutcome === 'DRAW') totalD++;
                                             else if (b.result.winnerUserId === myUid) totalW++;
