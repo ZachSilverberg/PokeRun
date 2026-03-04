@@ -5564,11 +5564,14 @@
                         if (b.accepterId === myUid && b.status === 'PENDING_ACCEPT' && now < b.expiresAt) {
                             pending[b.battleId] = b;
                         }
-                        // Resolved: only count if not yet viewed by me on Firebase
+                        // Resolved: only count if not yet viewed — check Firebase flag AND local ref (fallback for old battles)
                         const iAmInvolved = b.initiatorId === myUid || b.accepterId === myUid;
                         const isResolved = (b.status === 'LOOT_PENDING' || b.status === 'RESOLVED' || b.status === 'COMPLETED') && b.result;
-                        const viewedByMe = b.viewedBy && b.viewedBy[myUid];
-                        if (iAmInvolved && isResolved && !viewedByMe) {
+                        const viewedByFirebase = b.viewedBy && b.viewedBy[myUid];
+                        const viewedLocally = viewedBattleIds.current.has(b.battleId);
+                        const battleAge = now - (b.createdAt || b.pinkSlipCompletedAt || 0);
+                        const tooOld = battleAge > 7 * 24 * 60 * 60 * 1000; // ignore battles older than 7 days
+                        if (iAmInvolved && isResolved && !viewedByFirebase && !viewedLocally && !tooOld) {
                             resolvedForMe.push(b);
                         }
 
@@ -5610,8 +5613,21 @@
                     });
                     setPendingBattles(pending);
                     setResolvedBattlesForMe(resolvedForMe);
-                    // Badge = pending invites + unviewed resolved battles (viewedBy checked server-side above)
                     setBattleBadgeCount(Object.keys(pending).length + resolvedForMe.length);
+
+                    // Auto-mark battles older than 7 days as viewed on Firebase so they never re-appear
+                    Object.values(all).forEach(b => {
+                        if (!b || !b.battleId) return;
+                        const iAmInvolved = b.initiatorId === myUid || b.accepterId === myUid;
+                        const isResolved = (b.status === 'LOOT_PENDING' || b.status === 'RESOLVED' || b.status === 'COMPLETED') && b.result;
+                        const alreadyViewed = (b.viewedBy && b.viewedBy[myUid]) || viewedBattleIds.current.has(b.battleId);
+                        const battleAge = now - (b.createdAt || b.pinkSlipCompletedAt || 0);
+                        const tooOld = battleAge > 7 * 24 * 60 * 60 * 1000;
+                        if (iAmInvolved && isResolved && !alreadyViewed && tooOld) {
+                            viewedBattleIds.current.add(b.battleId);
+                            database.ref(`battles/${b.battleId}/viewedBy/${myUid}`).set(true).catch(() => {});
+                        }
+                    });
                 };
 
                 const listenerA = asAccepterRef.on('value', snap => {
