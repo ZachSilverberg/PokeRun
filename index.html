@@ -4933,34 +4933,34 @@
             useEffect(() => {
                 if (firebaseProfile) {
                     loadPendingTrades();
-                    processPendingBattleLosses();
-                    
-                    // Sync PC to Firebase if user has local data
-                    const syncPCToFirebase = async () => {
-                        if (pokemonPC.length > 0 && firebaseManager.user) {
+
+                    // Sync local PC/Starters to Firebase ONLY if Firebase has nothing
+                    // (avoids overwriting authoritative Firebase data with stale local state)
+                    const syncAndProcess = async () => {
+                        if (firebaseManager.user) {
                             try {
-                                await database.ref(`users/${firebaseManager.user.uid}/pc`).set(pokemonPC);
-                                console.log(`✅ Synced ${pokemonPC.length} Pokémon to Firebase PC`);
+                                const pcSnap = await database.ref(`users/${firebaseManager.user.uid}/pc`).once('value');
+                                if (!pcSnap.exists() && pokemonPC.length > 0) {
+                                    await database.ref(`users/${firebaseManager.user.uid}/pc`).set(pokemonPC);
+                                    console.log(`✅ Synced ${pokemonPC.length} Pokémon to Firebase PC (first sync)`);
+                                }
                             } catch (error) {
                                 console.error('❌ Error syncing PC to Firebase:', error);
                             }
-                        }
-                    };
-                    
-                    // Sync Starters to Firebase
-                    const syncStartersToFirebase = async () => {
-                        if (starterTeam.some(s => s !== null) && firebaseManager.user) {
                             try {
-                                await database.ref(`users/${firebaseManager.user.uid}/starters`).set(starterTeam);
-                                console.log('✅ Synced starters to Firebase');
+                                const startersSnap = await database.ref(`users/${firebaseManager.user.uid}/starters`).once('value');
+                                if (!startersSnap.exists() && starterTeam.some(s => s !== null)) {
+                                    await database.ref(`users/${firebaseManager.user.uid}/starters`).set(starterTeam);
+                                    console.log('✅ Synced starters to Firebase (first sync)');
+                                }
                             } catch (error) {
                                 console.error('❌ Error syncing starters to Firebase:', error);
                             }
                         }
+                        // Process any pending pink slip losses after syncs complete
+                        await processPendingBattleLosses();
                     };
-                    
-                    syncPCToFirebase();
-                    syncStartersToFirebase();
+                    syncAndProcess();
                 }
             }, [firebaseProfile]); // intentionally omit pokemonPC/starterTeam — individual mutations sync themselves
 
