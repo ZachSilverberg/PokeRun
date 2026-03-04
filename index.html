@@ -418,7 +418,7 @@
         const PokemonCard = ({ pokemon, onClick, showDelete, onDelete, className = "", showTradeBadge = false, enableInteractiveView = false }) => {
             const [cardImage, setCardImage] = useState(null);
             const [showInteractive, setShowInteractive] = useState(false);
-            const cacheKey = `${pokemon.id}-${pokemon.isShiny}-${pokemon.trait || 'normal'}-${pokemon.isTrade || false}-${pokemon.isPinkSlip || false}`;
+            const cacheKey = `${pokemon.id}-${pokemon.isShiny}-${pokemon.trait || 'normal'}-${pokemon.isTrade || false}-${pokemon.isPinkSlip || false}-${pokemon.capturedFromTrainer || ''}`;
             
             // Helper: Draw star for rarity icons
             const drawStar = (ctx, cx, cy, spikes, outerRadius, innerRadius) => {
@@ -740,8 +740,33 @@
                     };
                     if (pokemon.isShiny) badgeStackY = drawPill('✨ SHINY', '#FFD700', '#1a1a1a', badgeStackY);
                     const trait = pokemon.trait || 'normal';
-                    if (trait === 'light') drawPill('☀️ LIGHT', 'rgba(147,197,253,0.92)', '#1e3a5f', badgeStackY);
-                    else if (trait === 'dark') drawPill('🌙 DARK', 'rgba(30,10,20,0.9)', '#f9a8d4', badgeStackY);
+                    if (trait === 'light') badgeStackY = drawPill('☀️ LIGHT', 'rgba(147,197,253,0.92)', '#1e3a5f', badgeStackY);
+                    else if (trait === 'dark') badgeStackY = drawPill('🌙 DARK', 'rgba(30,10,20,0.9)', '#f9a8d4', badgeStackY);
+
+                    // Trainer badge — shown if this pokemon was caught from a legacy gauntlet trainer
+                    if (pokemon.capturedFromTrainer) {
+                        const tName = pokemon.capturedFromTrainer;
+                        const tColor = pokemon.capturedFromTrainerColor || '#374151';
+                        // Draw pill at bottom of badge stack
+                        const tW = Math.max(90, tName.length * 9 + 20);
+                        const tH = 26, tX = 490 - tW, tY = badgeStackY;
+                        ctx.save();
+                        // Parse hex color for pill bg
+                        ctx.fillStyle = tColor;
+                        ctx.globalAlpha = 0.9;
+                        ctx.beginPath();
+                        ctx.roundRect(tX, tY, tW, tH, 8);
+                        ctx.fill();
+                        ctx.globalAlpha = 1;
+                        ctx.fillStyle = '#ffffff';
+                        ctx.font = 'bold 11px Arial';
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+                        ctx.fillText(`⚡ ${tName}`, tX + tW / 2, tY + tH / 2);
+                        ctx.textBaseline = 'alphabetic';
+                        ctx.textAlign = 'left';
+                        ctx.restore();
+                    }
 
                     const dataUrl = canvas.toDataURL();
                     cardImageCache.set(cacheKey, dataUrl); // Cache it
@@ -1551,7 +1576,7 @@
             127: 'uncommon', // Pinsir (rare encounter, no evolution)
             128: 'uncommon', // Tauros (rare encounter, no evolution)
             129: 'common',   // Magikarp (very common, stage 1)
-            130: 'rare',     // Gyarados (stage 2, pseudo-legendary stats)
+            130: 'epic',     // Gyarados (iconic, pseudo-legendary stats) (stage 2, pseudo-legendary stats)
             131: 'rare',     // Lapras (very rare encounter, no evolution)
             132: 'uncommon', // Ditto (rare encounter, no evolution)
             133: 'common',   // Eevee (uncommon, stage 1)
@@ -1563,14 +1588,14 @@
             139: 'uncommon', // Omastar (stage 2)
             140: 'common',   // Kabuto (fossil, stage 1)
             141: 'uncommon', // Kabutops (stage 2)
-            142: 'rare',     // Aerodactyl (fossil, no evolution, rare)
+            142: 'epic',     // Aerodactyl (fossil, epic rarity) (fossil, no evolution, rare)
             143: 'rare',     // Snorlax (very rare encounter, stage 1)
             144: 'legendary', // Articuno
             145: 'legendary', // Zapdos
             146: 'legendary', // Moltres
             147: 'common',   // Dratini (rare but stage 1)
             148: 'uncommon', // Dragonair (stage 2)
-            149: 'rare',     // Dragonite (pseudo-legendary)
+            149: 'epic',     // Dragonite (pseudo-legendary) (pseudo-legendary)
             150: 'legendary', // Mewtwo
             151: 'legendary', // Mew
 
@@ -1671,7 +1696,7 @@
             245: 'legendary', // Suicune
             246: 'common',   // Larvitar (rare but stage 1)
             247: 'uncommon', // Pupitar (stage 2)
-            248: 'rare',     // Tyranitar (pseudo-legendary)
+            248: 'epic',     // Tyranitar (pseudo-legendary) (pseudo-legendary)
             249: 'legendary', // Lugia
             250: 'legendary', // Ho-Oh
             251: 'legendary', // Celebi
@@ -1798,10 +1823,10 @@
             370: 'uncommon', // Luvdisc (uncommon, no evolution)
             371: 'common',   // Bagon (rare but stage 1)
             372: 'uncommon', // Shelgon (stage 2)
-            373: 'rare',     // Salamence (pseudo-legendary)
+            373: 'epic',     // Salamence (pseudo-legendary) (pseudo-legendary)
             374: 'common',   // Beldum (very rare but stage 1)
             375: 'uncommon', // Metang (stage 2)
-            376: 'rare',     // Metagross (pseudo-legendary)
+            376: 'epic',     // Metagross (pseudo-legendary) (pseudo-legendary)
             377: 'legendary', // Regirock
             378: 'legendary', // Regice
             379: 'legendary', // Registeel
@@ -1809,7 +1834,7 @@
             381: 'legendary', // Latios
             382: 'legendary', // Kyogre
             383: 'legendary', // Groudon
-            384: 'legendary', // Rayquaza
+            384: 'epic',     // Rayquaza (moved to epic - too iconic to be legendary-only)
             385: 'legendary', // Jirachi
             386: 'legendary', // Deoxys
 
@@ -1872,10 +1897,10 @@
             442: 'rare',     // Spiritomb (very rare encounter, no evolution)
             443: 'common',   // Gible (rare but stage 1)
             444: 'uncommon', // Gabite (stage 2)
-            445: 'rare',     // Garchomp (pseudo-legendary)
+            445: 'epic',     // Garchomp (pseudo-legendary) (pseudo-legendary)
             446: 'rare',     // Munchlax (very rare, stage 1)
             447: 'common',   // Riolu (rare but stage 1)
-            448: 'uncommon', // Lucario (stage 2)
+            448: 'epic',     // Lucario (fan favourite, epic tier)
             449: 'common',   // Hippopotas (uncommon, stage 1)
             450: 'uncommon', // Hippowdon (stage 2)
             451: 'common',   // Skorupi (uncommon, stage 1)
@@ -1888,17 +1913,17 @@
             458: 'rare',     // Mantyke (baby but rare, stage 1)
             459: 'common',   // Snover (uncommon, stage 1)
             460: 'uncommon', // Abomasnow (stage 2)
-            461: 'rare',     // Weavile (stage 3 from Sneasel)
+            461: 'epic',     // Weavile (rare encounter) (stage 3 from Sneasel)
             462: 'rare',     // Magnezone (stage 3 from Magneton)
             463: 'rare',     // Lickilicky (stage 3 from Lickitung)
             464: 'rare',     // Rhyperior (stage 3 from Rhydon)
             465: 'rare',     // Tangrowth (stage 3 from Tangela)
-            466: 'rare',     // Electivire (stage 3 from Electabuzz)
-            467: 'rare',     // Magmortar (stage 3 from Magmar)
+            466: 'epic',     // Electivire (rare trade evolution) (stage 3 from Electabuzz)
+            467: 'epic',     // Magmortar (rare trade evolution) (stage 3 from Magmar)
             468: 'rare',     // Togekiss (stage 3 from Togetic)
             469: 'rare',     // Yanmega (stage 3 from Yanma)
-            470: 'uncommon', // Leafeon (Eevee evolution)
-            471: 'uncommon', // Glaceon (Eevee evolution)
+            470: 'epic',     // Leafeon (rare Eevee evo)
+            471: 'epic',     // Glaceon (rare Eevee evo)
             472: 'rare',     // Gliscor (stage 3 from Gligar)
             473: 'rare',     // Mamoswine (stage 3 from Piloswine)
             474: 'uncommon', // Porygon-Z (stage 3 from Porygon2)
@@ -2038,7 +2063,7 @@
             606: 'uncommon', // Beheeyem (stage 2)
             607: 'common',   // Litwick (uncommon, stage 1)
             608: 'uncommon', // Lampent (stage 2)
-            609: 'rare',     // Chandelure (stage 3)
+            609: 'epic',     // Chandelure (powerful stage 3) (stage 3)
             610: 'common',   // Axew (rare but stage 1)
             611: 'uncommon', // Fraxure (stage 2)
             612: 'rare',     // Haxorus (stage 3)
@@ -2054,7 +2079,7 @@
             622: 'common',   // Golett (uncommon, stage 1)
             623: 'uncommon', // Golurk (stage 2)
             624: 'common',   // Pawniard (uncommon, stage 1)
-            625: 'uncommon', // Bisharp (stage 2)
+            625: 'epic',     // Bisharp (powerful, rare encounter) (stage 2)
             626: 'uncommon', // Bouffalant (uncommon, no evolution)
             627: 'common',   // Rufflet (uncommon, stage 1)
             628: 'uncommon', // Braviary (stage 2)
@@ -2064,9 +2089,9 @@
             632: 'uncommon', // Durant (uncommon, no evolution)
             633: 'common',   // Deino (rare but stage 1)
             634: 'uncommon', // Zweilous (stage 2)
-            635: 'rare',     // Hydreigon (pseudo-legendary)
+            635: 'epic',     // Hydreigon (pseudo-legendary) (pseudo-legendary)
             636: 'common',   // Larvesta (very rare but stage 1)
-            637: 'uncommon', // Volcarona (stage 2, pseudo-legendary stats)
+            637: 'epic',     // Volcarona (pseudo-legendary stats)
             638: 'legendary', // Cobalion
             639: 'legendary', // Terrakion
             640: 'legendary', // Virizion
@@ -2112,7 +2137,7 @@
             678: 'uncommon', // Meowstic (stage 2)
             679: 'common',   // Honedge (uncommon, stage 1)
             680: 'uncommon', // Doublade (stage 2)
-            681: 'rare',     // Aegislash (stage 3)
+            681: 'epic',     // Aegislash (powerful royal sword) (stage 3)
             682: 'common',   // Spritzee (uncommon, stage 1)
             683: 'uncommon', // Aromatisse (stage 2)
             684: 'common',   // Swirlix (uncommon, stage 1)
@@ -2131,13 +2156,13 @@
             697: 'uncommon', // Tyrantrum (stage 2)
             698: 'common',   // Amaura (fossil, stage 1)
             699: 'uncommon', // Aurorus (stage 2)
-            700: 'uncommon', // Sylveon (Eevee evolution)
+            700: 'epic',     // Sylveon (rare Eevee evo) (Eevee evolution)
             701: 'uncommon', // Hawlucha (uncommon, no evolution)
             702: 'uncommon', // Dedenne (uncommon, no evolution)
             703: 'uncommon', // Carbink (rare encounter, no evolution)
             704: 'common',   // Goomy (uncommon, stage 1)
             705: 'uncommon', // Sliggoo (stage 2)
-            706: 'rare',     // Goodra (pseudo-legendary)
+            706: 'epic',     // Goodra (pseudo-legendary) (pseudo-legendary)
             707: 'uncommon', // Klefki (uncommon, no evolution)
             708: 'common',   // Phantump (uncommon, stage 1)
             709: 'uncommon', // Trevenant (stage 2)
@@ -2146,7 +2171,7 @@
             712: 'common',   // Bergmite (uncommon, stage 1)
             713: 'uncommon', // Avalugg (stage 2)
             714: 'common',   // Noibat (rare but stage 1)
-            715: 'uncommon', // Noivern (stage 2)
+            715: 'epic',     // Noivern (powerful dragon) (stage 2)
             716: 'legendary', // Xerneas
             717: 'legendary', // Yveltal
             718: 'legendary', // Zygarde
@@ -2967,7 +2992,13 @@
                                         <PinkSlipPokeballIcon size={16} />
                                         <span className="text-white text-xs font-bold">PINK SLIP</span>
                                     </div>
-                                    {activity.pinkSlippedFrom && (
+                                    {activity.capturedFromTrainer && (
+                                        <div className="rounded-lg px-2 py-1 shadow-lg"
+                                            style={{ backgroundColor: activity.capturedFromTrainerColor || '#374151' }}>
+                                            <span className="text-white text-xs font-bold">⚡ {activity.capturedFromTrainer}</span>
+                                        </div>
+                                    )}
+                                    {activity.pinkSlippedFrom && !activity.capturedFromTrainer && (
                                         <div className="bg-black bg-opacity-60 rounded-lg px-2 py-0.5">
                                             <span className="text-pink-300 text-xs">from {activity.pinkSlippedFrom}</span>
                                         </div>
@@ -4119,9 +4150,12 @@
                     }
                     friendIds = friendIds.filter(id => !ghostFriendIds.includes(id));
 
-                    // Load incoming requests from shared /friendRequests node
-                    const allRequestsSnapshot = await database.ref('friendRequests').once('value');
-                    const allRequests = allRequestsSnapshot.val() || {};
+                    // Load incoming requests — two targeted queries (rules don't allow full scan)
+                    const [toMeSnap, fromMeSnap] = await Promise.all([
+                        database.ref('friendRequests').orderByChild('to').equalTo(uid).once('value'),
+                        database.ref('friendRequests').orderByChild('from').equalTo(uid).once('value'),
+                    ]);
+                    const allRequests = Object.assign({}, toMeSnap.val() || {}, fromMeSnap.val() || {});
 
                     const incoming = [];
                     const outgoing = [];
@@ -4129,8 +4163,6 @@
 
                     for (const [reqKey, req] of Object.entries(allRequests)) {
                         if (!req || !req.status) continue;
-
-                        // Only process requests involving me
                         const involvesMe = req.to === uid || req.from === uid;
                         if (!involvesMe) continue;
 
@@ -4321,6 +4353,9 @@
                         acceptedAt: firebase.database.ServerValue.TIMESTAMP
                     });
 
+                    // Immediately remove from incoming requests so badge clears instantly
+                    setIncomingRequests(prev => prev.filter(uid => uid !== senderUid));
+
                     console.log('✅ Friend request accepted');
                     await loadFriendsData();
                 } catch (error) {
@@ -4341,6 +4376,9 @@
                     await database.ref(`friendRequests/${requestId}`).update({
                         status: 'declined'
                     });
+
+                    // Immediately remove from incoming requests so badge clears instantly
+                    setIncomingRequests(prev => prev.filter(uid => uid !== senderUid));
 
                     console.log('✅ Friend request declined');
                     await loadFriendsData();
@@ -4522,8 +4560,11 @@
 
                     // Load pink slip activity from battle records (within 48hrs)
                     try {
-                        const battlesSnap = await database.ref('battles').once('value');
-                        const allBattles = battlesSnap.val() || {};
+                        const [initiatedSnap, acceptedSnap] = await Promise.all([
+                            database.ref('battles').orderByChild('initiatorId').equalTo(myUid).once('value'),
+                            database.ref('battles').orderByChild('accepterId').equalTo(myUid).once('value'),
+                        ]);
+                        const allBattles = Object.assign({}, initiatedSnap.val() || {}, acceptedSnap.val() || {});
                         Object.values(allBattles).forEach(battle => {
                             if (!battle || !battle.pinkSlipClaimedPokemonId || !battle.pinkSlipCompletedAt) return;
                             if (battle.pinkSlipCompletedAt < fortyEightHoursAgo) return;
@@ -5273,9 +5314,11 @@
                 setBattleSpectateRunning(false);
                 setBattleResults(result);
                 setBattleView('results');
-                if (currentBattle?.battleId) {
-                    viewedBattleIds.current.add(currentBattle.battleId);
+                if (currentBattle?.battleId && firebaseManager.user) {
+                    const bid = currentBattle.battleId;
+                    viewedBattleIds.current.add(bid);
                     window.storage.set('viewed-battle-ids', JSON.stringify([...viewedBattleIds.current])).catch(() => {});
+                    database.ref(`battles/${bid}/viewedBy/${firebaseManager.user.uid}`).set(true).catch(() => {});
                 }
             };
 
@@ -5291,9 +5334,12 @@
                     setCurrentBattle(battle);
                     setBattleResults(battle.result);
                     setBattleView('results');
-                    // Mark as viewed
+                    // Mark as viewed on Firebase so badge clears permanently across sessions/devices
                     viewedBattleIds.current.add(battleId);
                     window.storage.set('viewed-battle-ids', JSON.stringify([...viewedBattleIds.current])).catch(() => {});
+                    if (firebaseManager.user) {
+                        database.ref(`battles/${battleId}/viewedBy/${firebaseManager.user.uid}`).set(true).catch(() => {});
+                    }
                     setBattleBadgeCount(prev => Math.max(0, prev - 1));
                 } catch (err) {
                     console.error('❌ Error loading battle results:', err);
@@ -5415,9 +5461,12 @@
                 if (!firebaseManager.user) return;
                 try {
                     const myUid = firebaseManager.user.uid;
-                    const snap = await database.ref('battles')
-                        .orderByChild('result/loserUserId').equalTo(myUid).once('value');
-                    const battles = snap.val() || {};
+                    // Query battles where I was a participant, then filter for losses
+                    const [asInitiator, asAccepter] = await Promise.all([
+                        database.ref('battles').orderByChild('initiatorId').equalTo(myUid).once('value'),
+                        database.ref('battles').orderByChild('accepterId').equalTo(myUid).once('value'),
+                    ]);
+                    const battles = Object.assign({}, asInitiator.val() || {}, asAccepter.val() || {});
                     for (const battle of Object.values(battles)) {
                         if (battle.pendingRemoval && !battle.pendingRemoval.processedByLoser && battle.pinkSlipClaimedPokemonId) {
                             const pokemonId = battle.pinkSlipClaimedPokemonId;
@@ -5494,19 +5543,27 @@
             useEffect(() => {
                 if (!firebaseProfile || !firebaseManager.user) return;
                 const myUid = firebaseManager.user.uid;
-                const battlesRef = database.ref('battles');
-                const listener = battlesRef.on('value', (snap) => {
-                    const all = snap.val() || {};
+                // Two targeted listeners — one per participant role (rules block full collection listen)
+                const asAccepterRef = database.ref('battles').orderByChild('accepterId').equalTo(myUid);
+                const asInitiatorRef = database.ref('battles').orderByChild('initiatorId').equalTo(myUid);
+                const battlesCache = { asAccepter: {}, asInitiator: {} };
+
+                const processBattles = () => {
+                    const all = Object.assign({}, battlesCache.asAccepter, battlesCache.asInitiator);
                     const pending = {};
                     const resolvedForMe = [];
+                    const now = Date.now();
                     Object.values(all).forEach(b => {
                         if (!b) return;
-                        if (b.accepterId === myUid && b.status === 'PENDING_ACCEPT' && Date.now() < b.expiresAt) {
+                        // Pending: only if not expired and not already accepted/declined
+                        if (b.accepterId === myUid && b.status === 'PENDING_ACCEPT' && now < b.expiresAt) {
                             pending[b.battleId] = b;
                         }
-                        // Notify both initiator AND accepter of resolved battles
+                        // Resolved: only count if not yet viewed by me on Firebase
                         const iAmInvolved = b.initiatorId === myUid || b.accepterId === myUid;
-                        if (iAmInvolved && (b.status === 'LOOT_PENDING' || b.status === 'RESOLVED' || b.status === 'COMPLETED') && b.result) {
+                        const isResolved = (b.status === 'LOOT_PENDING' || b.status === 'RESOLVED' || b.status === 'COMPLETED') && b.result;
+                        const viewedByMe = b.viewedBy && b.viewedBy[myUid];
+                        if (iAmInvolved && isResolved && !viewedByMe) {
                             resolvedForMe.push(b);
                         }
 
@@ -5548,10 +5605,22 @@
                     });
                     setPendingBattles(pending);
                     setResolvedBattlesForMe(resolvedForMe);
-                    const unviewedBattles = resolvedForMe.filter(b => !viewedBattleIds.current.has(b.battleId));
-                    setBattleBadgeCount(Object.keys(pending).length + unviewedBattles.length);
+                    // Badge = pending invites + unviewed resolved battles (viewedBy checked server-side above)
+                    setBattleBadgeCount(Object.keys(pending).length + resolvedForMe.length);
+                };
+
+                const listenerA = asAccepterRef.on('value', snap => {
+                    battlesCache.asAccepter = snap.val() || {};
+                    processBattles();
                 });
-                return () => battlesRef.off('value', listener);
+                const listenerB = asInitiatorRef.on('value', snap => {
+                    battlesCache.asInitiator = snap.val() || {};
+                    processBattles();
+                });
+                return () => {
+                    asAccepterRef.off('value', listenerA);
+                    asInitiatorRef.off('value', listenerB);
+                };
             }, [firebaseProfile]);
 
             // PC sort helper
@@ -6865,6 +6934,104 @@
             };
 
             // Generate a single opponent trainer + their pokemon for a given stage
+
+            // ══════════════════════════════════════════
+            // 🏆 LEGACY TRAINER INDEX
+            // Each trainer has stage-scaled pokemon pools (low/mid/high/elite)
+            // Stage brackets: 1-10=low, 11-25=mid, 26-49=high, 50+=elite
+            // ══════════════════════════════════════════
+            const LEGACY_TRAINERS = [
+                // ── GYM LEADERS ──
+                { name: 'Brock',    badge: '⬛', color: '#78350f', low: [74,75],       mid: [95,208],      high: [112,111],    elite: [248,377]   },
+                { name: 'Misty',    badge: '💧', color: '#1d4ed8', low: [90,116],      mid: [130,54],      high: [131,195],    elite: [9,350]     },
+                { name: 'Lt. Surge',badge: '⚡', color: '#ca8a04', low: [100,26],      mid: [26,125],      high: [135,181],    elite: [466,145]   },
+                { name: 'Erika',    badge: '🌿', color: '#15803d', low: [43,44],       mid: [45,182],      high: [154,3],    elite: [357,470]   },
+                { name: 'Koga',     badge: '☠️', color: '#4c1d95', low: [109,41],      mid: [110,89],      high: [49,169],     elite: [430,169]   },
+                { name: 'Sabrina',  badge: '🔮', color: '#7c3aed', low: [63,64],       mid: [65,122],      high: [196,202],    elite: [282,150]   },
+                { name: 'Blaine',   badge: '🔥', color: '#b45309', low: [58,77],       mid: [59,78],       high: [126,136],    elite: [6,257]   },
+                { name: 'Giovanni', badge: '💎', color: '#1e293b', low: [111,74],     mid: [112,31],     high: [51,112],    elite: [248,383]   },
+                // ── RIVALS ──
+                { name: 'Blue',     badge: '🌊', color: '#1e40af', low: [56,58],       mid: [59,112],      high: [130,149],    elite: [6,143]   },
+                { name: 'Silver',   badge: '🌙', color: '#475569', low: [215,228],     mid: [229,197],     high: [230,248],    elite: [249,250]   },
+                { name: 'Barry',    badge: '⚡', color: '#d97706', low: [390,393],     mid: [392,395],     high: [398,6],    elite: [389,445]   },
+                { name: 'Hau',      badge: '🌺', color: '#f97316', low: [722,725],     mid: [723,726],     high: [724,727],    elite: [791,789]   },
+                { name: 'Hop',      badge: '🐑', color: '#6366f1', low: [816,819],     mid: [817,820],     high: [818,821],    elite: [892,890]   },
+                { name: 'Marnie',   badge: '🖤', color: '#18181b', low: [819,856],     mid: [820,857],     high: [821,858],    elite: [888,862]   },
+                // ── ELITE FOUR ──
+                { name: 'Lorelei',  badge: '🧊', color: '#0369a1', low: [87,86],       mid: [91,131],      high: [124,144],    elite: [350,87]   },
+                { name: 'Bruno',    badge: '👊', color: '#92400e', low: [66,106],     mid: [107,236],     high: [68,297],    elite: [448,448]   },
+                { name: 'Agatha',   badge: '👻', color: '#3b0764', low: [92,93],     mid: [94,200],     high: [354,429],    elite: [477,94]   },
+                { name: 'Lance',    badge: '🐉', color: '#991b1b', low: [147,246],     mid: [148,230],     high: [149,373],    elite: [384,6]   },
+                { name: 'Will',     badge: '🃏', color: '#5b21b6', low: [96,97],     mid: [178,178],     high: [338,337],    elite: [282,487]   },
+                { name: 'Karen',    badge: '🌑', color: '#27272a', low: [197,215],     mid: [229,198],     high: [359,430],    elite: [430,248]   },
+                // ── CHAMPIONS ──
+                { name: 'Red',      badge: '⭐', color: '#dc2626', low: [25,6],     mid: [6,143],     high: [143,149],    elite: [6,150]   },
+                { name: 'Cynthia',  badge: '👑', color: '#1c1917', low: [443,228],     mid: [444,448],     high: [445,448],    elite: [445,487]   },
+                { name: 'Steven',   badge: '💎', color: '#334155', low: [304,305],     mid: [306,347],     high: [376,348],    elite: [376,384]   },
+                { name: 'Wallace',  badge: '🌊', color: '#0c4a6e', low: [279,120],     mid: [350,121],     high: [130,350],    elite: [350,382]   },
+                { name: 'Iris',     badge: '🐉', color: '#7e22ce', low: [147,704],     mid: [148,612],     high: [149,635],    elite: [6,149]   },
+            ];
+
+            // Pick a legacy trainer for milestone stages (10, 20, 30...)
+            // Rotates through trainer list deterministically by milestone number
+            const getLegacyTrainer = (stage) => {
+                const milestoneNum = Math.floor(stage / 10); // which milestone (1=stage10, 2=stage20...)
+                const idx = (milestoneNum - 1) % LEGACY_TRAINERS.length;
+                return LEGACY_TRAINERS[idx];
+            };
+
+            // Get pokemon ID pool for a trainer at a given stage
+            const getLegacyPokemonId = (trainer, stage) => {
+                const pool = stage >= 50 ? trainer.elite
+                           : stage >= 26 ? trainer.high
+                           : stage >= 11 ? trainer.mid
+                           : trainer.low;
+                return pool[Math.floor(Math.random() * pool.length)];
+            };
+
+            // Generate a LEGACY opponent (milestone stages) — specific trainer + scaled pokemon
+            const generateLegacyOpponent = async (stage) => {
+                const trainer = getLegacyTrainer(stage);
+                const pokemonId = getLegacyPokemonId(trainer, stage);
+
+                // Scale rarity + trait by stage (same as normal but milestone stages skew higher)
+                const rarity = stage >= 50 ? 'legendary'
+                             : stage >= 30 ? 'epic'
+                             : stage >= 20 ? 'rare'
+                             : stage >= 10 ? 'uncommon'
+                             : 'common';
+
+                // Shiny odds at high milestones
+                const shinyRoll = Math.random();
+                const isShiny = stage >= 50 ? shinyRoll < 0.40
+                              : stage >= 30 ? shinyRoll < 0.15
+                              : stage >= 20 ? shinyRoll < 0.05
+                              : false;
+                const trait = !isShiny ? rollGauntletTrait(stage) : 'normal';
+
+                const response = await fetch(`https://pokeapi.co/api/v2/pokemon/${pokemonId}`);
+                const data = await response.json();
+                const spriteUrl = isShiny ? data.sprites.front_shiny : data.sprites.front_default;
+
+                // Legacy move — elite trainers heavily favor COUNTER
+                const r = Math.random();
+                const move = stage >= 30 ? (r < 0.55 ? 'COUNTER' : r < 0.85 ? 'CHARGE' : 'QUICK')
+                           : stage >= 20 ? (r < 0.45 ? 'COUNTER' : r < 0.80 ? 'CHARGE' : 'QUICK')
+                           : (r < 0.40 ? 'COUNTER' : r < 0.70 ? 'CHARGE' : 'QUICK');
+
+                return {
+                    trainerName: trainer.name,
+                    badgeColor: trainer.color,
+                    trainerBadge: trainer.badge,
+                    isLegacy: true,
+                    pokemon: {
+                        pokemonId, pokemonName: data.name, spriteUrl,
+                        rarity, isShiny, trait, id: `gauntlet_legacy_${Date.now()}`
+                    },
+                    move
+                };
+            };
+
             const generateGauntletOpponent = async (stage) => {
                 const rarity = rollGauntletRarity(stage);
                 const trait = rollGauntletTrait(stage);
@@ -6877,10 +7044,63 @@
                 const isShiny = trait === 'shiny';
                 const spriteUrl = isShiny ? data.sprites.front_shiny : data.sprites.front_default;
 
-                // Random trainer identity
-                const colorName = TRAINER_COLORS[Math.floor(Math.random() * TRAINER_COLORS.length)];
-                const trainerName = TRAINER_NAMES[Math.floor(Math.random() * TRAINER_NAMES.length)];
-                const badgeColor = COLOR_HEX_MAP[colorName] || '#808080';
+                // Trainer class pool — tiered by stage difficulty, all real named trainers
+                const TRAINER_CLASSES = [
+                    // tier: 'early' (stages 1-9)
+                    { class: 'Youngster',  badge: '🧢', color: '#3b82f6', tier: 'early' },
+                    { class: 'Lass',       badge: '🎀', color: '#ec4899', tier: 'early' },
+                    { class: 'Bug Catcher',badge: '🐛', color: '#84cc16', tier: 'early' },
+                    { class: 'Picnicker',  badge: '🧺', color: '#f97316', tier: 'early' },
+                    { class: 'Camper',     badge: '⛺', color: '#22c55e', tier: 'early' },
+                    { class: 'Wally',      badge: '🌿', color: '#15803d', tier: 'early' },
+                    { class: 'Bonnie',     badge: '💛', color: '#ca8a04', tier: 'early' },
+                    { class: 'Lillie',     badge: '🌸', color: '#f0abfc', tier: 'early' },
+                    { class: 'Gladion',    badge: '🖤', color: '#18181b', tier: 'early' },
+                    { class: 'Lana',       badge: '🌊', color: '#0369a1', tier: 'early' },
+                    // tier: 'mid' (stages 10-24)
+                    { class: 'Hiker',      badge: '🥾', color: '#78350f', tier: 'mid' },
+                    { class: 'Sailor',     badge: '⚓', color: '#1e40af', tier: 'mid' },
+                    { class: 'Biker',      badge: '🏍️', color: '#1c1917', tier: 'mid' },
+                    { class: 'Fisherman',  badge: '🎣', color: '#0369a1', tier: 'mid' },
+                    { class: 'Guitarist',  badge: '🎸', color: '#7c3aed', tier: 'mid' },
+                    { class: 'Ranger',     badge: '🌲', color: '#166534', tier: 'mid' },
+                    { class: 'Worker',     badge: '⛏️', color: '#374151', tier: 'mid' },
+                    { class: 'Gentleman',  badge: '🎩', color: '#1e3a5f', tier: 'mid' },
+                    { class: 'Grimsley',   badge: '🃏', color: '#1f2937', tier: 'mid' },
+                    { class: 'Flannery',   badge: '🌋', color: '#b91c1c', tier: 'mid' },
+                    { class: 'Korrina',    badge: '⚡', color: '#d97706', tier: 'mid' },
+                    { class: 'Jogger',     badge: '🏃', color: '#0891b2', tier: 'mid' },
+                    { class: 'Swimmer',    badge: '🏊', color: '#0284c7', tier: 'mid' },
+                    { class: 'Mallow',     badge: '🍃', color: '#16a34a', tier: 'mid' },
+                    // tier: 'hard' (stages 25-49)
+                    { class: 'Ace Trainer',badge: '🌟', color: '#0f172a', tier: 'hard' },
+                    { class: 'Scientist',  badge: '🔬', color: '#164e63', tier: 'hard' },
+                    { class: 'Psychic',    badge: '🔮', color: '#5b21b6', tier: 'hard' },
+                    { class: 'Ninja Boy',  badge: '🥷', color: '#064e3b', tier: 'hard' },
+                    { class: 'Black Belt', badge: '🥋', color: '#292524', tier: 'hard' },
+                    { class: 'Collector',  badge: '🗃️', color: '#1e3a5f', tier: 'hard' },
+                    { class: 'Acerola',    badge: '👻', color: '#4a044e', tier: 'hard' },
+                    { class: 'Skyla',      badge: '✈️', color: '#1d4ed8', tier: 'hard' },
+                    { class: 'Brawly',     badge: '🌊', color: '#0c4a6e', tier: 'hard' },
+                    { class: 'Piers',      badge: '🎤', color: '#18181b', tier: 'hard' },
+                    { class: 'Mohn',       badge: '🌺', color: '#be185d', tier: 'hard' },
+                    { class: 'Nanu',       badge: '🌙', color: '#1e1b4b', tier: 'hard' },
+                    // tier: 'elite' (stages 50+)
+                    { class: 'Dragon Tamer',badge: '🐉', color: '#7f1d1d', tier: 'elite' },
+                    { class: 'Veteran',    badge: '🏅', color: '#451a03', tier: 'elite' },
+                    { class: 'Champion',   badge: '👑', color: '#1c1917', tier: 'elite' },
+                    { class: 'Rival',      badge: '⚔️', color: '#312e81', tier: 'elite' },
+                    { class: 'Lusamine',   badge: '🌺', color: '#4a044e', tier: 'elite' },
+                    { class: 'Archie',     badge: '🌊', color: '#1e3a8a', tier: 'elite' },
+                    { class: 'Maxie',      badge: '🌋', color: '#7f1d1d', tier: 'elite' },
+                    { class: 'Palmer',     badge: '🏆', color: '#78350f', tier: 'elite' },
+                    { class: 'Professor Oak', badge: '📖', color: '#166534', tier: 'elite' },
+                    { class: 'Elite Four', badge: '💎', color: '#1e1b4b', tier: 'elite' },
+                ];
+
+                const trainerTier = stage >= 50 ? 'elite' : stage >= 25 ? 'hard' : stage >= 10 ? 'mid' : 'early';
+                const tierPool = TRAINER_CLASSES.filter(t => t.tier === trainerTier);
+                const trainerClass = tierPool[Math.floor(Math.random() * tierPool.length)];
 
                 // Computer move: weighted by stage (higher = smarter)
                 // Stage-weighted AI move selection — higher stages prefer strategically stronger moves
@@ -6908,8 +7128,10 @@
                 })();
 
                 return {
-                    trainerName: `${colorName} ${trainerName}`,
-                    badgeColor,
+                    trainerName: trainerClass.class,
+                    trainerBadge: trainerClass.badge,
+                    badgeColor: trainerClass.color,
+                    isLegacy: false,
                     pokemon: {
                         pokemonId, pokemonName: data.name, spriteUrl,
                         rarity, isShiny, trait, id: `gauntlet_opp_${Date.now()}`
@@ -6946,7 +7168,8 @@
                 setGauntletLoadingOpponent(true);
                 try {
                     const run = gauntletRun;
-                    const opponent = await generateGauntletOpponent(run.stage);
+                    const genFn = run.stage % 10 === 0 ? generateLegacyOpponent : generateGauntletOpponent;
+                    const opponent = await genFn(run.stage);
                     const updated = { ...run, currentPokemon: pokemon, opponent, playerMove: null, phase: 'movePick' };
                     setGauntletRun(updated);
                     saveGauntletRun(updated);
@@ -6999,22 +7222,41 @@
                 // Update run state based on result
                 let newRun;
                 if (playerWins) {
-                    // Win: skip result screen — auto-advance to next battle
                     const newStage = run.stage + 1;
-                    const winRun = { ...run, stage: newStage, score: run.score + 1, opponent: null, playerMove: null, phase: 'movePick', lastResult: null };
-                    setGauntletRun(winRun);
-                    saveGauntletRun(winRun);
-                    setGauntletLoadingOpponent(true);
-                    generateGauntletOpponent(newStage).then(opponent => {
-                        const ready = { ...winRun, opponent };
-                        setGauntletRun(ready);
-                        saveGauntletRun(ready);
-                    }).catch(e => console.error('Opponent gen failed', e))
-                      .finally(() => setGauntletLoadingOpponent(false));
-                    return;
+                    const newScore = run.score + 1;
+                    const isMilestone = newScore > 0 && newScore % 10 === 0; // every 10 wins
+                    if (isMilestone) {
+                        // Pink slip milestone — go directly to catch window, no confirmation screen
+                        newRun = {
+                            ...run, stage: newStage, score: newScore,
+                            opponent: null, playerMove: null,
+                            phase: 'pinkSlipWindow',
+                            pinkSlipPokemon: run.opponent.pokemon,
+                            pinkSlipTrainer: run.opponent.trainerName,
+                            pinkSlipTrainerColor: run.opponent.badgeColor,
+                            lastResult: null,
+                        };
+                        setGauntletRun(newRun);
+                        saveGauntletRun(newRun);
+                        return;
+                    } else {
+                        // Normal win — auto-advance directly to next battle
+                        newRun = { ...run, stage: newStage, score: newScore, opponent: null, playerMove: null, phase: 'movePick', lastResult: null };
+                        setGauntletRun(newRun);
+                        saveGauntletRun(newRun);
+                        setGauntletLoadingOpponent(true);
+                        const genFn = newStage % 10 === 0 ? generateLegacyOpponent : generateGauntletOpponent;
+                        genFn(newStage).then(opponent => {
+                            const ready = { ...newRun, opponent };
+                            setGauntletRun(ready);
+                            saveGauntletRun(ready);
+                        }).catch(e => console.error('Opponent gen failed', e))
+                          .finally(() => setGauntletLoadingOpponent(false));
+                        return;
+                    }
                 } else {
-                    // Loss: 1 pokemon = instant game over
-                    newRun = { ...run, currentPokemon: null, phase: 'gameover',
+                    // Loss — show result screen
+                    newRun = { ...run, currentPokemon: null, phase: 'result',
                         lastResult: { won: false, opponentTrainer: run.opponent.trainerName } };
                     gauntletPostScore(run.score);
                 }
@@ -7022,13 +7264,115 @@
                 saveGauntletRun(newRun);
             };
 
-            // Continue after loss result screen → game over
+
+            // Gauntlet pink slip — player catches the trainer's pokemon
+            const gauntletCatchPinkSlip = async () => {
+                const run = gauntletRun;
+                if (!run || !run.pinkSlipPokemon) return;
+                const pokemon = run.pinkSlipPokemon;
+                // Give it the trainer badge metadata
+                const caughtPokemon = {
+                    ...pokemon,
+                    id: `gauntlet_catch_${Date.now()}`,
+                    isPinkSlip: true,
+                    capturedFromTrainer: run.pinkSlipTrainer,
+                    capturedFromTrainerColor: run.pinkSlipTrainerColor,
+                    catchDate: Date.now(),
+                };
+                // Add to PC
+                const newPC = [...(Array.isArray(pokemonPC) ? pokemonPC : []), caughtPokemon];
+                setPokemonPC(newPC);
+                await window.storage.set('pokemon-pc', JSON.stringify(newPC)).catch(() => {});
+                if (firebaseManager.user) {
+                    await database.ref(`users/${firebaseManager.user.uid}/pc`).set(newPC).catch(() => {});
+                }
+                // Activity feed entry
+                if (firebaseManager.user && firebaseProfile) {
+                    const uid = firebaseManager.user.uid;
+                    const activityId = `gauntlet_${Date.now()}`;
+                    await database.ref(`users/${uid}/activity/${activityId}`).set({
+                        type: 'pinkSlip',
+                        pokemonName: pokemon.pokemonName,
+                        pokemonId: pokemon.pokemonId,
+                        spriteUrl: pokemon.spriteUrl,
+                        rarity: pokemon.rarity,
+                        isShiny: pokemon.isShiny || false,
+                        trait: pokemon.trait || 'normal',
+                        isPinkSlip: true,
+                        capturedFromTrainer: run.pinkSlipTrainer,
+                        capturedFromTrainerColor: run.pinkSlipTrainerColor,
+                        trainerBadgeColor: firebaseProfile.badgeColor,
+                        trainerName: firebaseProfile.displayName,
+                        timestamp: Date.now(),
+                        candyCount: 0,
+                    }).catch(() => {});
+                }
+                // Continue gauntlet
+                gauntletAfterPinkSlip(run);
+            };
+
+            // Gauntlet pink slip dismissed — skip catch, continue
+            const gauntletSkipPinkSlip = () => {
+                const run = gauntletRun;
+                if (!run) return;
+                gauntletAfterPinkSlip(run);
+            };
+
+            // Shared: after pink slip window (catch or skip) — advance to next stage
+            const gauntletAfterPinkSlip = (run) => {
+                const nextRun = { ...run, phase: 'movePick', pinkSlipPokemon: null, pinkSlipTrainer: null, pinkSlipTrainerColor: null, opponent: null, playerMove: null };
+                setGauntletRun(nextRun);
+                saveGauntletRun(nextRun);
+                setGauntletLoadingOpponent(true);
+                const genFn = run.stage % 10 === 0 ? generateLegacyOpponent : generateGauntletOpponent;
+                genFn(run.stage).then(opponent => {
+                    const ready = { ...nextRun, opponent };
+                    setGauntletRun(ready);
+                    saveGauntletRun(ready);
+                }).catch(e => console.error('Opponent gen after pink slip failed', e))
+                  .finally(() => setGauntletLoadingOpponent(false));
+            };
+
+            // Continue after result screen → gameover (loss) or next stage (win)
             const gauntletContinue = () => {
                 const run = gauntletRun;
                 if (!run) return;
-                const updated = { ...run, phase: 'gameover' };
-                setGauntletRun(updated);
-                saveGauntletRun(updated);
+                if (run.lastResult?.won) {
+                    // Win path: if pink slip milestone, route to catch window
+                    if (run.lastResult.isPinkSlipStage && run.lastResult.pinkSlipPokemon) {
+                        const milestoneRun = {
+                            ...run,
+                            phase: 'pinkSlipWindow',
+                            pinkSlipPokemon: run.lastResult.pinkSlipPokemon,
+                            pinkSlipTrainer: run.lastResult.pinkSlipTrainer,
+                            pinkSlipTrainerColor: run.lastResult.pinkSlipTrainerColor,
+                            lastResult: null,
+                            opponent: null,
+                            playerMove: null,
+                        };
+                        setGauntletRun(milestoneRun);
+                        saveGauntletRun(milestoneRun);
+                    } else {
+                        // Normal win: advance to next battle
+                        const newStage = run.lastResult.nextStage || run.stage;
+                        const winRun = { ...run, stage: newStage, opponent: null, playerMove: null, phase: 'movePick', lastResult: null };
+                        setGauntletRun(winRun);
+                        saveGauntletRun(winRun);
+                        setGauntletLoadingOpponent(true);
+                        const genFn = newStage % 10 === 0 ? generateLegacyOpponent : generateGauntletOpponent;
+                        genFn(newStage).then(opponent => {
+                            const ready = { ...winRun, opponent };
+                            setGauntletRun(ready);
+                            saveGauntletRun(ready);
+                        }).catch(e => console.error('Opponent gen failed', e))
+                          .finally(() => setGauntletLoadingOpponent(false));
+                    }
+                } else {
+                    // Loss path → game over
+                    const updated = { ...run, phase: 'gameover' };
+                    setGauntletRun(updated);
+                    saveGauntletRun(updated);
+                }
             };
 
             // Post final score to Firebase leaderboard
@@ -7074,6 +7418,7 @@
                         const run = JSON.parse(saved.value);
                         // Snap mid-battle states back to a safe pick screen
                         if (run.phase === 'battle') run.phase = 'pokemonPick';
+                        // pinkSlipWindow is safe to resume from
                         setGauntletRun(run);
                     }
                 } catch (e) {}
@@ -8847,16 +9192,21 @@
                                                 {run.phase === 'movePick' && run.opponent && (
                                                     <div>
                                                         {/* Matchup header */}
-                                                        <div className="bg-slate-800 rounded-2xl p-4 border border-slate-700 mb-4">
+                                                        <div className={`rounded-2xl p-4 border mb-4 ${run.opponent.isLegacy ? 'bg-gradient-to-r from-slate-900 to-slate-800 border-yellow-500 border-opacity-60' : 'bg-slate-800 border-slate-700'}`}>
+                                                            {run.opponent.isLegacy && (
+                                                                <div className="text-yellow-400 text-xs font-bold text-center mb-2 tracking-widest uppercase">⭐ Legacy Trainer ⭐</div>
+                                                            )}
                                                             <div className="flex items-center justify-between">
                                                                 <div className="text-center">
-                                                                    <div className="w-10 h-10 rounded-full mx-auto flex items-center justify-center text-white font-bold text-xs mb-1" style={{ backgroundColor: profileColor || '#FF6B6B' }}>⚡</div>
+                                                                    <div className="w-10 h-10 rounded-full mx-auto flex items-center justify-center text-white font-bold text-base mb-1" style={{ backgroundColor: profileColor || '#FF6B6B' }}>⚡</div>
                                                                     <div className="text-xs text-gray-400">{firebaseProfile?.displayName || 'You'}</div>
                                                                 </div>
                                                                 <div className="text-red-500 font-black text-xl">VS</div>
                                                                 <div className="text-center">
-                                                                    <div className="w-10 h-10 rounded-full mx-auto flex items-center justify-center text-white font-bold text-xs mb-1" style={{ backgroundColor: run.opponent.badgeColor }}>⚡</div>
-                                                                    <div className="text-xs text-gray-400">{run.opponent.trainerName}</div>
+                                                                    <div className="w-10 h-10 rounded-full mx-auto flex items-center justify-center text-white font-bold text-base mb-1" style={{ backgroundColor: run.opponent.badgeColor }}>
+                                                                        {run.opponent.trainerBadge || '⚡'}
+                                                                    </div>
+                                                                    <div className={`text-xs font-bold ${run.opponent.isLegacy ? 'text-yellow-300' : 'text-gray-400'}`}>{run.opponent.trainerName}</div>
                                                                 </div>
                                                             </div>
                                                         </div>
@@ -8898,7 +9248,13 @@
                                                 {/* ── BATTLE phase — spectate animation ── */}
                                                 {(run.phase === 'battle') && run.opponent && gauntletBattleSlots.length > 0 && (
                                                     <div>
-                                                        <div className="text-center text-gray-400 text-sm mb-4">Battle!</div>
+                                                        <div className="flex items-center justify-between mb-3 px-1">
+                                                            <div className="text-xs text-gray-400 font-bold">{firebaseProfile?.displayName || 'You'}</div>
+                                                            <div className="text-gray-400 text-sm font-bold">Battle!</div>
+                                                            <div className={`text-xs font-bold ${run.opponent.isLegacy ? 'text-yellow-300' : 'text-gray-400'}`}>
+                                                                {run.opponent.trainerBadge || '⚡'} {run.opponent.trainerName}
+                                                            </div>
+                                                        </div>
                                                         {gauntletBattleSlots.map(slot => {
                                                             const anim = slot.anim;
                                                             const slotRevealed = slot.phase === 'revealed';
@@ -8952,23 +9308,85 @@
                                                 {/* ── RESULT phase ── */}
                                                 {run.phase === 'result' && run.lastResult && (
                                                     <div className="text-center">
-                                                        <div className={`text-6xl mb-3 ${run.lastResult.won ? '' : ''}`}>{run.lastResult.won ? '🎉' : '💀'}</div>
+                                                        <div className={`text-6xl mb-3`}>{run.lastResult.won ? '🎉' : '💀'}</div>
                                                         <div className={`text-2xl font-black mb-1 ${run.lastResult.won ? 'text-green-400' : 'text-red-400'}`}>
                                                             {run.lastResult.won ? 'Trainer Defeated!' : 'Knocked Out!'}
                                                         </div>
                                                         <div className="text-gray-400 text-sm mb-5">
-                                                            {run.lastResult.won ? `Advancing to Stage ${run.stage}…` : `Defeated by ${run.lastResult.opponentTrainer}`}
+                                                            {run.lastResult.won
+                                                                ? `You beat ${run.lastResult.opponentTrainer}!`
+                                                                : `Defeated by ${run.lastResult.opponentTrainer}`}
                                                         </div>
                                                         {run.lastResult.won && run.lastResult.isPinkSlipStage && (
                                                             <div className="bg-pink-900 bg-opacity-40 border border-pink-500 rounded-xl p-4 mb-5">
-                                                                <div className="text-pink-300 font-bold text-sm mb-1">🎰 Pink Slip Stage!</div>
-                                                                <div className="text-gray-400 text-xs">Every 10th win you can use a Pink Slip Ball to capture the defeated trainer's Pokémon. <span className="text-gray-500">(Coming soon)</span></div>
+                                                                <div className="text-pink-300 font-bold text-sm mb-1">🎰 Pink Slip Earned!</div>
+                                                                <div className="text-gray-300 text-xs">Every 10th win grants a Pink Slip — catch the defeated trainer's Pokémon!</div>
                                                             </div>
                                                         )}
+                                                        {run.lastResult.won && !run.lastResult.isPinkSlipStage && (
+                                                            <div className="text-gray-500 text-sm mb-5">Advancing to Stage {run.lastResult.nextStage}…</div>
+                                                        )}
                                                         <button onClick={gauntletContinue}
-                                                            className="w-full py-4 bg-gradient-to-r from-red-600 to-orange-500 hover:from-red-700 hover:to-orange-600 text-white rounded-xl font-bold text-lg transition shadow-lg">
-                                                            {run.lastResult.won ? `Stage ${run.stage} →` : 'End Run'}
+                                                            className={`w-full py-4 rounded-xl font-bold text-lg transition shadow-lg text-white ${
+                                                                run.lastResult.won
+                                                                    ? run.lastResult.isPinkSlipStage
+                                                                        ? 'bg-gradient-to-r from-pink-600 to-rose-500 hover:from-pink-700 hover:to-rose-600'
+                                                                        : 'bg-gradient-to-r from-green-600 to-emerald-500 hover:from-green-700 hover:to-emerald-600'
+                                                                    : 'bg-gradient-to-r from-red-600 to-orange-500 hover:from-red-700 hover:to-orange-600'
+                                                            }`}>
+                                                            {run.lastResult.won
+                                                                ? run.lastResult.isPinkSlipStage
+                                                                    ? '🎰 Claim Pink Slip →'
+                                                                    : `Stage ${run.lastResult.nextStage} →`
+                                                                : 'End Run'}
                                                         </button>
+                                                    </div>
+                                                )}
+
+                                                {/* ── GAME OVER ── */}
+                                                {/* ── PINK SLIP WINDOW — milestone catch opportunity ── */}
+                                                {run.phase === 'pinkSlipWindow' && run.pinkSlipPokemon && (
+                                                    <div className="text-center">
+                                                        <div className="text-4xl mb-2">🎰</div>
+                                                        <div className="text-2xl font-black text-yellow-400 mb-1">Pink Slip!</div>
+                                                        <div className="text-gray-400 text-sm mb-5">
+                                                            You beat <span className="text-white font-bold">{run.pinkSlipTrainer}</span> — catch their Pokémon?
+                                                        </div>
+
+                                                        {/* The catchable pokemon */}
+                                                        <div className="bg-slate-800 rounded-2xl p-5 border-2 border-yellow-500 border-opacity-60 mb-5 mx-auto max-w-[240px]">
+                                                            <div className="relative inline-block">
+                                                                <img
+                                                                    src={run.pinkSlipPokemon.spriteUrl}
+                                                                    alt={run.pinkSlipPokemon.pokemonName}
+                                                                    className={`w-28 h-28 pixelated mx-auto ${run.pinkSlipPokemon.isShiny ? 'drop-shadow-[0_0_12px_rgba(255,215,0,0.8)]' : ''}`}
+                                                                />
+                                                            </div>
+                                                            <div className="text-white font-bold capitalize text-lg mt-2">{run.pinkSlipPokemon.pokemonName}</div>
+                                                            {/* Trainer badge */}
+                                                            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-white text-xs font-bold mt-2"
+                                                                style={{ backgroundColor: run.pinkSlipTrainerColor || '#374151' }}>
+                                                                ⚡ {run.pinkSlipTrainer}
+                                                            </div>
+                                                            <div className="mt-2">
+                                                                <EdgeBadge pokemon={run.pinkSlipPokemon} />
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="flex gap-3">
+                                                            <button
+                                                                onClick={gauntletCatchPinkSlip}
+                                                                className="flex-1 py-4 bg-gradient-to-r from-pink-600 to-rose-500 hover:from-pink-700 hover:to-rose-600 text-white rounded-xl font-bold text-base transition shadow-lg"
+                                                            >
+                                                                🎾 Catch it!
+                                                            </button>
+                                                            <button
+                                                                onClick={gauntletSkipPinkSlip}
+                                                                className="flex-1 py-4 bg-slate-700 hover:bg-slate-600 text-gray-300 rounded-xl font-bold text-base transition"
+                                                            >
+                                                                Skip →
+                                                            </button>
+                                                        </div>
                                                     </div>
                                                 )}
 
@@ -9163,10 +9581,11 @@
                                                                                 if (Array.isArray(st)) setViewingFriendStarters(st);
                                                                             });
                                                                         }
-                                                                        // Mark as viewed — removes from badge
-                                                                        if (battle.battleId) {
+                                                                        // Mark as viewed on Firebase — clears badge permanently across sessions
+                                                                        if (battle.battleId && firebaseManager.user) {
                                                                             viewedBattleIds.current.add(battle.battleId);
                                                                             window.storage.set('viewed-battle-ids', JSON.stringify([...viewedBattleIds.current])).catch(() => {});
+                                                                            database.ref(`battles/${battle.battleId}/viewedBy/${firebaseManager.user.uid}`).set(true).catch(() => {});
                                                                             setBattleBadgeCount(prev => Math.max(0, prev - 1));
                                                                         }
                                                                         // Play full battle spectate, then auto-advance to results
