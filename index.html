@@ -1288,15 +1288,15 @@
                 // Try to fetch existing names for uniqueness — non-fatal if permission denied
                 const existingNames = [];
                 try {
-                    const usersSnapshot = await database.ref('users').once('value');
-                    usersSnapshot.forEach(child => {
-                        const profile = child.val()?.profile;
+                    const profilesSnapshot = await database.ref('profiles').once('value');
+                    profilesSnapshot.forEach(child => {
+                        const profile = child.val();
                         if (profile && profile.displayName) {
                             existingNames.push(profile.displayName);
                         }
                     });
                 } catch (e) {
-                    // Firebase rules may block reading all users — that's fine, 
+                    // Firebase rules may block reading — that's fine,
                     // we'll still generate a name, just without full uniqueness check
                     console.warn('⚠️ Could not fetch existing names (permission denied is OK):', e.message);
                 }
@@ -1312,6 +1312,8 @@
                 };
 
                 await database.ref(`users/${this.user.uid}/profile`).set(profile);
+                // Write shallow index for friend search (rules allow reading profiles/ without full users/ scan)
+                await database.ref(`profiles/${this.user.uid}`).set({ displayName, badgeColor });
                 console.log('✅ Trainer profile created:', displayName);
 
                 return profile;
@@ -1394,14 +1396,21 @@
             async updateProfile(updates) {
                 if (!this.user) return;
                 await database.ref(`users/${this.user.uid}/profile`).update(updates);
-                
-                // Update backup
-                const profile = await this.getProfile();
-                localStorage.setItem('profileBackup', JSON.stringify({
-                    uid: this.user.uid,
-                    ...profile,
-                    timestamp: Date.now()
-                }));
+                // Single fetch — used for both profiles index sync and localStorage backup
+                const updatedProfile = await this.getProfile();
+                if (updatedProfile) {
+                    // Keep profiles index in sync for friend search
+                    await database.ref(`profiles/${this.user.uid}`).set({
+                        displayName: updatedProfile.displayName,
+                        badgeColor: updatedProfile.badgeColor
+                    });
+                    // Update backup
+                    localStorage.setItem('profileBackup', JSON.stringify({
+                        uid: this.user.uid,
+                        ...updatedProfile,
+                        timestamp: Date.now()
+                    }));
+                }
             }
 
             async syncPendingWrites() {
@@ -3698,6 +3707,7 @@
                 loadRunHistory();
                 checkFirebaseAuth(); // 🔥 Check if user is already authenticated
                 gauntletTryResume(); // Resume any in-progress gauntlet run
+                checkForInterruptedWorkout(); // 🏃 Check if a live run was interrupted
                 
                 // 🎮 Load stored Pokéballs
                 window.storage.get('stored-pokeballs').then(result => {
@@ -4245,8 +4255,8 @@
 
                 try {
                     console.log('📡 Fetching profiles from Firebase...');
-                    // Read only the profiles index (lighter, and rules allow users/*/profile reads)
-                    const usersSnapshot = await database.ref('users').once('value');
+                    // Read the shallow profiles index — lighter and works under tightened rules
+                    const usersSnapshot = await database.ref('profiles').once('value');
                     const exactMatches = [];
                     const partialMatches = [];
 
@@ -5381,22 +5391,10 @@
                     await window.storage.set('pokemon-pc', JSON.stringify(updatedMyPC));
                     await database.ref(`users/${myUid}/pc`).set(updatedMyPC);
 
-                    // 2. Remove from loser's PC and starters immediately
-                    try {
-                        const loserPCSnap = await database.ref(`users/${loserId}/pc`).once('value');
-                        const loserPC = loserPCSnap.val() || [];
-                        const updatedLoserPC = loserPC.filter(p => p && p.id !== targetPokemon.id);
-                        await database.ref(`users/${loserId}/pc`).set(updatedLoserPC);
-
-                        const loserStartersSnap = await database.ref(`users/${loserId}/starters`).once('value');
-                        const loserStarters = loserStartersSnap.val() || [];
-                        const updatedLoserStarters = loserStarters.map(s => (s && s.id === targetPokemon.id) ? null : s);
-                        await database.ref(`users/${loserId}/starters`).set(updatedLoserStarters);
-                    } catch (removeErr) {
-                        console.warn('⚠️ Could not immediately remove from loser — will use pendingRemoval fallback:', removeErr.message);
-                    }
-
-                    // 3. Update battle record with pink slip details for recap + feed
+                    // 2. Update battle record with pink slip details for recap + feed
+                    // NOTE: Loser's PC/starters removal is handled entirely by the loser's own
+                    // real-time listener (processBattles) and processPendingBattleLosses on load.
+                    // Winner never writes to another user's data.
                     await database.ref(`battles/${currentBattle.battleId}`).update({
                         status: 'COMPLETED',
                         pinkSlipClaimedPokemonId: targetPokemon.id,
@@ -6521,7 +6519,8 @@
                         ref.totalDistance += deltaMi;
                         ref.lastLat = lat; ref.lastLng = lng; ref.lastUpdateTime = ts;
 
-                        // 🔊 Mile marker audio announcement
+                        // 💾 Persist state so we can resume if browser kills the page
+                        if (ref.workoutStarted) saveLiveWorkoutState(ref);
                         const currentMile = Math.floor(ref.totalDistance);
                         if (currentMile > 0 && currentMile > ref.lastMileAnnounced) {
                             ref.lastMileAnnounced = currentMile;
@@ -6629,6 +6628,8 @@
                         trackerRef.current.pausedTime = 0;
                         setTrackingData(prev => ({ ...prev, startTime: now, pausedTime: 0 }));
                         setTrackerElapsed(0);
+                        // 💾 Save initial state so resume works even before first GPS tick
+                        saveLiveWorkoutState(trackerRef.current);
                     } else {
                         setCountdown(n);
                         setTimeout(() => tick(n - 1), 1000);
@@ -6695,6 +6696,7 @@
                 };
                 setLiveWorkoutResult(result);
                 setWorkoutMode('liveResult');
+                clearLiveWorkoutState(); // 💾 Run ended normally — clear the resume snapshot
 
                 // Save to history + update streak
                 const newRun = {
@@ -6717,6 +6719,120 @@
                 setLastWorkoutIntensity({ chances, newPRs: {}, workoutType: 'cardio',
                     pace: fmtPace(avgPaceSec), distance: result.distance, duration: fmtTime(totalSec) });
                 setHasExchanged(true);
+            };
+
+            // ── Live workout persistence helpers ──
+            const LIVE_WORKOUT_KEY = 'live-workout-session';
+
+            const saveLiveWorkoutState = (ref) => {
+                const snapshot = {
+                    startTime: ref.startTime,
+                    pausedTime: ref.pausedTime || 0,
+                    totalDistance: ref.totalDistance || 0,
+                    peakPaceSec: ref.peakPaceSec || null,
+                    peakMph: ref.peakMph || 0,
+                    lastLat: ref.lastLat,
+                    lastLng: ref.lastLng,
+                    savedAt: Date.now(),
+                };
+                window.storage.set(LIVE_WORKOUT_KEY, JSON.stringify(snapshot)).catch(() => {});
+            };
+
+            const clearLiveWorkoutState = () => {
+                window.storage.set(LIVE_WORKOUT_KEY, '').catch(() => {});
+            };
+
+            const [interruptedWorkout, setInterruptedWorkout] = useState(null); // snapshot if run was interrupted
+
+            const checkForInterruptedWorkout = async () => {
+                try {
+                    const result = await window.storage.get(LIVE_WORKOUT_KEY);
+                    if (!result || !result.value || !result.value.startsWith('{')) return;
+                    const snapshot = JSON.parse(result.value);
+                    // Only offer resume if it's less than 6 hours old
+                    if (snapshot.startTime && (Date.now() - snapshot.savedAt) < 6 * 60 * 60 * 1000) {
+                        setInterruptedWorkout(snapshot);
+                    } else {
+                        clearLiveWorkoutState();
+                    }
+                } catch (e) {}
+            };
+
+            const resumeInterruptedWorkout = () => {
+                const snapshot = interruptedWorkout;
+                if (!snapshot) return;
+                setInterruptedWorkout(null);
+
+                // Reconstruct elapsed time — add gap since savedAt as paused time
+                const gapMs = Date.now() - snapshot.savedAt;
+                const resumedPausedTime = snapshot.pausedTime + gapMs;
+
+                trackerRef.current = {
+                    startTime: snapshot.startTime,
+                    pausedTime: resumedPausedTime,
+                    totalDistance: snapshot.totalDistance,
+                    peakPaceSec: snapshot.peakPaceSec,
+                    peakMph: snapshot.peakMph || 0,
+                    lastLat: snapshot.lastLat,
+                    lastLng: snapshot.lastLng,
+                    lastUpdateTime: Date.now(),
+                    samples: [],
+                    lastMileAnnounced: Math.floor(snapshot.totalDistance),
+                    workoutStarted: true,
+                    isPaused: false,
+                    pw: { thresholdPaceSec: getThresholdPace(), isActive: false, startT: null,
+                          startDistMi: null, bestPaceSec: null, bestMph: null, sumPaceSec: 0, count: 0 }
+                };
+
+                setTrackingData({
+                    startTime: snapshot.startTime,
+                    pausedTime: resumedPausedTime,
+                    pauseStart: null,
+                    distance: snapshot.totalDistance,
+                    currentPace: '--:--', currentMph: 0,
+                    avgPace: '--:--', avgMph: 0,
+                    peakPace: snapshot.peakPaceSec ? fmtPace(snapshot.peakPaceSec) : '--:--',
+                    peakMph: snapshot.peakMph ? snapshot.peakMph.toFixed(1) : '0.0',
+                    calories: Math.round(0.63 * 155 * snapshot.totalDistance),
+                });
+                setWorkoutStarted(true);
+                setIsTracking(true);
+                setIsPaused(false);
+                setWorkoutMode('live');
+
+                // Restart tick interval
+                const tickInterval = setInterval(() => {
+                    const ref = trackerRef.current;
+                    if (ref.workoutStarted && !ref.isPaused) {
+                        const elapsedSec = Math.round((Date.now() - ref.startTime - (ref.pausedTime || 0)) / 1000);
+                        setTrackerElapsed(elapsedSec);
+                    }
+                }, 1000);
+                trackerRef.current.tickInterval = tickInterval;
+
+                // Restart GPS watch
+                const id = navigator.geolocation.watchPosition(
+                    (pos) => {
+                        const ref = trackerRef.current;
+                        if (!ref || ref.isPaused) return;
+                        const { latitude: lat, longitude: lng, timestamp: ts } = pos.coords;
+                        if (ref.lastLat === null) { ref.lastLat = lat; ref.lastLng = lng; ref.lastUpdateTime = ts; return; }
+                        const deltaMi = calcHaversine(ref.lastLat, ref.lastLng, lat, lng);
+                        if (deltaMi < 0.01) return;
+                        ref.totalDistance += deltaMi;
+                        ref.lastLat = lat; ref.lastLng = lng; ref.lastUpdateTime = ts;
+                        saveLiveWorkoutState(ref);
+                        setTrackingData(prev => ({ ...prev, distance: ref.totalDistance }));
+                    },
+                    () => {},
+                    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+                );
+                setWatchId(id);
+            };
+
+            const dismissInterruptedWorkout = () => {
+                setInterruptedWorkout(null);
+                clearLiveWorkoutState();
             };
 
             const resetLiveWorkout = () => {
@@ -8370,6 +8486,37 @@
                                             {workoutMode === null && (
                                                 <div className="p-4 bg-slate-900">
                                                     <div className="flex flex-col gap-3">
+
+                                                        {/* ── Resume interrupted run banner ── */}
+                                                        {interruptedWorkout && (
+                                                            <div className="w-full bg-gradient-to-r from-green-900 to-emerald-900 border border-green-500 rounded-2xl p-4">
+                                                                <div className="flex items-center gap-2 mb-2">
+                                                                    <span className="text-2xl">🏃</span>
+                                                                    <div>
+                                                                        <div className="text-green-300 font-bold text-sm">Run in progress!</div>
+                                                                        <div className="text-gray-400 text-xs">
+                                                                            {interruptedWorkout.totalDistance > 0
+                                                                                ? `${interruptedWorkout.totalDistance.toFixed(2)} mi logged before app closed`
+                                                                                : 'App closed during your run'}
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                                <div className="flex gap-2">
+                                                                    <button
+                                                                        onClick={resumeInterruptedWorkout}
+                                                                        className="flex-1 py-2.5 bg-green-500 hover:bg-green-400 text-white rounded-xl font-bold text-sm transition"
+                                                                    >
+                                                                        ▶ Resume Run
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={dismissInterruptedWorkout}
+                                                                        className="px-4 py-2.5 bg-slate-700 hover:bg-slate-600 text-gray-400 rounded-xl font-bold text-sm transition"
+                                                                    >
+                                                                        Discard
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        )}
                                                         <button
                                                             onClick={startLiveWorkout}
                                                             disabled={isTracking}
